@@ -30,6 +30,7 @@ def main():
     def clear_fxn(num,cfg): return False
     exp_fn_list = [
         "exps/comp_graphs/train.cfg",
+        "exps/comp_graphs/train_empty.cfg",
     ]
     exps,uuids = [],[]
     cache_fn = ".cache_io_exps/comp_graphs/train/"

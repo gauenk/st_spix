@@ -53,6 +53,7 @@ def run(cfg):
             "resume_weights_only":False,
             "save_every_n_epochs":5}
     cfg = base_utils.extract_defaults(cfg,defs)
+    if cfg.mname == "empty": return None
 
     # -- select active gpu devices --
     base_utils.seed_everything(cfg.seed)

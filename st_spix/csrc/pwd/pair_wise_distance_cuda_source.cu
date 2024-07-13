@@ -202,14 +202,3 @@ void init_pwd(py::module &m){
 }
 
 
-/*************************************
-
-       Pybind for Pytorch & C++
-
-*************************************/
-#include <torch/extension.h>
-// void init_pwd(py::module &m);
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  init_pwd(m);
-}
-

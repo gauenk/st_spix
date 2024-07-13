@@ -53,15 +53,19 @@ def run(cfg):
     # -- restore from checkpoint --
     chkpt_root = utils.get_ckpt_root(cfg.tr_uuid,cfg.base_path)
     chkpt,chkpt_fn = utils.get_checkpoint(chkpt_root)
-    assert not(chkpt is None),"Must have a checkpoint loaded for testing."
+
+    # -- checking --
+    no_chkpt = not(chkpt is None)
+    is_empty = "empty" in cfg.mname
+    # print(no_chkpt,is_empty,cfg.mname)
+    assert no_chkpt or is_empty,"Must have a checkpoint loaded for testing."
+
+    # -- load --
     if cfg.load_checkpoint:
-        # a = model.ftrs.decoder1.dec1conv2.weight.clone()
         loaded_epoch = utils.load_checkpoint(chkpt,model)
-        # b = model.ftrs.decoder1.dec1conv2.weight.clone()
-        # print(th.mean((a-b)**2))
-        # exit()
         print("Restoring State from [%s]" % chkpt_fn)
 
+    # -- to device --
     model = model.to(device)
     model = model.eval()
 

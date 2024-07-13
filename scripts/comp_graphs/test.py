@@ -33,17 +33,20 @@ def main():
     # -- load experiments --
     train_fn_list = [
         "exps/comp_graphs/train.cfg",
+        "exps/comp_graphs/train_empty.cfg",
     ]
     te_fn = "exps/comp_graphs/test_shell.cfg"
     exps,uuids = [],[]
     for tr_fn in train_fn_list:
+        is_empty = "empty" in tr_fn # special load; no network
         tr_exp = cache_io.fill_test_shell(tr_fn,te_fn)
         _exps = read_test(tr_exp,".cache_io_exps/comp_graphs/test",
-                          reset=refresh,skip_dne=refresh)
+                          reset=refresh,skip_dne=False,keep_dne=is_empty)
         _exps,_uuids = cache_io.get_uuids(_exps,".cache_io/comp_graphs/test",
                                           read=not(refresh),no_config_check=False)
         exps += _exps
         uuids += _uuids
+
 
     # -- run exps --
     results = cache_io.run_exps(exps,test.run,uuids=uuids,preset_uuids=True,

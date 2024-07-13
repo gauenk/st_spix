@@ -1,6 +1,6 @@
 import torch as th
 from einops import rearrange
-import torch.nn.functional as nn_f
+import torch.nn.functional as th_f
 from torchvision.utils import draw_segmentation_masks
 
 from skimage.segmentation import mark_boundaries
@@ -12,7 +12,7 @@ def viz_spix(img_batch,spix_batch,nsp):
         # _masks = img
         # masks.append(img)
 
-        # _masks = nn_f.one_hot(spix,nsp).T.bool()
+        # _masks = th_f.one_hot(spix,nsp).T.bool()
         # _masks = rearrange(_masks,'c (h w) -> c h w',h=img.shape[1])
         # masks.append(draw_segmentation_masks(img, masks=_masks, alpha=0.5))
 
@@ -32,10 +32,17 @@ def viz_spix(img_batch,spix_batch,nsp):
     # masks = masks / masks.max()
     return masks
 
-def sp_pool(labels,sims):
+def sp_pool_from_spix(labels,spix):
+    sims_hard = th_f.one_hot(spix.long())*1.
+    sims_hard = rearrange(sims_hard,'b h w nsp -> b nsp (h w)')
+    labels_sp = sp_pool(labels,sims_hard)
+    return labels_sp
+
+def sp_pool(labels,sims,re_expand=True):
+    assert re_expand == True,"Only true for now."
 
     # -- normalize across #sp for each pixel --
-    sims_nmz = sims / sims.sum(-1,keepdim=True)# (B,NumSpix,NumPix) -> (B,NP,NS)
+    sims_nmz = sims / (1e-15+sims.sum(-1,keepdim=True))# (B,NumSpix,NumPix) -> (B,NS,NP)
     sims = sims.transpose(-1,-2)
 
     # -- prepare labels --

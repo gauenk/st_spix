@@ -7,46 +7,10 @@ from easydict import EasyDict as edict
 from torchvision.utils import save_image,make_grid
 from pathlib import Path
 
-# -- data --
-import data_hub
-
 # -- import slic iterations --
 import st_spix
+from st_spix import utils
 # from st_spix import slic_iter
-
-def get_fun_imgs():
-
-    # -- data config --
-    dcfg = edict()
-    dcfg.dname = "davis"
-    dcfg.dset = "train"
-    dcfg.sigma = 1.
-    dcfg.nframes = 1
-    dcfg.isize = 480
-
-    # -- load images --
-    device = "cuda:0"
-    data, loaders = data_hub.sets.load(dcfg)
-    # vid_names = ["bear", "bmx-bumps", "boat", "boxing-fisheye", "breakdance-flare",
-    #              "bus", "car-turn", "cat-girl", "classic-car", "color-run", "crossing",
-    #              "dance-jump", "dancing", "disc-jockey", "dog-agility", "dog-gooses",
-    #              "dogs-scale", "drift-turn", "drone"]
-    # vid_names = ["bear", "bmx-bumps", "boat", "boxing-fisheye"]
-    # vid_names = data.tr.vid_names[:3]
-    # print(vid_names)
-    vid_names = ["bmx-bumps","boxing-fisheye","dancing"]
-    isel = {"bmx-bumps":[150,240],"boxing-fisheye":[200,200]}
-    vid = []
-    for name in vid_names:
-        _index = data_hub.filter_subseq(data.tr,name,frame_start=0,frame_end=0)[0]
-        _vid = data.tr[_index]['clean']/255.
-        if name in isel: sh,sw = isel[name]
-        else: sh,sw = 0,0
-        _vid = _vid[:1,:,sh:sh+240,sw:sw+240].to(device)
-        vid.append(_vid)
-    vid = th.cat(vid)
-
-    return vid
 
 def main():
 
@@ -54,13 +18,17 @@ def main():
     SAVE_ROOT = Path("output/results")
     if not SAVE_ROOT.exists():
         SAVE_ROOT.mkdir(parents=True)
+    utils.seed_everything(0)
 
     # -- spix config --
+    device = "cuda:0"
     spix_stride = 10
-    n_iters = 10
-    M = 2.5e-3
+    n_iters = 20
+    M = 0.
     spix_scale = 2.
-    vid = get_fun_imgs()
+    vid = st_spix.data.davis_example()
+    print("n_iters: ",n_iters)
+    print("spix_scale: ",spix_scale)
     print("vid.shape: ",vid.shape)
 
     # -- load slic iterations --
@@ -70,8 +38,16 @@ def main():
     spix = sims0.argmax(1).reshape(len(vid),-1)
 
     # -- fixed sim spix --
+    B,NSP,NP = sims0.shape
+    print(spix.max(),spix.min())
+    print(spix.shape)
+    print(sims0.shape)
+    # exit()
     sims1 = th.zeros_like(sims0)
-    sims1[:,spix] = 1.
+    # sims1[:,spix] = 1.
+    batch_inds = th.arange(B).unsqueeze(-1)
+    pix_inds = th.arange(NP).unsqueeze(0)
+    sims1[batch_inds,spix,pix_inds] = 1.
     vid1 = vid.detach().clone().requires_grad_(True)
     sftrs1,sims1 = st_spix.compute_slic_params(vid1,sims1,spix_stride,M,spix_scale)
 
@@ -97,10 +73,38 @@ def main():
     # -- grads --
     grad0,grad1,grad2 = vid0.grad,vid1.grad,vid2.grad
 
+    # -- quantiles --
+    print("quantiles.")
+    quants = th.tensor([0.1,0.2,0.5,0.75,0.99]).to(device)
+    thresh = th.quantile(grad0.ravel(),quants)[3].item()
+    print(th.quantile(grad0.ravel(),quants))
+    print(th.quantile(grad1.ravel(),quants))
+    print(th.quantile(grad2.ravel(),quants))
+    print("\n")
+    print("thresh: ",thresh)
+
+    # -- compare --
+    names = ["full","spix","sprobs"]
+    grads = [grad0,grad1,grad2]
+    for ix,grad_i in enumerate(grads):
+        if ix == 0: continue
+        args = th.where(grad0>thresh)
+        # print(args)
+        diff = th.sum(((grad_i[args] - grad0[args])/(grad0[args]+1e-15))**2).item()
+        # diff = th.sum((grad_i - grad0)**2).item()
+        print("%s: %2.3e" % (names[ix],diff))
+
     # -- prepare for saving --
+    grads = [grad0,grad1,grad2]
     normz_fxn = lambda vid,smax,smin: (vid-smin)/(smax-smin)
-    share_max = max([grad0.max(), grad1.max(), grad2.max()])
-    share_min = min([grad0.min(), grad1.min(), grad2.min()])
+    max_quant = lambda grad: th.quantile(grad,th.tensor([0.99]).to(device)).item()
+    min_quant = lambda grad: th.quantile(grad,th.tensor([0.01]).to(device)).item()
+    share_max = max([max_quant(grad) for grad in grads])
+    share_min = min([min_quant(grad) for grad in grads])
+    grads = [th.clamp(grad,share_min,share_max) for grad in grads]
+    grad0,grad1,grad2 = grads
+    # share_max = max([grad0.max(), grad1.max(), grad2.max()])
+    # share_min = min([grad0.min(), grad1.min(), grad2.min()])
     print(share_max,share_min)
     grad0_nmz = normz_fxn(grad0,share_max,share_min)
     grad1_nmz = normz_fxn(grad1,share_max,share_min)

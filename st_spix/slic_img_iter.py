@@ -85,9 +85,17 @@ def run_slic(pix_ftrs, stoken_size=[16, 16],
     # -- manage gradient; always differentiable --
     if "fixed" in grad_type:
         if grad_type == "fixed_spix":
-            _spix = sims.argmax(1).reshape(B,-1)
+            # _spix = sims.argmax(1).reshape(B,-1)
+
+            # _sims[:,_spix] = 1.
+            spix = sims.argmax(1).reshape(B,-1)
+            B,NSP,NP = sims.shape
+            batch_inds = th.arange(B).unsqueeze(-1)
+            pix_inds = th.arange(NP).unsqueeze(0)
             _sims = th.zeros_like(sims)
-            _sims[:,_spix] = 1.
+            _sims[batch_inds,spix,pix_inds] = 1.
+            # print("hi.")
+            # exit()
         else:
             _sims = sims.detach()
         sftrs = _update_sftrs(_sims,permuted_pix_ftrs)

@@ -10,5 +10,5 @@ def load_loss(cfg):
         spix_loss_compat = optional(cfg,"spix_loss_compat",0.)
         loss = SuperpixelLoss(spix_loss_type,spix_loss_compat)
     else:
-        raise ValueError(f"Uknown model type [{lname}]")
+        raise ValueError(f"Uknown loss type [{lname}]")
     return loss

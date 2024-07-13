@@ -65,6 +65,9 @@ class SuperpixelLoss(nn.Module):
         loss = sp_loss + self.compat_coeff * compact_loss
         if th.isnan(loss):
             print(sims)
+            print(sp_loss)
+            print(compact_loss)
+            print("nan found.")
             exit()
         # exit()
 

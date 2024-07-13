@@ -1,6 +1,7 @@
 
 # -- datasets --
 from .bsd500_seg import load_bsd500
+from .simple import davis_example
 from ..utils import optional
 
 def load_data(cfg):
