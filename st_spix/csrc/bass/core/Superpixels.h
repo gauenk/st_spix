@@ -22,6 +22,8 @@
 // using namespace cv;
 using namespace std;
 
+void throw_on_cuda_error(cudaError_t code);
+
 class Superpixels {
     int nbatch,nftrs;
     int dim_i, dim_s;
@@ -30,18 +32,10 @@ class Superpixels {
 
     int nInnerIters;
     bool init_sp;
-    superpixel_options sp_options;
 
     //superpixel_params* sp_params;
     //superpixel_params* sp_params_cpu;
     //superpixel_GPU_helper* sp_gpu_helper;
-
-    // since we fix covariance for color component
-    float3 J_i; //fixed
-    float logdet_Sigma_i; //fixed
-
-    float* image_cpu;
-    uchar3* image_gpu;
 
 
   public:
@@ -51,6 +45,12 @@ class Superpixels {
               int init_nsp=-1);
   ~Superpixels();
 
+    // since we fix covariance for color component
+    float* image_cpu;
+    uchar3* image_gpu;
+    superpixel_options sp_options;
+    float3 J_i; //fixed
+    float logdet_Sigma_i; //fixed
     superpixel_params* sp_params;
     superpixel_params* sp_params_cpu;
     superpixel_GPU_helper* sp_gpu_helper;

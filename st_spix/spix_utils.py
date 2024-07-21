@@ -32,6 +32,45 @@ def viz_spix(img_batch,spix_batch,nsp):
     # masks = masks / masks.max()
     return masks
 
+def pool_flow_and_shift_mean(flow,means,spix,ids,K):
+
+    # -- get labels --
+    sims = th_f.one_hot(spix.long(),num_classes=K)*1.
+    sims = rearrange(sims,'b h w nsp -> b nsp (h w)')
+
+    # -- normalize across #sp for each pixel --
+    sims_nmz = sims / (1e-15+sims.sum(-1,keepdim=True))# (B,NumSpix,NumPix) -> (B,NS,NP)
+    sims = sims.transpose(-1,-2)
+
+    # -- prepare flow --
+    W = flow.shape[-1]
+    flow = rearrange(flow,'b f h w -> b (h w) f')
+
+    # -- compute "superpixel pooling" --
+    flow_tmp = sims_nmz @ flow
+    flow_sp = sims @ (flow_tmp)
+
+    # -- pool means --
+    print("tmp: ",flow_tmp.shape,means.shape,sims.shape,
+          flow.shape,means.shape,len(th.unique(spix)))
+    # exit()
+    # means[...,-2:] = means[...,-2:] + flow_tmp
+    print("ids.shape: ",ids.shape,means.shape)
+    print("ids.min(),ids.max(): ",ids.min(),ids.max())
+    # _means = th.gather(means.clone(),1,ids).clone()
+    # _means = th.gather(means.clone(),1,ids).clone()
+    # print("Num previous superpixels: ",len(th.unique(spix_st[-1])))
+    # print("Previous [Min,Max]: ",spix_st[-1].min().item(),spix_st[-1].max().item())
+
+    # th.cuda.synchronize()
+    # exit()
+
+    # -- reshape --
+    flow_sp = rearrange(flow_sp,'b (h w) f -> b f h w',w=W)
+
+    return flow_sp,means
+
+
 def sp_pool_from_spix(labels,spix):
     sims_hard = th_f.one_hot(spix.long())*1.
     sims_hard = rearrange(sims_hard,'b h w nsp -> b nsp (h w)')

@@ -323,7 +323,6 @@ __global__  void update_seg_subset(
     set_nbrs(NW, N, NE,  W, E, SW, S, SE,N, nbrs);
     count_diff_nbrs_N = ischangbale_by_nbrs(nbrs);
     isNvalid = nbrs[8];
-    //potts_term[0] = calc_potts(beta,count_diff_nbrs_N);
     if(!isNvalid) return;
     
     //W :
@@ -331,14 +330,12 @@ __global__  void update_seg_subset(
     count_diff_nbrs_W = ischangbale_by_nbrs(nbrs);
     isWvalid = nbrs[8];
     if(!isWvalid) return;
-    // potts_term[1] = calc_potts(beta,count_diff_nbrs_W);
 
     //S :
     set_nbrs(NW, N, NE,  W, E, SW, S, SE,S, nbrs);
     count_diff_nbrs_S = ischangbale_by_nbrs(nbrs);
     isSvalid = nbrs[8];
     if(!isSvalid) return;
-    //potts_term[2] = calc_potts(beta,count_diff_nbrs_S);
 
     //E:
     set_nbrs(NW, N, NE,  W, E, SW, S, SE,E, nbrs);
@@ -347,33 +344,39 @@ __global__  void update_seg_subset(
     count_diff_nbrs_E = ischangbale_by_nbrs(nbrs);
     isEvalid = nbrs[8];
     if(!isEvalid) return;
-    //potts_term[3] = calc_potts(beta,count_diff_nbrs_E);
-    //N_Prev_shared[idx_cache] = (int(isNvalid))+(int(isWvalid))+(int(isSvalid))+(int(isEvalid));
    
     // -- index image --
     float* imgC = img + idx * 3;
 
     // -- compute posterior --
     label_check = N;
-    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,seg_idx,label_check,
-                                J_i,logdet_Sigma_i,i_std,s_std,post_changes,
+// __device__ inline float2 cal_posterior_new(
+//     float* imgC, int* seg, int x, int y,
+//     superpixel_params* sp_params,
+//     int seg_idx, float3 J_i,
+//     float logdet_Sigma_i, float i_std, int s_std,
+//     post_changes_helper* post_changes, float potts,
+//     float beta, float2 res_max){
+
+    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,
+                                J_i,logdet_Sigma_i,i_std,s_std,
                                 count_diff_nbrs_N,beta,res_max);
     label_check = S;
     if(label_check!=N)
-    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,seg_idx,label_check,
-                                J_i,logdet_Sigma_i,i_std,s_std,post_changes,
+    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,
+                                J_i,logdet_Sigma_i,i_std,s_std,
                                 count_diff_nbrs_S,beta,res_max);
 
     label_check = W;
     if((label_check!=S)&&(label_check!=N))   
-    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,seg_idx,label_check,J_i,
-                                logdet_Sigma_i,i_std,s_std,post_changes,
+    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,J_i,
+                                logdet_Sigma_i,i_std,s_std,
                                 count_diff_nbrs_W,beta,res_max);
     
     label_check = E;
     if((label_check!=W)&&(label_check!=S)&&(label_check!=N))      
-    res_max= cal_posterior_new(imgC,seg,x,y,sp_params,seg_idx,label_check,J_i,
-                               logdet_Sigma_i,i_std,s_std,post_changes,
+    res_max= cal_posterior_new(imgC,seg,x,y,sp_params,label_check,J_i,
+                               logdet_Sigma_i,i_std,s_std,
                                count_diff_nbrs_E,beta,res_max);
     seg[seg_idx] = res_max.y;
     return;

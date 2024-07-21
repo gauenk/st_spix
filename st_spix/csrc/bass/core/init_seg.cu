@@ -45,6 +45,7 @@ __host__ int CudaInitSeg(int* seg_cpu, int* seg_gpu, int* split_merge_pairs, int
         //calculate how many hexagons are on x and y axis
         int max_num_sp_x = (int) floor(double(xdim)/w) + 1;
         int max_num_sp_y = (int) floor(double(ydim)/(1.5*H)) + 1;
+
         int max_nSPs = max_num_sp_x * max_num_sp_y * 4; //Roy -Change
 
         //printf("%d \n", max_num_sp_x);

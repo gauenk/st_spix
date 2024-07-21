@@ -13,6 +13,7 @@
 #include <vector>
 
 // -- local import --
+#include "share/refine.h"
 #include "core/Superpixels.h"
 
 // -- define --
@@ -110,6 +111,7 @@ void compute_sprobs_from_sp_params(float* sprobs,
     sprobs_p[0] = res;
 }
 
+
 // __global__
 // void compute_sprobs(float* sprobs,
 //                     float * means, float* cov,
@@ -169,23 +171,25 @@ void compute_sprobs_from_sp_params(float* sprobs,
 // }
 
 
-static superpixel_options get_sp_options(int nPixels_in_square_side,
-                                         float i_std,float beta,
-                                         float alpha_hasting){
-    superpixel_options opt;
-    opt.nPixels_in_square_side = nPixels_in_square_side;
-    opt.i_std = i_std;
-    opt.beta_potts_term = beta;
-    opt.area = opt.nPixels_in_square_side*opt.nPixels_in_square_side;
-    opt.s_std = opt.nPixels_in_square_side;
-    opt.prior_count = opt.area*opt.area ;
-    opt.calc_cov = true;
-    opt.use_hex = false;
-    opt.alpha_hasting = alpha_hasting;
-    opt.nEMIters = opt.nPixels_in_square_side;
-    //opt.nEMIters = 15;
-    opt.nInnerIters = 4;
-    return opt;
+__global__
+void relabel_spix(int* spix, int* ids, int npix, int K){
+
+  // -- filling superpixel params into image --
+  int ix = threadIdx.x + blockIdx.x * blockDim.x;  
+  if (ix>=npix) return; 
+
+  // -- offset super pixels --
+  int spix_ix = *(spix + ix);
+  int new_id = -1;
+
+  // -- offset of kx --
+  for (int kx=0; kx<K; kx++){
+    if (ids[kx] == spix_ix){
+      new_id = kx;
+      break;
+    }
+  }
+  (spix + ix)[0] = new_id;
 }
 
 std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor>
@@ -232,7 +236,7 @@ bass_forward_cuda(const torch::Tensor imgs,
 
     // -- copy spix --
     cudaMemcpy(spix.data<int>(), sp.get_seg_cuda(),
-               npix * sizeof(int), cudaMemcpyDeviceToHost);
+               npix * sizeof(int), cudaMemcpyDeviceToDevice);
 
 
     /*****************************************************
@@ -259,6 +263,17 @@ bass_forward_cuda(const torch::Tensor imgs,
                                              counts.data<int>(),
                                              sp.get_cuda_sp_params(),
                                              unique_ids.data<int>(),K);
+
+    // -- dispatch info --
+    int num_blocks1 = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
+    dim3 nthreads1(THREADS_PER_BLOCK);
+    dim3 nblocks1(num_blocks1);
+
+    // -- relabel spix --
+    relabel_spix<<<nblocks1,nthreads1>>>(spix.data<int>(),
+                                         unique_ids.data<int>(),
+                                         npix, K);
+
 
     // -- return --
     return std::make_tuple(spix,means,cov,counts,unique_ids);
@@ -335,7 +350,7 @@ bass_forward_refine_cuda(const torch::Tensor imgs,
 
     // -- copy spix --
     cudaMemcpy(spix.data<int>(), sp.get_seg_cuda(),
-               npix * sizeof(int), cudaMemcpyDeviceToHost);
+               npix * sizeof(int), cudaMemcpyDeviceToDevice);
 
 
     /*****************************************************
@@ -364,6 +379,16 @@ bass_forward_refine_cuda(const torch::Tensor imgs,
                                              counts.data<int>(),
                                              sp.get_cuda_sp_params(),
                                              unique_ids.data<int>(),K);
+
+    // -- dispatch info --
+    int num_blocks1 = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
+    dim3 nthreads1(THREADS_PER_BLOCK);
+    dim3 nblocks1(num_blocks1);
+
+    // -- relabel spix --
+    relabel_spix<<<nblocks1,nthreads1>>>(spix.data<int>(),
+                                         unique_ids.data<int>(),
+                                         npix, K);
 
     // -- return --
     return std::make_tuple(spix,means,cov,counts);

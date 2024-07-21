@@ -25,7 +25,7 @@ for (int i = 0; i<256; i++){
 }
 */
 
-//bass table
+// bass table; decodes if a point is a "simple" based on neighbors
 __device__ const bool bass_lut[256] = {
            0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0,
 	       1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1,
@@ -76,7 +76,6 @@ __device__ inline int ischangbale_by_nbrs(bool* nbrs){
   */
 
 __device__ inline int ischangbale_by_nbrs(bool* nbrs){
-
   int num,count_diff = 0;
 #pragma unroll
    for (int i=7; i>=0; i--)
@@ -113,11 +112,9 @@ void set_nbrs(int NW,int N,int NE,int W,
 __device__ inline float2 cal_posterior_new(
     float* imgC, int* seg, int x, int y,
     superpixel_params* sp_params,
-    int idx, int seg_idx, float3 J_i,
+    int seg_idx, float3 J_i,
     float logdet_Sigma_i, float i_std, int s_std,
-    post_changes_helper* post_changes, float potts,
-    float beta, float2 res_max)
-{
+    float potts, float beta, float2 res_max){
 
     // -- init res --
     float res = -1000; // some large negative number
@@ -147,10 +144,10 @@ __device__ inline float2 cal_posterior_new(
     // -- space component --
     res = res - d0*d0*sigma_s_x;
     res = res - d1*d1*sigma_s_z;
-    res = res -  2*d0*d1*sigma_s_y;
+    res = res - 2*d0*d1*sigma_s_y;
     // res -= calc_squared_mahal_2d(pt,mu_s,J_s);
-    res = res -  logdet_sigma_s;
-    res = res -beta*potts;
+    res = res - logdet_sigma_s;
+    res = res - beta*potts;
     /*if (res > atomicMaxFloat2(&post_changes[idx].post[4],res))
     {
       seg[idx] = seg_idx;
@@ -169,23 +166,81 @@ __device__ inline float2 cal_posterior_new(
 }
 
 
+/* __device__ inline float2 cal_posterior_new_v0( */
+/*     float* imgC, int* seg, int x, int y, */
+/*     superpixel_params* sp_params, */
+/*     int idx, int seg_idx, float3 J_i, */
+/*     float logdet_Sigma_i, float i_std, int s_std, */
+/*     post_changes_helper* post_changes, float potts, */
+/*     float beta, float2 res_max) */
+/* { */
+
+/*     // -- init res -- */
+/*     float res = -1000; // some large negative number */
+/*     /\* float* imgC = img + idx * 3; *\/ */
+
+/*     // -- compute color/spatial differences -- */
+/*     const float x0 = __ldg(&imgC[0])-__ldg(&sp_params[seg_idx].mu_i.x); */
+/*     const float x1 = __ldg(&imgC[1])-__ldg(&sp_params[seg_idx].mu_i.y); */
+/*     const float x2 = __ldg(&imgC[2])-__ldg(&sp_params[seg_idx].mu_i.z); */
+/*     const int d0 = x - __ldg(&sp_params[seg_idx].mu_s.x); */
+/*     const int d1 = y - __ldg(&sp_params[seg_idx].mu_s.y); */
+
+/*     // -- color component -- */
+/*     const float J_i_x = J_i.x; */
+/*     const float J_i_y = J_i.y; */
+/*     const float J_i_z = J_i.z; */
+/*     const float sigma_s_x = __ldg(&sp_params[seg_idx].sigma_s.x); */
+/*     const float sigma_s_y = __ldg(&sp_params[seg_idx].sigma_s.y); */
+/*     const float sigma_s_z = __ldg(&sp_params[seg_idx].sigma_s.z); */
+/*     const float logdet_sigma_s = __ldg(&sp_params[seg_idx].logdet_Sigma_s); */
+
+/*     // -- color component -- */
+/*     res = res - (x0*x0*J_i_x + x1*x1*J_i_y + x2*x2*J_i_z); */
+/*     //res = -calc_squared_mahal_3d(imgC,mu_i,J_i); */
+/*     res = res - logdet_Sigma_i; */
+
+/*     // -- space component -- */
+/*     res = res - d0*d0*sigma_s_x; */
+/*     res = res - d1*d1*sigma_s_z; */
+/*     res = res -  2*d0*d1*sigma_s_y; */
+/*     // res -= calc_squared_mahal_2d(pt,mu_s,J_s); */
+/*     res = res -  logdet_sigma_s; */
+/*     res = res -beta*potts; */
+/*     /\*if (res > atomicMaxFloat2(&post_changes[idx].post[4],res)) */
+/*     { */
+/*       seg[idx] = seg_idx; */
+
+/*     }*\/ */
+
+/*     if( res>res_max.x) */
+/*     { */
+/*       res_max.x = res; */
+/*       res_max.y = seg_idx; */
+
+/*     } */
+
+
+/*     return res_max; */
+/* } */
+
 
 /*__device__ inline float cal_posterior(
     bool isValid,
     float* imgC,
     int x, int y, double* pt,
-    superpixel_params* sp_params,  
+    superpixel_params* sp_params,
     int seg,
-    float3 J_i, float logdet_Sigma_i, 
+    float3 J_i, float logdet_Sigma_i,
     bool cal_cov, float i_std, int s_std)
 {
-    
+
       float res = -1000; // some large negative number
       if (isValid){
         const float3 mu_i = sp_params[seg].mu_i;
         const double3 sigma_s = sp_params[seg].sigma_s;
         const double2 mu_s = sp_params[seg].mu_s;
-        
+
         float x0 = imgC[0]-mu_i.x;
         float x1 = imgC[1]-mu_i.y;
         float x2 = imgC[2]-mu_i.z;

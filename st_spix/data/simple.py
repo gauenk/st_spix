@@ -9,7 +9,7 @@ from pathlib import Path
 # -- data --
 import data_hub
 
-def davis_example(nframes=3,isize=480,vid_names=None):
+def davis_example(nframes=5,isize=480,vid_names=None):
 
     # -- data config --
     dcfg = edict()
@@ -23,8 +23,13 @@ def davis_example(nframes=3,isize=480,vid_names=None):
     device = "cuda:0"
     data, loaders = data_hub.sets.load(dcfg)
     if vid_names is None:
+        # vid_names = ["elephant",]
         # vid_names = ["bmx-bumps","elephant","boxing-fisheye","dancing"]
-        vid_names = ["longboard","boxing-fisheye","dancing"]
+        # vid_names = ["longboard","boxing-fisheye","dancing"]
+        # vid_names = ["surf","boxing-fisheye","dancing"]
+        # vid_names = ["bus","boxing-fisheye","dancing"]
+        # vid_names = ["dancing"]
+        vid_names = ["drone","boxing-fisheye","dancing"]
     # isel = {"bmx-bumps":[150,240],"boxing-fisheye":[200,200]}
     vid = []
     for name in vid_names:

@@ -33,7 +33,10 @@
 
 
 #include "s_m.h"
+#ifndef MY_SP_SHARE_H
+#define MY_SP_SHARE_H
 #include "../share/sp.h"
+#endif
 
 #include <stdio.h>
 #ifndef WIN32

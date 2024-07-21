@@ -229,7 +229,7 @@ B,H,W,F = img.shape
 # spix = th.zeros((B,H,W),dtype=th.int).to(device)
 # print("init cuda device: ",spix.sum())
 # print(spix.shape)
-npix_in_side = 40
+npix_in_side = 20
 prior_sigma_s = npix_in_side**4
 prior_count = npix_in_side**4
 i_std = 0.018
@@ -251,25 +251,25 @@ timer.sync_stop("flow")
 # -- run --
 st_spix.utils.seed_everything(0)
 timer.sync_start("dev_bass")
-spix,means,cov,counts = st_spix_original_cuda.bass_forward(img,npix_in_side,
+spix,means,cov,counts,ids = st_spix_original_cuda.bass_forward(img,npix_in_side,
                                                            i_std,alpha,beta)
 timer.sync_stop("dev_bass")
 
 st_spix.utils.seed_everything(0)
 timer.sync_start("core_bass")
-spix,means,cov,counts = st_spix_cuda.bass_forward(img,npix_in_side,
+spix,means,cov,counts,ids = st_spix_cuda.bass_forward(img,npix_in_side,
                                            i_std,alpha,beta)
 timer.sync_stop("core_bass")
 
 st_spix.utils.seed_everything(0)
 timer.sync_start("dev_bass_2")
-_spix,_means,_cov,_counts = st_spix_original_cuda.bass_forward(img,npix_in_side,
+_spix,_means,_cov,_counts,_ids = st_spix_original_cuda.bass_forward(img,npix_in_side,
                                                        i_std,alpha,beta)
 timer.sync_stop("dev_bass_2")
 
 st_spix.utils.seed_everything(0)
 timer.sync_start("a")
-spix,means,cov,counts = st_spix_original_cuda.bass_forward(img,npix_in_side,
+spix,means,cov,counts,ids = st_spix_original_cuda.bass_forward(img,npix_in_side,
                                                            i_std,alpha,beta)
 timer.sync_stop("a")
 

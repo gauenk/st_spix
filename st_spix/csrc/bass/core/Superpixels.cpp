@@ -22,12 +22,14 @@
 
 using namespace std;
 //using namespace concurrency;
+
 void throw_on_cuda_error(cudaError_t code)
 {
   if(code != cudaSuccess){
     throw thrust::system_error(code, thrust::cuda_category());
   }
 }
+
 
 
 // constructor
