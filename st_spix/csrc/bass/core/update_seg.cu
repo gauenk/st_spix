@@ -23,6 +23,7 @@
 #define THREADS_PER_BLOCK 512
 
 
+#include <assert.h>
 #include "update_seg.h"
 #include "../share/sp.h"
 
@@ -66,7 +67,7 @@ __global__  void find_border_pixels(const int* seg, bool* border, const int nPix
     int idx = threadIdx.x + blockIdx.x * blockDim.x;  
     if (idx>=nPixels) return; 
 
-    //border[idx]=0;  // init        
+    border[idx]=0;  // init        
     // todo; add batch info here
     int x = idx % xdim;
     int y = idx / xdim;
@@ -75,7 +76,7 @@ __global__  void find_border_pixels(const int* seg, bool* border, const int nPix
     int N,S,E,W; // north, south, east,west            
 
     // -- check out of bounds --
-    if ((y<1)||(x<1)||(y>=ydim-1)||(x>=xdim-1)) 
+    if ((y<1)||(x<1)||(y>=(ydim-1))||(x>=(xdim-1)))
     {
         border[idx] = 1;
         return;
@@ -88,7 +89,7 @@ __global__  void find_border_pixels(const int* seg, bool* border, const int nPix
    
     // If the nbr is different from the central pixel and is not out-of-bounds,
     // then it is a border pixel.
-    if ((C!=N) || (C!=S) || (C!=E) || (C!=W) ){
+    if ( (C!=N) || (C!=S) || (C!=E) || (C!=W) ){
             border[idx]=1;  
     }
     return;        
@@ -203,24 +204,26 @@ __host__ void update_seg(float* img, int* seg, int* seg_potts_label ,bool* borde
                          int nInnerIters, const int nPixels,
                          const int nSPs, int nSPs_buffer,
                          int nbatch, int xdim, int ydim, int nftrs,
-                         float beta_potts_term,
-                         post_changes_helper* post_changes){
+                         float beta_potts_term){
     
     int num_block = ceil( double(nPixels) / double(THREADS_PER_BLOCK) ); 
-    int num_block2 = ceil( double(nPixels*4) / double(THREADS_PER_BLOCK) ); 
+    // int num_block2 = ceil( double(nPixels*4) / double(THREADS_PER_BLOCK) ); 
 
     dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
     dim3 BlockPerGrid(num_block,nbatch);
-    dim3 BlockPerGrid2(num_block2,nbatch);
+    // dim3 BlockPerGrid2(num_block2,nbatch);
 
-    int single_border = 0 ;
-    cudaMemset(post_changes, 0, nPixels*sizeof(post_changes_helper));
+    int single_border = 0;
+    // cudaMemset(post_changes, 0, nPixels*sizeof(post_changes_helper));
     for (int iter = 0 ; iter < nInnerIters; iter++){
     	// strides of 2*2
-        cudaMemset(border, 0, nPixels*sizeof(bool));
+        // cudaMemset(border, 0, nPixels*sizeof(bool));
         find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(seg, border, nPixels,
                                                             nbatch, xdim, ydim,
                                                             single_border);
+        // gpuErrchk( cudaPeekAtLastError() );
+        // gpuErrchk( cudaDeviceSynchronize() );
+
         for (int xmod3 = 0 ; xmod3 <2; xmod3++){
             for (int ymod3 = 0; ymod3 <2; ymod3++){
                 //find the border pixels
@@ -228,11 +231,14 @@ __host__ void update_seg(float* img, int* seg, int* seg_potts_label ,bool* borde
                      seg_potts_label,border, sp_params, J_i, logdet_Sigma_i,\
                      cal_cov, i_std, s_std, nPixels, nSPs, \
                      nbatch, xdim, ydim, nftrs, xmod3, \
-                     ymod3, beta_potts_term,post_changes);
+                     ymod3, beta_potts_term);
+                // gpuErrchk( cudaPeekAtLastError() );
+                // gpuErrchk( cudaDeviceSynchronize() );
+
             }
         }
     }
-    cudaMemset(border, 0, nPixels*sizeof(bool));
+    // cudaMemset(border, 0, nPixels*sizeof(bool));
     find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(\
            seg, border, nPixels, nbatch, xdim, ydim, single_border);
 }
@@ -251,8 +257,7 @@ __global__  void update_seg_subset(
     const int nPts,const int nSuperpixels,
     const int nbatch, const int xdim, const int ydim, const int nftrs,
     const int xmod3, const int ymod3,
-    const float beta_potts_term, post_changes_helper* post_changes)
-{   
+    const float beta_potts_term){
 
     int label_check;
     int idx = threadIdx.x + blockIdx.x*blockDim.x;
@@ -320,25 +325,25 @@ __global__  void update_seg_subset(
     int SE =__ldg(&seg[seg_idx+xdim+1]);  
     
     //N :
-    set_nbrs(NW, N, NE,  W, E, SW, S, SE,N, nbrs);
+    set_nbrs(NW, N, NE,  W, E, SW, S, SE, N, nbrs);
     count_diff_nbrs_N = ischangbale_by_nbrs(nbrs);
     isNvalid = nbrs[8];
     if(!isNvalid) return;
     
     //W :
-    set_nbrs(NW, N, NE,  W, E, SW, S, SE,W, nbrs);
+    set_nbrs(NW, N, NE,  W, E, SW, S, SE, W, nbrs);
     count_diff_nbrs_W = ischangbale_by_nbrs(nbrs);
     isWvalid = nbrs[8];
     if(!isWvalid) return;
 
     //S :
-    set_nbrs(NW, N, NE,  W, E, SW, S, SE,S, nbrs);
+    set_nbrs(NW, N, NE,  W, E, SW, S, SE, S, nbrs);
     count_diff_nbrs_S = ischangbale_by_nbrs(nbrs);
     isSvalid = nbrs[8];
     if(!isSvalid) return;
 
     //E:
-    set_nbrs(NW, N, NE,  W, E, SW, S, SE,E, nbrs);
+    set_nbrs(NW, N, NE,  W, E, SW, S, SE, E, nbrs);
     // check 8 nbrs and save result if valid to change to the last place of array
     // return how many nbrs different for potts term calculation
     count_diff_nbrs_E = ischangbale_by_nbrs(nbrs);
@@ -350,6 +355,33 @@ __global__  void update_seg_subset(
 
     // -- compute posterior --
     label_check = N;
+    assert(label_check >= 0);
+    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,
+                                J_i,logdet_Sigma_i,i_std,s_std,
+                                count_diff_nbrs_N,beta,res_max);
+    label_check = S;
+    assert(label_check >= 0);
+    if(label_check!=N)
+    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,
+                                J_i,logdet_Sigma_i,i_std,s_std,
+                                count_diff_nbrs_S,beta,res_max);
+
+    label_check = W;
+    assert(label_check >= 0);
+    if((label_check!=S)&&(label_check!=N))   
+    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,J_i,
+                                logdet_Sigma_i,i_std,s_std,
+                                count_diff_nbrs_W,beta,res_max);
+    
+    label_check = E;
+    assert(label_check >= 0);
+    if((label_check!=W)&&(label_check!=S)&&(label_check!=N))      
+    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,J_i,
+                                logdet_Sigma_i,i_std,s_std,
+                                count_diff_nbrs_E,beta,res_max);
+    seg[seg_idx] = res_max.y;
+    return;
+}
 // __device__ inline float2 cal_posterior_new(
 //     float* imgC, int* seg, int x, int y,
 //     superpixel_params* sp_params,
@@ -358,26 +390,3 @@ __global__  void update_seg_subset(
 //     post_changes_helper* post_changes, float potts,
 //     float beta, float2 res_max){
 
-    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,
-                                J_i,logdet_Sigma_i,i_std,s_std,
-                                count_diff_nbrs_N,beta,res_max);
-    label_check = S;
-    if(label_check!=N)
-    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,
-                                J_i,logdet_Sigma_i,i_std,s_std,
-                                count_diff_nbrs_S,beta,res_max);
-
-    label_check = W;
-    if((label_check!=S)&&(label_check!=N))   
-    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,J_i,
-                                logdet_Sigma_i,i_std,s_std,
-                                count_diff_nbrs_W,beta,res_max);
-    
-    label_check = E;
-    if((label_check!=W)&&(label_check!=S)&&(label_check!=N))      
-    res_max= cal_posterior_new(imgC,seg,x,y,sp_params,label_check,J_i,
-                               logdet_Sigma_i,i_std,s_std,
-                               count_diff_nbrs_E,beta,res_max);
-    seg[seg_idx] = res_max.y;
-    return;
-}

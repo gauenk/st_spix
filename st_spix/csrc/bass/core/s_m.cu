@@ -127,6 +127,8 @@ __host__ int CudaCalcSplitCandidate(const float* image_gpu_double, int* split_me
     init_split<<<BlockPerGrid2,ThreadPerBlock>>>(border,seg_split2,sp_params,sp_gpu_helper_sm, nSPs_buffer, nbatch, xdim,ydim, -offset, seg, max_sp, max_SP);
     split_sp<<<BlockPerGrid,ThreadPerBlock>>>(seg,seg_split1, split_merge_pairs, sp_params, sp_gpu_helper_sm, nPixels, nbatch, xdim, ydim, max_SP);
 
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
     
     while(done)
     {
@@ -139,7 +141,8 @@ __host__ int CudaCalcSplitCandidate(const float* image_gpu_double, int* split_me
                    seg_split1,border,distance, mutex_2, nPixels, nbatch, xdim, ydim); 
         distance++;
         cudaMemcpy(&done, mutex_2, sizeof(int), cudaMemcpyDeviceToHost);
-
+        gpuErrchk( cudaPeekAtLastError() );
+        gpuErrchk( cudaDeviceSynchronize() );
 
     }
     done =1;
@@ -152,17 +155,38 @@ __host__ int CudaCalcSplitCandidate(const float* image_gpu_double, int* split_me
                 seg_split2 ,border,distance, mutex_2, nPixels, nbatch, xdim, ydim); 
         distance++;
         cudaMemcpy(&done, mutex_2, sizeof(int), cudaMemcpyDeviceToHost);
+
+        gpuErrchk( cudaPeekAtLastError() );
+        gpuErrchk( cudaDeviceSynchronize() );
+
     }
 
     calc_seg_split<<<BlockPerGrid,ThreadPerBlock>>>(seg_split1,seg_split2, seg, seg_split3, nPixels, nbatch, max_SP);
     sum_by_label_split<<<BlockPerGrid,ThreadPerBlock>>>(image_gpu_double,seg_split1,sp_params,sp_gpu_helper_sm, nPixels, nbatch, xdim,nftrs,max_SP);
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+
     calc_bn_split<<<BlockPerGrid2,ThreadPerBlock>>>(seg_split3, split_merge_pairs, sp_params, sp_gpu_helper, sp_gpu_helper_sm, nPixels, nbatch, xdim, nSPs_buffer, b0, max_SP);
+
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
 
     calc_marginal_liklelyhoood_of_sp_split<<<BlockPerGrid2,ThreadPerBlock>>>(image_gpu_double,  split_merge_pairs,  sp_params,  sp_gpu_helper, sp_gpu_helper_sm,  nPixels, nbatch, xdim, nftrs, nSPs_buffer , a0, b0, max_SP);
 
-    calc_hasting_ratio_split<<<BlockPerGrid2,ThreadPerBlock>>>(image_gpu_double,  split_merge_pairs, sp_params, sp_gpu_helper, sp_gpu_helper_sm, nPixels, nbatch, xdim, nftrs, nSPs_buffer, a0,  b0, alpha_hasting_ratio, 0,max_SP, max_sp);
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+
+    // fprintf(stdout,"[s_m.cu] max_SP: %d\n",max_SP);
+    calc_hasting_ratio_split<<<BlockPerGrid2,ThreadPerBlock>>>(image_gpu_double,  split_merge_pairs, sp_params, sp_gpu_helper, sp_gpu_helper_sm, nPixels, nbatch, xdim, nftrs, nSPs_buffer, a0,  b0, alpha_hasting_ratio, 0, max_SP, max_sp);
+
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
 
     split_sp<<<BlockPerGrid,ThreadPerBlock>>>(seg,seg_split1, split_merge_pairs, sp_params, sp_gpu_helper_sm, nPixels, nbatch, xdim, ydim, max_SP);
+
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+
 
     cudaMemcpy(&max_SP, max_sp, sizeof(int), cudaMemcpyDeviceToHost);
     cudaFree(max_sp);
@@ -794,10 +818,10 @@ __global__ void calc_hasting_ratio_split(const float* image_gpu_double,int* spli
     int s = k + max_SP;
     if(s>=nsuperpixel_buffer) return;
     float count_f = __ldg(&sp_params[k].count);
-    float count_k= __ldg(&sp_gpu_helper_sm[k].count);
+    float count_k = __ldg(&sp_gpu_helper_sm[k].count);
     float count_s = __ldg(&sp_gpu_helper_sm[s].count);
 
-    if((count_f<1)||( count_k<1)||(count_s<1)) return;
+    if((count_f<1)||(count_k<1)||(count_s<1)) return;
 
     float num_k = __ldg(&sp_gpu_helper_sm[k].numerator.x);
     float num_s = __ldg(&sp_gpu_helper_sm[s].numerator.x);
@@ -815,23 +839,23 @@ __global__ void calc_hasting_ratio_split(const float* image_gpu_double,int* spli
                          (num_f - __ldg(&sp_gpu_helper_sm[k].denominator_f.y)) + 
                          (num_f - __ldg(&sp_gpu_helper_sm[k].denominator_f.z)); 
 
-
-
  
      //printf("hasating:x k: %d, count: %f, den: %f, %f, %f, b_n: %f, %f, %f, num: %f \n",k, count_k,  sp_gpu_helper_sm[k].denominator.x, sp_gpu_helper_sm[k].denominator.y,  sp_gpu_helper_sm[k].denominator.z,   __logf (sp_gpu_helper_sm[k].b_n.x) ,  __logf (sp_gpu_helper_sm[k].b_n.y),   __logf (sp_gpu_helper_sm[k].b_n.z), sp_gpu_helper_sm[k].numerator.x);
-    float log_nominator = __logf(alpha_hasting_ratio)+ lgammaf(count_k)+ total_marginal_k + lgammaf(count_s) + total_marginal_s ;
+
+    float log_nominator = __logf(alpha_hasting_ratio)+ lgammaf(count_k)\
+      + total_marginal_k + lgammaf(count_s) + total_marginal_s ;
     log_nominator = total_marginal_k + total_marginal_s ;
 
     float log_denominator = lgammaf(count_f) + total_marginal_f;
     log_denominator =total_marginal_f;
     sp_gpu_helper_sm[k].hasting = log_nominator - log_denominator;
 
-
+    // ".merge" is merely a bool variable; nothing about merging here. only splitting
     sp_gpu_helper_sm[k].merge = (sp_gpu_helper_sm[k].hasting > -2);
     sp_gpu_helper_sm[s].merge = (sp_gpu_helper_sm[k].hasting > -2);
 
-   if((sp_gpu_helper_sm[k].merge))
-    {
+    if((sp_gpu_helper_sm[k].merge)) // split step
+      {
 
         s = atomicAdd(max_sp,1) +1;
         split_merge_pairs[2*k] = s;
@@ -839,10 +863,7 @@ __global__ void calc_hasting_ratio_split(const float* image_gpu_double,int* spli
         //atomicMax(max_sp,s);
         sp_params[k].prior_count/=2;
         sp_params[s].prior_count=  sp_params[k].prior_count; //#check why.
-
-
-    }
-
+      }
 
 }
 

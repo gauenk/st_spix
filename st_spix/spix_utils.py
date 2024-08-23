@@ -32,9 +32,41 @@ def viz_spix(img_batch,spix_batch,nsp):
     # masks = masks / masks.max()
     return masks
 
-def pool_flow_and_shift_mean(flow,means,spix,ids,K):
+def pool_flow_and_shift_mean(flow,means,spix,ids,version="v1"):
+    if version == "v0":
+        return pool_flow_and_shift_mean_v0(flow,means,spix,ids)
+    elif version == "v1":
+        return pool_flow_and_shift_mean_v1(flow,means,spix,ids)
+    else:
+        raise ValueError(f"Uknown version [{version}]")
 
+def pool_flow_and_shift_mean_v1(flow,means,spix,ids):
+
+    # -- prepare --
+    flow = rearrange(flow,'b f h w -> b h w f')
+    flow = flow.contiguous()
+    spix = spix.contiguous()
+    nspix = means.shape[1] #spix.max().item()+1 # or means.shape[1]
+    # print(nspix,means.shape)
+    assert means.shape[1] == nspix
+
+    # -- run --
+    import st_spix_cuda
+    fxn = st_spix_cuda.sp_pooling
+    pooled,downsampled = fxn(flow,spix,nspix)
+
+    # -- update means --
+    means[...,-2] = means[...,-2] + downsampled[...,0]
+    means[...,-1] = means[...,-1] + downsampled[...,1]
+
+    # -- return --
+    pooled = rearrange(pooled,'b h w f -> b f h w')
+    return pooled,means
+
+
+def pool_flow_and_shift_mean_v0(flow,means,spix,ids):
     # -- get labels --
+    K = means.shape[1]
     sims = th_f.one_hot(spix.long(),num_classes=K)*1.
     sims = rearrange(sims,'b h w nsp -> b nsp (h w)')
 
@@ -51,12 +83,14 @@ def pool_flow_and_shift_mean(flow,means,spix,ids,K):
     flow_sp = sims @ (flow_tmp)
 
     # -- pool means --
-    print("tmp: ",flow_tmp.shape,means.shape,sims.shape,
-          flow.shape,means.shape,len(th.unique(spix)))
+    # print("tmp: ",flow_tmp.shape,means.shape,sims.shape,
+    #       flow.shape,means.shape,len(th.unique(spix)))
     # exit()
-    # means[...,-2:] = means[...,-2:] + flow_tmp
-    print("ids.shape: ",ids.shape,means.shape)
-    print("ids.min(),ids.max(): ",ids.min(),ids.max())
+    means[...,-2] = means[...,-2] + flow_tmp[...,0]
+    means[...,-1] = means[...,-1] + flow_tmp[...,1]
+
+    # print("ids.shape: ",ids.shape,means.shape)
+    # print("ids.min(),ids.max(): ",ids.min(),ids.max())
     # _means = th.gather(means.clone(),1,ids).clone()
     # _means = th.gather(means.clone(),1,ids).clone()
     # print("Num previous superpixels: ",len(th.unique(spix_st[-1])))
@@ -71,11 +105,40 @@ def pool_flow_and_shift_mean(flow,means,spix,ids,K):
     return flow_sp,means
 
 
-def sp_pool_from_spix(labels,spix):
+def sp_pool_from_spix(labels,spix,version="v1",return_ds=False):
+    if version == "v0":
+        return sp_pool_from_spix_v0(labels,spix)
+    elif version == "v1":
+        return sp_pool_from_spix_v1(labels,spix,return_ds)
+    else:
+        raise ValueError(f"Uknown spix pooling version [{version}]")
+
+def sp_pool_from_spix_v0(labels,spix):
     sims_hard = th_f.one_hot(spix.long())*1.
     sims_hard = rearrange(sims_hard,'b h w nsp -> b nsp (h w)')
     labels_sp = sp_pool(labels,sims_hard)
     return labels_sp
+
+def sp_pool_from_spix_v1(labels,spix,return_ds=False):
+
+    # -- prepare --
+    labels = rearrange(labels,'b f h w -> b h w f')
+    labels = labels.contiguous()
+    spix = spix.contiguous()
+    nspix = spix.max()+1
+    # print("labels.shape: ",labels.shape)
+
+    # -- run --
+    import st_spix_cuda
+    fxn = st_spix_cuda.sp_pooling
+    pooled,downsampled = fxn(labels,spix,nspix)
+
+    # -- return --
+    pooled = rearrange(pooled,'b h w f -> b f h w')
+    if return_ds:
+        return pooled,downsampled
+    else:
+        return pooled
 
 def sp_pool(labels,sims,re_expand=True):
     assert re_expand == True,"Only true for now."
@@ -145,3 +208,17 @@ def sp_pool_img_v0(img,spix,sims,S,nsp,method):
 
     return pooled
 
+def to_th(tensor):
+    return th.from_numpy(tensor)
+def swap_c(img):
+    return rearrange(img,'... h w f -> ... f h w')
+
+def mark_spix_vid(vid,spix):
+    marked = []
+    for ix,spix_t in enumerate(spix):
+        img = rearrange(vid[:,ix],'b f h w -> b h w f')
+        marked_t = mark_boundaries(img.cpu().numpy(),spix_t.cpu().numpy())
+        marked_t = to_th(swap_c(marked_t))
+        marked.append(marked_t)
+    marked = th.cat(marked)
+    return marked

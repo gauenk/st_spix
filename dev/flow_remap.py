@@ -181,7 +181,7 @@ def run_exp(cfg):
     B,H,W,F = img0.shape
 
     # -- run img0 bass --
-    npix_in_side = 80
+    npix_in_side = 40
     # i_std,alpha,beta = 0.018,20.,100.
     i_std,alpha,beta = 0.1,0.001,100.
     spix,means,cov,counts,ids = st_spix_original_cuda.bass_forward(img0,npix_in_side,

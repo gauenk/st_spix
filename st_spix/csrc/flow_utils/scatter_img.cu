@@ -42,6 +42,7 @@ void scatter_img_forward_kernel(float* img, float* flow,
     float hi_f = hi + dh;
     float wi_f = wi + dw;
 
+
     // -- bilinear write --
     // bilin2d_interpolate_v1(img_ptr, scatter, counts,
     //                        hi_f, wi_f, height, width, nftrs);

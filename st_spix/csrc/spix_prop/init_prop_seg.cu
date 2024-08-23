@@ -29,6 +29,8 @@
 #define MY_SP_SHARE_H
 #include "../bass/share/sp.h"
 #endif
+#include "../bass/core/Superpixels.h"
+// #include "../share/utils.h"
 
 #include <stdio.h>
 #ifndef WIN32
@@ -45,32 +47,49 @@ __host__ void init_prop_seg(float* img, int* seg,
                             float i_std, int s_std, int nInnerIters,
                             const int nSPs, int nSPs_buffer,
                             float beta_potts_term,
-                            int* debug, bool debug_fill){
+                            int* debug_spix, bool* debug_border, bool debug_fill){
 
+
+    // -- init launch info --
     int num_block_sub = ceil( double(nPixels) / double(THREADS_PER_BLOCK) ); 
     dim3 BlockPerGridSub(num_block_sub,nbatch);
-    // int num_block2 = ceil( double(nPixels*4) / double(THREADS_PER_BLOCK) ); 
-    // dim3 BlockPerGrid2(num_block2,nbatch);
     int num_block = ceil( double(nMissing) / double(THREADS_PER_BLOCK) ); 
     dim3 BlockPerGrid(num_block,nbatch);
     dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
     cudaMemset(border, 0, nbatch*nPixels*sizeof(bool));
-    fprintf(stdout,"nMissing: %d\n",nMissing);
+    // gpuErrchk( cudaPeekAtLastError() );
+    // gpuErrchk( cudaDeviceSynchronize() );
+    const int sizeofint = sizeof(int);
+    int iter = 0;
 
-    // int single_border = 0 ;
-    // cudaMemset(post_changes, 0, nPixels*sizeof(post_changes_helper));
-    // int nInnerIters = 4;
-    // float3 J_i;
-    // J_i.x = 1.0;
-    // J_i.y = 1.0;
-    // J_i.z = 1.0;
-    // float logdet_Sigma_i = 1.0;
-    for (int iter = 0 ; iter < nInnerIters; iter++){
+
+    // -- init num neg --
+    int num_neg_cpu;
+    int prev_neg;
+    int* num_neg_gpu;
+    try {
+      throw_on_cuda_error(cudaMalloc((void**)&num_neg_gpu,sizeofint));
+      // throw_on_cuda_error(malloc((void*)num_neg_cpu,sizeofint));
+    }
+    catch (thrust::system_error& e) {
+        std::cerr << "CUDA error after cudaMalloc: " << e.what() << std::endl;
+    }
+    num_neg_cpu = 1;
+    prev_neg = 1;
+
+    while (num_neg_cpu > 0){
 
       //  -- find border pixels --
+      cudaMemset(num_neg_gpu, 0, sizeof(int));
       cudaMemset(border, 0, nbatch*nPixels*sizeof(bool));
       find_prop_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>      \
-         (seg, missing, border, nMissing, nbatch, xdim, ydim);
+        (seg, missing, border, nMissing, nbatch, xdim, ydim, num_neg_gpu);
+      // gpuErrchk( cudaPeekAtLastError() );
+      // gpuErrchk( cudaDeviceSynchronize() );
+      cudaMemcpy(&num_neg_cpu,num_neg_gpu,sizeof(int),cudaMemcpyDeviceToHost);
+      // fprintf(stdout,"num negative spix: %d\n",num_neg_cpu);
+      // fprintf(stdout,"a\n");
+      // cudaDeviceSynchronize();
 
       //  -- update segmentation --
       for (int xmod3 = 0 ; xmod3 < 2; xmod3++){
@@ -80,21 +99,60 @@ __host__ void init_prop_seg(float* img, int* seg,
                i_std, s_std, nPixels, nSPs,\
                nbatch, xdim, ydim, nftrs,\
                xmod3, ymod3, beta_potts_term);
+          // gpuErrchk( cudaPeekAtLastError() );
+          // gpuErrchk( cudaDeviceSynchronize() );
+          // CHECK_CUDA_ERROR
+          // fprintf(stdout,"b: %d,%d\n",xmod3,ymod3);
+          // cudaDeviceSynchronize();
         }
       }
 
       // -- copy for debug --
-      if (debug_fill){
-        int* debug_iter = debug+iter*nbatch*nPixels;
-        cudaMemcpy(debug_iter,seg,nbatch*nPixels*sizeof(int),cudaMemcpyDeviceToDevice);
+      if (debug_fill and (iter < nInnerIters)){
+        int* debug_spix_iter = debug_spix+iter*nbatch*nPixels;
+        cudaMemcpy(debug_spix_iter,seg,
+                   nbatch*nPixels*sizeof(int),cudaMemcpyDeviceToDevice);
+        bool* debug_border_iter = debug_border+iter*nbatch*nPixels;
+        cudaMemcpy(debug_border_iter,border,
+                   nbatch*nPixels*sizeof(bool),cudaMemcpyDeviceToDevice);
+        // gpuErrchk( cudaPeekAtLastError() );
+        // gpuErrchk( cudaDeviceSynchronize() );
+        // fprintf(stdout,"c\n");
+        // cudaDeviceSynchronize();
       }
+      iter++;
+
+      // -- update previous --
+      if ((iter>0) and (num_neg_cpu == prev_neg)){
+        fprintf(stdout,"An error of some type, the border won't shrink.\n");
+        break;
+      }
+      prev_neg = num_neg_cpu;
 
     }
 
     //  -- find border pixels --
+    cudaMemset(num_neg_gpu, 0, sizeof(int));
     cudaMemset(border, 0, nbatch*nPixels*sizeof(bool));
     find_prop_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>      \
-      (seg, missing, border, nMissing, nbatch, xdim, ydim);
+      (seg, missing, border, nMissing, nbatch, xdim, ydim, num_neg_gpu);
+    // gpuErrchk( cudaPeekAtLastError() );
+    // gpuErrchk( cudaDeviceSynchronize() );
+    cudaMemcpy(&num_neg_cpu,num_neg_gpu,sizeof(int),cudaMemcpyDeviceToHost);
+    if (num_neg_cpu > 0){
+      fprintf(stdout,"negative spix exist.\n");
+    }
+    // fprintf(stdout,"d\n");
+    // cudaDeviceSynchronize();
+
+    // -- free memory --
+    cudaFree(num_neg_gpu);
+    // cudaFree(num_neg_cpu);
+
+    // gpuErrchk( cudaPeekAtLastError() );
+    // gpuErrchk( cudaDeviceSynchronize() );
+
+
 }
 
 
@@ -146,13 +204,14 @@ __global__  void update_prop_seg_subset(
     float2 res_max;
     res_max.x = -999999;
     res_max.y = seg[seg_idx];
+    // int C = res_max.y;
 
     // --> north, south, east, west <--
     int N = -1, S = -1, E = -1, W = -1;
+    if (x>0){ W = __ldg(&seg[idx-1]); } // left
     if (y>0){ N = __ldg(&seg[idx-xdim]); }// top
     if (x<(xdim-1)){ E = __ldg(&seg[idx+1]); } // right
     if (y<(ydim-1)){ S = __ldg(&seg[idx+xdim]); } // below
-    if (x>0){ W = __ldg(&seg[idx-1]); } // left
 
     // --> diags [north (east, west), south (east, west)] <--
     int NE = -1, NW = -1, SE = -1, SW = -1;
@@ -168,28 +227,28 @@ __global__  void update_prop_seg_subset(
     // return how many nbrs different for potts term calculation
 
     //N :
-    set_nbrs(NW, N, NE,  W, E, SW, S, SE,N, nbrs);
+    set_nbrs(NW, N, NE, W, E, SW, S, SE,N, nbrs);
     count_diff_nbrs_N = ischangbale_by_nbrs(nbrs);
-    isNvalid = nbrs[8] or (res_max.y == -1);
-    if(!isNvalid) return;
+    // isNvalid = nbrs[8] or (res_max.y == -1);
+    // if(!isNvalid) return;
     
     //E:
-    set_nbrs(NW, N, NE,  W, E, SW, S, SE,E, nbrs);
+    set_nbrs(NW, N, NE, W, E, SW, S, SE,E, nbrs);
     count_diff_nbrs_E = ischangbale_by_nbrs(nbrs);
-    isEvalid = nbrs[8] or (res_max.y == -1);
-    if(!isEvalid) return;
+    // isEvalid = nbrs[8] or (res_max.y == -1);
+    // if(!isEvalid) return;
 
     //S :
-    set_nbrs(NW, N, NE,  W, E, SW, S, SE,S, nbrs);
+    set_nbrs(NW, N, NE, W, E, SW, S, SE,S, nbrs);
     count_diff_nbrs_S = ischangbale_by_nbrs(nbrs);
-    isSvalid = nbrs[8] or (res_max.y == -1);
-    if(!isSvalid) return;
+    // isSvalid = nbrs[8] or (res_max.y == -1);
+    // if(!isSvalid) return;
 
     //W :
-    set_nbrs(NW, N, NE,  W, E, SW, S, SE,W, nbrs);
+    set_nbrs(NW, N, NE, W, E, SW, S, SE,W, nbrs);
     count_diff_nbrs_W = ischangbale_by_nbrs(nbrs);
-    isWvalid = nbrs[8] or (res_max.y == -1);
-    if(!isWvalid) return;
+    // isWvalid = nbrs[8] or (res_max.y == -1);
+    // if(!isWvalid) return;
 
     // -- index image --
     float* imgC = img + idx * 3;
@@ -206,7 +265,7 @@ __global__  void update_prop_seg_subset(
 
     valid = S>=0;
     label_check = S;
-    if(valid and (label_check!=N)){
+    if(valid && (label_check!=N)){
       res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,
                                      J_i,logdet_Sigma_i,i_std,s_std,
                                      count_diff_nbrs_S,beta,res_max);
@@ -215,7 +274,7 @@ __global__  void update_prop_seg_subset(
 
     valid = W >= 0;
     label_check = W;
-    if(valid and (label_check!=S)&&(label_check!=N)) {
+    if(valid && (label_check!=S)&&(label_check!=N)) {
       res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,
                                      J_i,logdet_Sigma_i,i_std,s_std,
                                      count_diff_nbrs_W,beta,res_max);
@@ -224,7 +283,7 @@ __global__  void update_prop_seg_subset(
     
     valid = E >= 0;
     label_check = E;
-    if(valid and (label_check!=W)&&(label_check!=S)&&(label_check!=N)){
+    if(valid && (label_check!=W)&&(label_check!=S)&&(label_check!=N)){
       res_max= cal_posterior_new(imgC,seg,x,y,sp_params,label_check,
                                     J_i,logdet_Sigma_i,i_std,s_std,
                                     count_diff_nbrs_E,beta,res_max);
@@ -235,10 +294,13 @@ __global__  void update_prop_seg_subset(
     return;
 }
 
+
+
 __global__
 void find_prop_border_pixels(const int* seg, const int* missing,
                              bool* border, const int nMissing,
-                             const int nbatch, const int xdim, const int ydim){   
+                             const int nbatch, const int xdim,
+                             const int ydim, int* num_neg){   
 
     // --> cuda indices <--
     int _idx = threadIdx.x + blockIdx.x * blockDim.x;  
@@ -269,10 +331,9 @@ void find_prop_border_pixels(const int* seg, const int* missing,
     // if the center is "-1" and any neighbor is valid, it is an edge
     bool valid = (N >= 0) or (W >= 0) or (S >= 0) or (E >= 0);
     // bool invalid = (N < 0) or (W < 0) or (S < 0) or (E < 0) or (C < 0);
-    if (valid and (C<0)){
-      border[idx]=1;  
-      // filled[_idx]=1;
-    }
+    if (valid and (C<0)){ border[idx]=1; }
+    // filled[_idx]=1;
+    if (C<0){ atomicAdd(num_neg,1); }
     // border[idx]=1;
     return;        
 }

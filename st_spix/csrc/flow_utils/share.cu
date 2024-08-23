@@ -120,6 +120,13 @@ void bilin2d_interpolate(float* src_pix, float* dest, float* cnts,
       w_interp = __float2int_rz(wi+jx);
       interp_weight = interp_weight*max(0.,1-fabs(w_interp-wi));
 
+      // -- round down when very small --
+      if (interp_weight < 1e-4){
+        interp_weight = 0;
+      }else if (interp_weight > (1-1e-4)){
+        interp_weight = 1.;
+      }
+
       // -- ensure legal bounds --
       if (not check_bound(h_interp,H)){ continue;}
       if (not check_bound(w_interp,W)){ continue;}

@@ -23,5 +23,6 @@ static superpixel_options get_sp_options(int nPixels_in_square_side,
     opt.nEMIters = opt.nPixels_in_square_side;
     //opt.nEMIters = 15;
     opt.nInnerIters = 4;
+    opt.split_merge_start = 0;
     return opt;
 }

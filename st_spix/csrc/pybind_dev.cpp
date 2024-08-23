@@ -8,7 +8,9 @@
 
 // -- fxns --
 void init_spix_prop_dev(py::module &);
+void init_get_params(py::module &m);
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_spix_prop_dev(m);
+  init_get_params(m);
 }

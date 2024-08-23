@@ -25,6 +25,22 @@ for (int i = 0; i<256; i++){
 }
 */
 
+
+// copy of bass table; allows for "all same" to be filled (1 @ index 255)
+__device__ const bool missing_bass_lut[256] = {
+           0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0,
+	       1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1,
+	       0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0,
+	       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	       0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0,
+	       0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0,
+	       0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0,
+	       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0,
+	       0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 1, 0,
+	       0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1};
+
 // bass table; decodes if a point is a "simple" based on neighbors
 __device__ const bool bass_lut[256] = {
            0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0,
@@ -74,6 +90,24 @@ __device__ inline int ischangbale_by_nbrs(bool* nbrs){
     //return ischangbale_by_num(num);
     }
   */
+
+/* __device__ inline int ischangbale_by_nbrs_missing(bool* nbrs, int curr){ */
+/*   int num,count_diff = 0; */
+/* #pragma unroll */
+/*    for (int i=7; i>=0; i--) */
+/*    { */
+/*       num <<= 1; */
+/*       if (nbrs[i]) num++; */
+/*       else count_diff++; */
+/*    } */
+/*    // convert binary string "nbrs" into decimal "num" */
+/*    nbrs[8] = missing_bass_lut[num]; */
+/*    if ((num == 255) & (curr != -1)){ // must be a missing pixel; should always be true */
+/*      nbrs[8] = 0; */
+/*    } */
+/*    nbrs[8] = curr == -1; // every missing point must change */
+/*    return count_diff; */
+/* } */
 
 __device__ inline int ischangbale_by_nbrs(bool* nbrs){
   int num,count_diff = 0;
@@ -139,32 +173,67 @@ __device__ inline float2 cal_posterior_new(
     // -- color component --
     res = res - (x0*x0*J_i_x + x1*x1*J_i_y + x2*x2*J_i_z);
     //res = -calc_squared_mahal_3d(imgC,mu_i,J_i);
-    res = res - logdet_Sigma_i;
+    res = res - logdet_Sigma_i; // okay; log p(x,y) = -log detSigma
 
     // -- space component --
-    res = res - d0*d0*sigma_s_x;
-    res = res - d1*d1*sigma_s_z;
-    res = res - 2*d0*d1*sigma_s_y;
-    // res -= calc_squared_mahal_2d(pt,mu_s,J_s);
+    res = res - d0*d0*sigma_s_x - d1*d1*sigma_s_z - 2*d0*d1*sigma_s_y; // sign(s_y) = -1
     res = res - logdet_sigma_s;
     res = res - beta*potts;
-    /*if (res > atomicMaxFloat2(&post_changes[idx].post[4],res))
-    {
-      seg[idx] = seg_idx;
 
-    }*/
+/*     res = res - (x0*x0*J_i_x + x1*x1*J_i_y + x2*x2*J_i_z); */
+/*     //res = -calc_squared_mahal_3d(imgC,mu_i,J_i); */
+/*     res = res - logdet_Sigma_i; */
+
+/*     // -- space component -- */
+/*     res = res - d0*d0*sigma_s_x; */
+/*     res = res - d1*d1*sigma_s_z; */
+/*     res = res -  2*d0*d1*sigma_s_y; */
+/*     // res -= calc_squared_mahal_2d(pt,mu_s,J_s); */
+/*     res = res -  logdet_sigma_s; */
+/*     res = res -beta*potts; */
+/*     /\*if (res > atomicMaxFloat2(&post_changes[idx].post[4],res)) */
+/*     { */
 
     if( res>res_max.x)
     {
       res_max.x = res;
       res_max.y = seg_idx;
-
     }
-
 
     return res_max;
 }
 
+
+__device__ inline
+float2 calc_space(int x, int y,
+                  superpixel_params* sp_params,
+                  int seg_idx, float2 res_max){
+    // -- init res --
+    float res = 0;
+
+    // -- compute color/spatial differences --
+    const int d0 = x - __ldg(&sp_params[seg_idx].mu_s.x);
+    const int d1 = y - __ldg(&sp_params[seg_idx].mu_s.y);
+
+    // -- color component --
+    const float sigma_s_x = __ldg(&sp_params[seg_idx].sigma_s.x);
+    const float sigma_s_y = __ldg(&sp_params[seg_idx].sigma_s.y);
+    const float sigma_s_z = __ldg(&sp_params[seg_idx].sigma_s.z);
+    const float logdet_sigma_s = __ldg(&sp_params[seg_idx].logdet_Sigma_s);
+
+    // -- space component --
+    res = res - d0*d0*sigma_s_x - d1*d1*sigma_s_z - 2*d0*d1*sigma_s_y; // sign(s_y) = -1
+    res = res - logdet_sigma_s;
+    /* res = res - beta*potts; */
+
+    if( res>res_max.x)
+    {
+      res_max.x = res;
+      res_max.y = seg_idx;
+    }
+
+    return res_max;
+}
 
 /* __device__ inline float2 cal_posterior_new_v0( */
 /*     float* imgC, int* seg, int x, int y, */
@@ -258,18 +327,18 @@ __device__ inline float2 cal_posterior_new(
 		//space component
 		res -= d0*d0*sigma_s.x;
 		res -= d1*d1*sigma_s.z;
-		res -= 2*d0*d1*sigma_s.y;            // res -= calc_squared_mahal_2d(pt,mu_s,J_s);
+		res += 2*d0*d1*sigma_s.y;            // res -= calc_squared_mahal_2d(pt,mu_s,J_s);
 		res -= logdet_Sigma_s;
 		//res += potts_res;
 
 
         //add in prior prob
-#if USE_COUNTS 
+#if USE_COUNTS
         const double prior_weight = 0.5;
         res *= (1-prior_weight);
         double prior = prior_weight * log_count;
         res += prior;
-#endif    
+#endif
       }
       return res;
 }
@@ -277,11 +346,10 @@ __device__ inline float2 cal_posterior_new(
 */
 
 __device__ inline float calc_total(float posterior, float potts_term){
-		float total = 0;
-
-		total = posterior +potts_term;
-		return total;
-	}
+  float total = 0;
+  total = posterior +potts_term;
+  return total;
+}
 
 __device__ inline float calc_potts(float beta, int count_diff){
 	float potts;
@@ -289,4 +357,3 @@ __device__ inline float calc_potts(float beta, int count_diff){
 	return potts;
 }
 
-  

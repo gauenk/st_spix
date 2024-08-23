@@ -10,6 +10,9 @@
 // #include <opencv2/highgui/highgui.hpp>
 #include <iostream>
 #include <cmath>
+// #include <thrust/system_error.h>
+// #include <thrust/system/cuda/error.h>
+
 // using namespace cv;
 using namespace std;
 

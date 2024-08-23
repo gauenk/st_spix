@@ -55,6 +55,14 @@ def get_fxn_defaults(fxn):
     # print(fxn.__code__.co_varnames)
     return {n:v for n,v in zip(names,vals)}
 
+def img4bass(img):
+    if img.max() < 200: # between 0-1 not 0-255
+        img = th.clamp(img*255.,0.,255.)
+    img = rearrange(img,'... f h w -> ... h w f')
+    img = img.contiguous()
+    if img.ndim == 3: img = img[None,:]
+    return img
+
 def get_fxn_kwargs(cfg,fxn):
     kwargs = get_fxn_defaults(fxn)
     for key in kwargs:

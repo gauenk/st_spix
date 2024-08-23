@@ -1,4 +1,5 @@
 
+import os
 import torch as th
 import numpy as np
 import pandas as pd
@@ -185,6 +186,8 @@ def shift_labels(spix,means,flow,root):
 
 def run_exp(cfg):
 
+    print("PID: ",os.getpid())
+
     # -- config --
     root = Path("./output/dev_prop_seg")
     if not root.exists(): root.mkdir(parents=True)
@@ -192,13 +195,15 @@ def run_exp(cfg):
 
     # -- load images --
     vid = st_spix.data.davis_example(isize=None)[0,:10,:,:480,:480]
-    # vid = vid + (25./255.)*th.randn_like(vid)
+    # print("vid [min,max]: ",vid.min(),vid.max())
+    # vid = th.clip(vid,0.,1.)
+    # vid = vid + (50./255.)*th.randn_like(vid)
     tv_utils.save_image(vid,root/"vid.png")
     img0,img1 = img_for_bass(vid[0]),img_for_bass(vid[1])
     B,H,W,F = img0.shape
 
     # -- run img0 bass --
-    npix_in_side = 80
+    npix_in_side = 30
     # i_std,alpha,beta = 0.018,20.,100.
     i_std,alpha,beta = 0.1,0.001,100.
     spix,means,cov,counts,ids = st_spix_original_cuda.bass_forward(img0,npix_in_side,
@@ -307,22 +312,25 @@ def run_exp(cfg):
     eps = 1e-13
     invalid = th.where(th.logical_or(cnts<1-eps,1+eps<cnts))
     spix1[invalid] = -1
+    # print(spix.min(),spix.max())
+    # exit()
     K = spix.max().item()+1
     max_SP = K-1
     spix1 = spix1.contiguous().type(th.int)
     print("shapes: ",_img1.shape,_img1.dtype)
     niters = 1
-    inner_niters = 15
+    inner_niters = 5
+    niters_refine = 40
     fill_debug = True
     _ = fxn(_img1,spix1,missing,means,cov,counts,
             npix_in_side,i_std,alpha,beta,niters,
-            inner_niters,K,max_SP,fill_debug)
+            inner_niters,niters_refine,K,max_SP,fill_debug)
 
     timer.sync_start("fwd")
     print("_img1.shape: ",_img1.shape)
     border,spix1,debug = fxn(_img1,spix1,missing,means,cov,counts,
                              npix_in_side,i_std,alpha,beta,niters,
-                             inner_niters,K,max_SP,fill_debug)
+                             inner_niters,niters_refine,K,max_SP,fill_debug)
     timer.sync_stop("fwd")
     print(timer)
     # spix1 = spix.clone()
@@ -349,7 +357,7 @@ def run_exp(cfg):
     # return
 
     # -- viz on scatter --
-    eps = 1e-10
+    eps = 1e-13
     scatter = th.clamp(scatter,0,1.)
     for i in range(3):
         scatter[:,i][th.where(cnts>1+eps)] = i==0

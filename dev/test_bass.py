@@ -13,6 +13,7 @@ import torch.nn.functional as th_f
 
 import seaborn as sns
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 
 import stnls
@@ -204,11 +205,22 @@ def run_stnls(vid,acc_flows,ws,ps,full_ws=False):
     _,flows_k = search_p.paired_vids(vid,vid,acc_flows,wt,skip_self=True)
     return flows_k
 
+def load_tower():
+    root = Path("/home/gauenk/Documents/data/fun_ones")
+    fn = str(root / "purdue-bell-tower.jpg")
+    img = iio.read_image(fn)/255.
+    img = repeat(img,'c h w -> 1 b c h w',b=3)
+    img = img.to("cuda")
+    # print(img.shape)
+    return img
+
 # -- read/init --
 device = "cuda"
 # vid = st_spix.data.davis_example()[:1,:3]
 vid = st_spix.data.davis_example()[[0],:3]
-# print("vid.shape: ",vid.shape)
+print("[0] vid.shape: ",vid.shape)
+vid = load_tower()
+print("[1] vid.shape: ",vid.shape)
 img= (th.clip(vid[0,0],0.,1.)*255.).type(th.uint8)
 img = rearrange(img,'f h w -> 1 h w f').to(device)
 B,H,W,F = img.shape
@@ -229,7 +241,8 @@ B,H,W,F = img.shape
 # spix = th.zeros((B,H,W),dtype=th.int).to(device)
 # print("init cuda device: ",spix.sum())
 # print(spix.shape)
-npix_in_side = 20
+# npix_in_side = 20
+npix_in_side = 80
 prior_sigma_s = npix_in_side**4
 prior_count = npix_in_side**4
 i_std = 0.018
@@ -252,8 +265,11 @@ timer.sync_stop("flow")
 st_spix.utils.seed_everything(0)
 timer.sync_start("dev_bass")
 spix,means,cov,counts,ids = st_spix_original_cuda.bass_forward(img,npix_in_side,
-                                                           i_std,alpha,beta)
+                                                               i_std,alpha,beta)
 timer.sync_stop("dev_bass")
+
+mark = mark_boundaries(img[0].cpu().numpy(),spix[0].cpu().numpy())
+tv_utils.save_image(to_th(swap_c(mark))[None,:],"./output/test_bass/marked.png")
 
 st_spix.utils.seed_everything(0)
 timer.sync_start("core_bass")

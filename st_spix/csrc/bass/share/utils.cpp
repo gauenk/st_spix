@@ -1,5 +1,7 @@
 #include "utils.h"
 #include <fstream>
+// #include <thrust/system_error.h>
+// #include <thrust/system/cuda/error.h>
 
 // using namespace cv;
 using namespace std;
@@ -46,6 +48,7 @@ std::string get_current_dir() {
 	string current_working_dir(buff);
 	return current_working_dir;
 }
+
 
 std::string get_curr_work_dir() {
 	string full_curr_path = get_current_dir();

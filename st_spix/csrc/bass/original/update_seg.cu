@@ -700,24 +700,24 @@ __global__  void update_seg_subset(
     // -- compute posterior --
     label_check = N;
     res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,
-                                J_i,logdet_Sigma_i,i_std,s_std,post_changes,
+                                J_i,logdet_Sigma_i,i_std,s_std,
                                 count_diff_nbrs_N,beta,res_max);
     label_check = S;
     if(label_check!=N)
     res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,
-                                J_i,logdet_Sigma_i,i_std,s_std,post_changes,
+                                J_i,logdet_Sigma_i,i_std,s_std,
                                 count_diff_nbrs_S,beta,res_max);
 
     label_check = W;
     if((label_check!=S)&&(label_check!=N))   
-    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,J_i,
-                                logdet_Sigma_i,i_std,s_std,post_changes,
+    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,
+                                J_i,logdet_Sigma_i,i_std,s_std,
                                 count_diff_nbrs_W,beta,res_max);
     
     label_check = E;
     if((label_check!=W)&&(label_check!=S)&&(label_check!=N))      
-    res_max= cal_posterior_new(imgC,seg,x,y,sp_params,label_check,J_i,
-                               logdet_Sigma_i,i_std,s_std,post_changes,
+    res_max= cal_posterior_new(imgC,seg,x,y,sp_params,label_check,
+                               J_i,logdet_Sigma_i,i_std,s_std,
                                count_diff_nbrs_E,beta,res_max);
     seg[seg_idx] = res_max.y;
     return;

@@ -16,6 +16,7 @@
 #include "init_seg.h"
 #include "sp_helper.h"
 #include "update_param.h"
+#include "update_prop_param.h"
 #include "update_seg.h"
 #include "s_m.h"
 
@@ -42,7 +43,7 @@ class Superpixels {
   Superpixels(int img_nbatch, int img_dimx,
               int img_dimy, int img_nftrs,
               superpixel_options spoptions,
-              int init_nsp=-1);
+              int init_nsp=-1, int* init_spix=NULL);
   ~Superpixels();
 
     // since we fix covariance for color component
@@ -84,6 +85,7 @@ class Superpixels {
     void load_img(float* imgP);
     void load_gpu_img(float* imgP);
     void calc_seg();
+    void calc_prop_seg();
     void gpu2cpu();
     float* get_image_cpu();
     float* get_image_gpu_double();
@@ -100,5 +102,9 @@ class Superpixels {
     void cpu_split_superpixel(int original_sp_idx, int new_sp_idx, int* proposed_seg_map);
     void cpu_split_superpixels(vector<int> first,vector<int> second,int*proposed_seg_map);
     vector<int> get_unique_sp_idxs();
+
+    // run update
+    void run_update_param();
+
 };
 

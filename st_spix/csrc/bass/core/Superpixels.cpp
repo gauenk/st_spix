@@ -36,16 +36,17 @@ void throw_on_cuda_error(cudaError_t code)
 // init the superpixels with dim_x, dim_y, dim_i and options
 Superpixels::Superpixels(int img_nbatch, int img_dimx, int img_dimy,
                          int img_nftrs, superpixel_options spoptions,
-                         int init_nsp){
+                         int init_nsp, int* init_spix){
     init_sp = false;
     nbatch = img_nbatch;
     dim_x = img_dimx;
     dim_y = img_dimy;
     nftrs = img_nftrs;
-    std::cout << nbatch << std::endl;
-    std::cout << img_nftrs << std::endl;
+    // std::cout << nbatch << std::endl;
+    // std::cout << img_nftrs << std::endl;
     // nPixels = nbatch*dim_x*dim_y;
     nPixels = dim_x*dim_y;
+    // fprintf(stdout,"nPixels,dim_x,dim_y: %d,%d,%d\n",nPixels,dim_x,dim_y);
 
     dim_i = img_nftrs; // RGB/BGR/LAB
     dim_s = 2;
@@ -80,18 +81,17 @@ Superpixels::Superpixels(int img_nbatch, int img_dimx, int img_dimy,
 
      // allocate memory for the cuda variables
     try{
-        throw_on_cuda_error( cudaMalloc((void**) &image_gpu, nPixels*sizeofuchar3));
-        throw_on_cuda_error( cudaMalloc((void**) &image_gpu_double, dim_i*nPixels*sizeofd));
-        throw_on_cuda_error( cudaMalloc((void**) &seg_gpu, nPixels * sizeofint));
-        throw_on_cuda_error( cudaMalloc((void**) &seg_split1, nPixels * sizeofint));
-        throw_on_cuda_error( cudaMalloc((void**) &seg_split2, nPixels * sizeofint));
-        throw_on_cuda_error( cudaMalloc((void**) &seg_split3, nPixels * sizeofint));
+        throw_on_cuda_error(cudaMalloc((void**) &image_gpu, nPixels*sizeofuchar3));
+        throw_on_cuda_error(cudaMalloc((void**)&image_gpu_double,dim_i*nPixels*sizeofd));
+        throw_on_cuda_error(cudaMalloc((void**) &seg_gpu, nPixels * sizeofint));
+        throw_on_cuda_error(cudaMalloc((void**) &seg_split1, nPixels * sizeofint));
+        throw_on_cuda_error(cudaMalloc((void**) &seg_split2, nPixels * sizeofint));
+        throw_on_cuda_error(cudaMalloc((void**) &seg_split3, nPixels * sizeofint));
 
-        throw_on_cuda_error( cudaMalloc((void**) &seg_potts_label, nPixels * sizeofint));
-        throw_on_cuda_error( cudaMalloc((void**) &border_gpu, nPixels*sizeofbool));
-        throw_on_cuda_error( cudaMalloc((void**)&split_merge_pairs,2*nPixels*sizeofint));
-        throw_on_cuda_error( cudaMalloc((void**)&split_merge_unique,2*nPixels*sizeofint));
-
+        throw_on_cuda_error(cudaMalloc((void**) &seg_potts_label, nPixels * sizeofint));
+        throw_on_cuda_error(cudaMalloc((void**) &border_gpu, nPixels*sizeofbool));
+        throw_on_cuda_error(cudaMalloc((void**)&split_merge_pairs,2*nPixels*sizeofint));
+        throw_on_cuda_error(cudaMalloc((void**)&split_merge_unique,2*nPixels*sizeofint));
 
     }
     catch(thrust::system_error &e){
@@ -113,6 +113,8 @@ Superpixels::Superpixels(int img_nbatch, int img_dimx, int img_dimy,
                          sp_options.use_hex);
     }else{
       nSPs = init_nsp;
+      cudaMemcpy(seg_cpu, init_spix, nPixels*sizeofint, cudaMemcpyDeviceToHost);
+      cudaMemcpy(seg_gpu, init_spix, nPixels*sizeofint, cudaMemcpyDeviceToDevice);
     }
 
     // cout << "nSPs:" << nSPs << endl;
@@ -232,6 +234,15 @@ void Superpixels::load_gpu_img(float* imgP) {
     Rgb2Lab(image_gpu, image_gpu_double, nPixels, nbatch);
 }
 
+void Superpixels::run_update_param(){
+    int prior_sigma_s = sp_options.area * sp_options.area;
+    int prior_count = sp_options.area;
+    nSPs_buffer = nSPs * 45;
+    update_param(image_gpu_double, seg_gpu, sp_params, sp_gpu_helper,
+                 nPixels, nSPs, nSPs_buffer, nbatch, dim_x, dim_y, nftrs,
+                 prior_sigma_s, prior_count);
+
+}
 
 // update seg_gpu, sp_gpu_helper and sp_params
 void Superpixels::calc_seg() {
@@ -245,57 +256,210 @@ void Superpixels::calc_seg() {
     float alpha = sp_options.alpha_hasting;
     int s_std = sp_options.s_std;
     int nInnerIters = sp_options.nInnerIters;
+    int split_merge_start = sp_options.split_merge_start;
     nSPs_buffer = nSPs * 45 ;
+    // fprintf(stdout,"split_merge_start: %d\n",split_merge_start);
+
     int count = 1;
     int count_split =0;
+    // gpuErrchk( cudaPeekAtLastError() );
+    // gpuErrchk( cudaDeviceSynchronize() );
+
     for (int i = 0; i < sp_options.nEMIters*1; i++) {
     // printf("%d \n",i);
     // for (int i = 0; i < 3; i++) {
         // "M step"
 
+
         update_param(image_gpu_double, seg_gpu, sp_params, sp_gpu_helper,
                      nPixels, nSPs, nSPs_buffer, nbatch, dim_x, dim_y, nftrs,
                      prior_sigma_s, prior_count);
+        // gpuErrchk( cudaPeekAtLastError() );
+        // gpuErrchk( cudaDeviceSynchronize() );
 
-        if((i<sp_options.nEMIters*20) && (i>-1) )
+
+        // fprintf(stdout,"idx,split_merge_start: %d,%d\n",i,split_merge_start);
+        if( (i<sp_options.nEMIters*20) && (i>-1) )
         {
-            if(i>sp_options.nEMIters*0){
-            if((i%4==0)&&(count<100))
-            {
+            // if(i>sp_options.nEMIters*split_merge_start){
+            if(i>split_merge_start){
+              if((i%4==0)&&(count<100)){
                 count+=1;
 
                 max_SP = CudaCalcSplitCandidate(image_gpu_double, split_merge_pairs,
                        seg_gpu, border_gpu, sp_params ,sp_gpu_helper,sp_gpu_helper_sm,
                        nPixels,nbatch,dim_x,dim_y,nftrs,nSPs_buffer,seg_split1,seg_split2,
                        seg_split3,max_SP, count, i_std, alpha);
+                // gpuErrchk( cudaPeekAtLastError() );
+                // gpuErrchk( cudaDeviceSynchronize() );
+
+
                 update_param(image_gpu_double, seg_gpu, sp_params, sp_gpu_helper,
                              nPixels, nSPs, nSPs_buffer,
                              nbatch, dim_x, dim_y, nftrs,
                              prior_sigma_s, prior_count);
-            }
 
-            if((i%4==2)&&(count<100)){
+                // gpuErrchk( cudaPeekAtLastError() );
+                // gpuErrchk( cudaDeviceSynchronize() );
+
+              }
+              if((i%4==2)&&(count<100)){
 
                 for(int j=0; j<1; j++){
                     CudaCalcMergeCandidate(image_gpu_double, split_merge_pairs, seg_gpu,
                            border_gpu, sp_params ,sp_gpu_helper,sp_gpu_helper_sm,
                            nPixels,nbatch,dim_x,dim_y,nftrs,
                            nSPs_buffer,count%2,i_std, alpha);
+                    // gpuErrchk( cudaPeekAtLastError() );
+                    // gpuErrchk( cudaDeviceSynchronize() );
+
                     update_param(image_gpu_double, seg_gpu,
                                  sp_params, sp_gpu_helper,
                                  nPixels, nSPs, nSPs_buffer,
                                  nbatch, dim_x, dim_y, nftrs,
                                  prior_sigma_s, prior_count);
+
+                    // gpuErrchk( cudaPeekAtLastError() );
+                    // gpuErrchk( cudaDeviceSynchronize() );
+
                 }
+              }
             }
-            }
+            // else{
+            //   // fprintf(stdout,"update.\n");
+            //   update_param(image_gpu_double, seg_gpu,
+            //                sp_params, sp_gpu_helper,
+            //                nPixels, nSPs, nSPs_buffer,
+            //                nbatch, dim_x, dim_y, nftrs,
+            //                prior_sigma_s, prior_count);
+            //   gpuErrchk( cudaPeekAtLastError() );
+            //   gpuErrchk( cudaDeviceSynchronize() );
+            // }
         }
+
+
 
         //"(Hard) E step" - find only the max value after potts term to get the best label
         update_seg(image_gpu_double, seg_gpu, seg_potts_label, border_gpu, sp_params,
                    J_i, logdet_Sigma_i, cal_cov, i_std, s_std, nInnerIters, nPixels,
                    nSPs, nSPs_buffer, nbatch, dim_x, dim_y, nftrs,
-                   sp_options.beta_potts_term,post_changes);
+                   sp_options.beta_potts_term);
+        // gpuErrchk( cudaPeekAtLastError() );
+        // gpuErrchk( cudaDeviceSynchronize() );
+
+
+      // cudaError_t err_t = cudaDeviceSynchronize();
+      //   if (err_t) {
+      //       std::cerr << "CUDA error after cudaDeviceSynchronize. " << err_t << std::endl;
+      //       cudaError_t err = cudaGetLastError();
+      //   }
+    }
+    CudaFindBorderPixels_end(seg_gpu, border_gpu, nPixels, nbatch, dim_x, dim_y, 1);
+
+}
+
+
+// update seg_gpu, sp_gpu_helper and sp_params
+void Superpixels::calc_prop_seg() {
+    //sp_gpu_helper_sm[0].max_sp = max_SP;
+    int prior_sigma_s = sp_options.area * sp_options.area;
+    int prior_count = sp_options.area;
+    const int sizeofint = sizeof(int);
+    const int sizeoffloat = sizeof(float);
+    bool cal_cov = sp_options.calc_cov;
+    float i_std = sp_options.i_std;
+    float alpha = sp_options.alpha_hasting;
+    int s_std = sp_options.s_std;
+    int nInnerIters = sp_options.nInnerIters;
+    int split_merge_start = sp_options.split_merge_start;
+    nSPs_buffer = nSPs * 45 ;
+
+    int count = 1;
+    int count_split =0;
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+
+    for (int i = 0; i < sp_options.nEMIters*1; i++) {
+    // printf("%d \n",i);
+    // for (int i = 0; i < 3; i++) {
+        // "M step"
+
+
+        update_prop_param(image_gpu_double, seg_gpu, sp_params, sp_gpu_helper,
+                     nPixels, nSPs, nSPs_buffer, nbatch, dim_x, dim_y, nftrs,
+                     prior_sigma_s, prior_count);
+        gpuErrchk( cudaPeekAtLastError() );
+        gpuErrchk( cudaDeviceSynchronize() );
+
+
+        if( (i<sp_options.nEMIters*20) && (i>-1) )
+        {
+            // if(i>sp_options.nEMIters*split_merge_start){
+            if(i>split_merge_start){
+              if((i%4==0)&&(count<100)){
+                count+=1;
+
+                max_SP = CudaCalcSplitCandidate(image_gpu_double, split_merge_pairs,
+                       seg_gpu, border_gpu, sp_params ,sp_gpu_helper,sp_gpu_helper_sm,
+                       nPixels,nbatch,dim_x,dim_y,nftrs,nSPs_buffer,seg_split1,seg_split2,
+                       seg_split3,max_SP, count, i_std, alpha);
+                gpuErrchk( cudaPeekAtLastError() );
+                gpuErrchk( cudaDeviceSynchronize() );
+
+
+                update_param(image_gpu_double, seg_gpu, sp_params, sp_gpu_helper,
+                             nPixels, nSPs, nSPs_buffer,
+                             nbatch, dim_x, dim_y, nftrs,
+                             prior_sigma_s, prior_count);
+
+                gpuErrchk( cudaPeekAtLastError() );
+                gpuErrchk( cudaDeviceSynchronize() );
+
+              }
+              if((i%4==2)&&(count<100)){
+
+                for(int j=0; j<1; j++){
+                    CudaCalcMergeCandidate(image_gpu_double, split_merge_pairs, seg_gpu,
+                           border_gpu, sp_params ,sp_gpu_helper,sp_gpu_helper_sm,
+                           nPixels,nbatch,dim_x,dim_y,nftrs,
+                           nSPs_buffer,count%2,i_std, alpha);
+                    gpuErrchk( cudaPeekAtLastError() );
+                    gpuErrchk( cudaDeviceSynchronize() );
+
+                    update_param(image_gpu_double, seg_gpu,
+                                 sp_params, sp_gpu_helper,
+                                 nPixels, nSPs, nSPs_buffer,
+                                 nbatch, dim_x, dim_y, nftrs,
+                                 prior_sigma_s, prior_count);
+
+                    gpuErrchk( cudaPeekAtLastError() );
+                    gpuErrchk( cudaDeviceSynchronize() );
+
+                }
+              }
+            }
+            // else{
+            //   // fprintf(stdout,"update.\n");
+            //   update_param(image_gpu_double, seg_gpu,
+            //                sp_params, sp_gpu_helper,
+            //                nPixels, nSPs, nSPs_buffer,
+            //                nbatch, dim_x, dim_y, nftrs,
+            //                prior_sigma_s, prior_count);
+            //   gpuErrchk( cudaPeekAtLastError() );
+            //   gpuErrchk( cudaDeviceSynchronize() );
+            // }
+        }
+
+
+
+        //"(Hard) E step" - find only the max value after potts term to get the best label
+        update_seg(image_gpu_double, seg_gpu, seg_potts_label, border_gpu, sp_params,
+                   J_i, logdet_Sigma_i, cal_cov, i_std, s_std, nInnerIters, nPixels,
+                   nSPs, nSPs_buffer, nbatch, dim_x, dim_y, nftrs,
+                   sp_options.beta_potts_term);
+        gpuErrchk( cudaPeekAtLastError() );
+        gpuErrchk( cudaDeviceSynchronize() );
+
 
       cudaError_t err_t = cudaDeviceSynchronize();
         if (err_t) {
