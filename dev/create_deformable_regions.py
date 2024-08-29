@@ -1,14 +1,20 @@
 
 import torch as th
 import numpy as np
-from einops import rearrange
+from einops import rearrange,repeat
 from pathlib import Path
+
+# -- masked tensors --
+from torch.masked import masked_tensor, as_masked_tensor
+import warnings
+warnings.filterwarnings(action='ignore', category=UserWarning)
 
 
 from st_spix.spix_utils import mark_spix_vid,img4bass
 import torchvision.utils as tv_utils
 
 import st_spix
+from st_spix import flow_utils as futils
 from st_spix.prop_seg import stream_bass
 
 from torchvision.transforms.functional import resize
@@ -19,6 +25,8 @@ from st_spix.sp_pooling import pooling,SuperpixelPooling
 
 import stnls
 from dev_basics import flow as flow_pkg
+
+import matplotlib.pyplot as plt
 
 def run_stnls(nvid,acc_flows,ws):
     wt,ps,s0,s1,full_ws=1,1,1,1,False
@@ -56,8 +64,76 @@ def get_scattering_field(spix,R):
     sinds = sinds + spix.reshape(B,-1)*R
     return sinds
 
-def run_sinkhorn(regions):
-    pass
+def viz_sample(pixels,locations,masks,spix_id,root):
+
+    # -- sample --
+    F = pixels.shape[-1]
+    pix = pixels[:,spix_id]
+    locs = locations[:,spix_id]
+    mask = masks[:,spix_id].bool()
+
+    # -- get extremes --
+    # xmin,xmax,ymin,ymax = get_locs_extremes(locs,mask)
+    # print(xmin,xmax,ymin,ymax)
+
+    # # -- normalize --
+    # locs[:,:,0][mask] = (locs[:,:,0][mask] - xmin)/(xmax-xmin)
+    # locs[:,:,1][mask] = (locs[:,:,1][mask] - ymin)/(ymax-ymin)
+
+    # -- plot --
+    fig, axes = plt.subplots(1, 3, layout='constrained', figsize=(10, 4))
+    for i in range(3):
+        mask_i = mask[i].cpu().numpy()
+        locs_i = locs[i].cpu().numpy().T
+        axes[i].scatter(locs_i[0][mask_i],locs_i[1][mask_i])
+        axes[i].set_aspect("equal","datalim")
+        axes[i].yaxis.set_inverted(True)
+    plt.savefig(root/"scatter.png")
+
+def get_locs_extremes(locs,mask):
+    x = locs[:,:,0][mask]
+    xmin,xmax = x.min(),x.max()
+    y = locs[:,:,1][mask]
+    ymin,ymax = y.min(),y.max()
+    return xmin,xmax,ymin,ymax
+
+def run_sinkhorn(regions,locations,valid,spix,root):
+
+    # -- get a single sample for easier dev --
+    spix_idx = 100
+    pix = regions[:,spix_idx]
+    locs = locations[:,spix_idx]
+    mask = valid[:,spix_idx].bool()
+
+    # -- shrink for easier dev --
+    midx = th.max(th.where(mask>0)[-1])
+    F = pix.shape[-1]
+    pix = pix[:,:midx]
+    locs = locs[:,:midx]
+    mask = mask[:,:midx,None]
+    mask_eF = mask.expand((-1,-1,F))
+    mask_e2 = mask.expand((-1,-1,2))
+
+    # -- build masked tensor --
+    # mpix = masked_tensor(pix.clone(), mask_eF==1)
+    # mlocs = masked_tensor(locs.clone(), mask_e2==1)
+
+    # -- normalize for ease --
+    # mlocs = mlocs - mlocs.mean(1,keepdim=True) # normalize
+    # mean_locs = (locs*mask).sum(1,keepdim=True)/(mask.sum(1,keepdim=True)+1e-10)
+    # locs = locs - (locs*mask).sum(1,keepdim=True)/(mask.sum(1,keepdim=True)+1e-10)
+    # locs[th.where(mask_e2==0)] = 0.
+    # print(mean_locs)
+    # print(mlocs.mean(1))
+
+    # -- vizualize a superpixel --
+    # viz_sample(pix,locs,mask,root)
+    # viz_sample(mpix,mlocs)
+
+    print(pix.shape)
+    print(locs.shape)
+    print(mask.shape)
+    # print(" :D ")
 
 def main():
 
@@ -99,11 +175,24 @@ def main():
 
     # -- fill into contiguous tensor [very very silly] --
     inds = get_scattering_field(spix,R)
+    inds_e2 = inds[:,:,None].expand((-1,-1,2))
     inds_e = inds[:,:,None].expand((-1,-1,3))
-    regions = th.zeros((B,nspix*R,F),device=spix.device)
     vid_r = rearrange(vid,'b f h w -> b (h w) f')
+    grid = futils.index_grid(H,W,normalize=True)
+    grid = repeat(grid,'1 f h w -> b (h w) f',b=B)
+
+    regions = th.zeros((B,nspix*R,F),device=spix.device)
     regions = regions.scatter_(1,inds_e,vid_r)
     regions = regions.reshape(B,nspix,R,F)
+
+    locs = th.zeros((B,nspix*R,2),device=spix.device)
+    locs = locs.scatter_(1,inds_e2,grid)
+    locs = locs.reshape(B,nspix,R,2)
+
+    masks = th.zeros((B,nspix*R),device=spix.device)
+    masks = masks.scatter_(1,inds,th.ones_like(vid_r[:,:,0]))
+    masks = masks.reshape(B,nspix,R)
+
     print("inds.shape: ",inds.shape)
     print(regions.shape)
     th.save(regions,"regions.pth")
@@ -125,7 +214,16 @@ def main():
     #
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-    run_sinkhorn(regions)
+    # -- save --
+    spix_id = 20
+    marked = mark_spix_vid(vid,spix)
+    marked[:,0][th.where(spix==spix_id)] = 1.
+    marked[:,1][th.where(spix==spix_id)] = 0.
+    marked[:,2][th.where(spix==spix_id)] = 0.
+    tv_utils.save_image(marked,root / "marked_fill.png")
+    viz_sample(regions,locs,masks,spix_id,root)
+
+    # run_sinkhorn(regions,locs,masks,spix,root)
 
 
 if __name__ == "__main__":

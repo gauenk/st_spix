@@ -36,11 +36,11 @@ from easydict import EasyDict as edict
 # import matplotlib as mpl
 # from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 
-def stream_bass(vid,sp_size=80,beta=10.):
+def stream_bass(vid,sp_size=80,beta=10.,nrefine=30):
 
     # -- config --
     npix_in_side = sp_size
-    niters,inner_niters = 1,0
+    niters,inner_niters = 1,1
     # i_std,alpha,beta = 0.018,20.,100.
     i_std,alpha = 0.1,0.001
 
@@ -66,11 +66,10 @@ def stream_bass(vid,sp_size=80,beta=10.):
         flow_curr = flows.fflow[0,ix][None,:]
 
         # -- run --
-        refine_iters = 20
         outs = prop_seg(img_curr.clone(),spix[-1].clone(),flow_curr.clone(),
                         means.clone(),cov.clone(),counts.clone(),ids.clone(),
                         niters,inner_niters,npix_in_side,i_std,
-                        alpha,beta,refine_iters)
+                        alpha,beta,nrefine)
         spix_t,shift_st,dbs,dbp,missing,_means = outs
         spix.append(spix_t)
     spix = th.stack(spix)[:,0]
