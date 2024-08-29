@@ -26,7 +26,8 @@ from st_spix.sp_pooling import pooling,SuperpixelPooling
 import stnls
 from dev_basics import flow as flow_pkg
 
-import matplotlib.pyplot as plt
+from matplotlib import patches, pyplot as plt
+# import matplotlib.pyplot as plt
 
 def run_stnls(nvid,acc_flows,ws):
     wt,ps,s0,s1,full_ws=1,1,1,1,False
@@ -90,6 +91,47 @@ def viz_sample(pixels,locations,masks,spix_id,root):
         axes[i].yaxis.set_inverted(True)
     plt.savefig(root/"scatter.png")
 
+def viz_pi_sample(pi,locs,mask,root):
+
+    # -- sample --
+    locs = locs.cpu().numpy()
+    mask = mask.cpu().numpy()
+    pi = pi.cpu().numpy()
+
+
+    # -- init plot --
+    fig, axes = plt.subplots(1, 3, layout='constrained', figsize=(10, 4))
+
+    # -- plot scattering --
+    for i in range(3):
+        mask_i = mask[i]
+        locs_i = locs[i].T
+        axes[i].scatter(locs_i[0][mask_i],locs_i[1][mask_i])
+        axes[i].set_aspect("equal","datalim")
+        axes[i].yaxis.set_inverted(True)
+
+    # -- create some quivers --
+    base_size = 2.
+    for j in range(0,100,10):
+        for i in range(10):
+            quiver_size = base_size * pi[0,j,i]
+            quiver_start = locs[0,j]
+            quiver_end = locs[1,i]
+            arrow = patches.ConnectionPatch(
+                quiver_start,
+                quiver_end,
+                coordsA=axes[0].transData,
+                coordsB=axes[1].transData,
+                # Default shrink parameter is 0 so can be omitted
+                color="black",
+                arrowstyle="-|>",  # "normal" arrow
+                mutation_scale=2*quiver_size,  # controls arrow head size
+                linewidth=quiver_size,
+            )
+            fig.patches.append(arrow)
+
+    plt.savefig(root/"xfer_scatter.png")
+
 def get_locs_extremes(locs,mask):
     x = locs[:,:,0][mask]
     xmin,xmax = x.min(),x.max()
@@ -97,43 +139,82 @@ def get_locs_extremes(locs,mask):
     ymin,ymax = y.min(),y.max()
     return xmin,xmax,ymin,ymax
 
-def run_sinkhorn(regions,locations,valid,spix,root):
+def run_sinkhorn(regions,locations,masks,spix,root):
 
     # -- get a single sample for easier dev --
+    device = regions.device
+
+    # -- config --
     spix_idx = 100
     pix = regions[:,spix_idx]
     locs = locations[:,spix_idx]
-    mask = valid[:,spix_idx].bool()
+    mask = masks[:,spix_idx].bool()
 
     # -- shrink for easier dev --
     midx = th.max(th.where(mask>0)[-1])
     F = pix.shape[-1]
     pix = pix[:,:midx]
     locs = locs[:,:midx]
-    mask = mask[:,:midx,None]
-    mask_eF = mask.expand((-1,-1,F))
-    mask_e2 = mask.expand((-1,-1,2))
+    mask = mask[:,:midx]
+    # mask_eF = mask.expand((-1,-1,F))
+    # mask_e2 = mask[:,:,None].expand((-1,-1,2))
+    mask_e1 = mask[:,:,None]
+    B,S = mask.shape
 
-    # -- build masked tensor --
-    # mpix = masked_tensor(pix.clone(), mask_eF==1)
-    # mlocs = masked_tensor(locs.clone(), mask_e2==1)
+    # -- sinkhorn pairs --
+    ot_scale = 5e2
+    a,b = 1.*(mask[:-1]>0),1.*(mask[1:]>0)
+    a,b = a.reshape(B-1,S,1),b.reshape(B-1,S,1)
+    costC = th.cdist(locs[:-1],locs[1:])
+    maskM = (mask[:-1,None]  * mask[1:,:,None])>0
 
-    # -- normalize for ease --
-    # mlocs = mlocs - mlocs.mean(1,keepdim=True) # normalize
-    # mean_locs = (locs*mask).sum(1,keepdim=True)/(mask.sum(1,keepdim=True)+1e-10)
-    # locs = locs - (locs*mask).sum(1,keepdim=True)/(mask.sum(1,keepdim=True)+1e-10)
-    # locs[th.where(mask_e2==0)] = 0.
-    # print(mean_locs)
-    # print(mlocs.mean(1))
+    # print(maskM)
+    # print("mask.shape: ",mask.shape)
+    # print("maskM.shape: ",maskM.shape)
+    # print(costC.shape)
+    # exit()
+    K = th.exp(-ot_scale*costC)*maskM
+    # print("K.shape: ",K.shape)
+    v = th.ones((B-1,S,1),device=device)/S
+    u = th.ones((B-1,S,1),device=device)/S
 
-    # -- vizualize a superpixel --
-    # viz_sample(pix,locs,mask,root)
-    # viz_sample(mpix,mlocs)
+    print(a.shape,K.shape,v.shape)
+    niters = 100
+    for iter_i in range(niters):
 
-    print(pix.shape)
-    print(locs.shape)
-    print(mask.shape)
-    # print(" :D ")
+        # -- error --
+        if iter_i % 20 == 0:
+            a_est = u * (K @ v)
+            b_est = v * (K.transpose(-2,-1) @ u)
+            # print(a_est.shape)
+            # print(b_est.shape)
+            delta_a = th.mean((a_est - a)**2).item()
+            delta_b = th.mean((b_est - b)**2).item()
+            print(iter_i,delta_a,delta_b,ot_scale)
+            # if (iter_i % 200) == 0 and (iter_i > 0):
+            #     ot_scale = ot_scale * 2
+            #     K = th.exp(-ot_scale*costC)*maskM
+
+        # -- updates --
+        u = a / ((K @ v)+1e-10)
+        v = b / ((K.transpose(-2,-1) @ u)+1e-10)
+
+    # -- compute transport map --
+    pi_est = th.diag_embed(u[:,:,0]) @ K @ th.diag_embed(v[:,:,0])
+    # pi_est_v2 = u * (K @ v)
+    # print(pi_est_v2.shape)
+    # print("pi comp: ",th.mean((pi_est - pi_est_v2)**2))
+    # print(pi_est.shape)
+    a_est = pi_est.sum(-1,keepdim=True)
+    b_est = pi_est.sum(-2,keepdim=True).reshape(B-1,S,1)
+    delta_a = th.mean((a_est - a)**2).item()
+    delta_b = th.mean((b_est - b)**2).item()
+    # print(delta_a,delta_b)
+
+    # -- flows and weights from transport map --
+    print(pi_est[0,0])
+    viz_pi_sample(pi_est,locs,mask,root)
+
 
 def main():
 
@@ -223,7 +304,8 @@ def main():
     tv_utils.save_image(marked,root / "marked_fill.png")
     viz_sample(regions,locs,masks,spix_id,root)
 
-    # run_sinkhorn(regions,locs,masks,spix,root)
+    # -- run sinkhorn --
+    run_sinkhorn(regions,locs,masks,spix,root)
 
 
 if __name__ == "__main__":
