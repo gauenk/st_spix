@@ -3,6 +3,9 @@ import os
 
 os.environ['CUDA_LAUNCH_BLOCKING']="1"
 os.environ['TORCH_USE_CUDA_DSA'] = "1"
+# pyversion = os.environ['PYENV_VERSION']
+# pyversion = pyversion if pyversion != "" else "default"
+
 from setuptools import setup, find_packages
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 

@@ -3,7 +3,18 @@ from einops import rearrange
 import torch.nn.functional as th_f
 from torchvision.utils import draw_segmentation_masks
 
+from st_spix.sp_pooling import pooling
+
 from skimage.segmentation import mark_boundaries
+
+def img4bass(img):
+    img = rearrange(img,'... f h w -> ... h w f').flip(-1)
+    img = img.contiguous()
+    if img.ndim == 3: img = img[None,:]
+    if img.max() <= 1:
+        img = (255.*img).type(th.uint8)
+    return img
+
 
 def viz_spix(img_batch,spix_batch,nsp):
     masks = []
@@ -43,7 +54,7 @@ def pool_flow_and_shift_mean(flow,means,spix,ids,version="v1"):
 def pool_flow_and_shift_mean_v1(flow,means,spix,ids):
 
     # -- prepare --
-    flow = rearrange(flow,'b f h w -> b h w f')
+    # flow = rearrange(flow,'b f h w -> b h w f')
     flow = flow.contiguous()
     spix = spix.contiguous()
     nspix = means.shape[1] #spix.max().item()+1 # or means.shape[1]
@@ -51,17 +62,36 @@ def pool_flow_and_shift_mean_v1(flow,means,spix,ids):
     assert means.shape[1] == nspix
 
     # -- run --
-    import st_spix_cuda
-    fxn = st_spix_cuda.sp_pooling
-    pooled,downsampled = fxn(flow,spix,nspix)
+    # import st_spix_cuda
+    # fxn = st_spix_cuda.sp_pooling_fwd
+    # pooled,downsampled = fxn(flow,spix,nspix)
+    pooled,downsampled = pooling(flow,spix,nspix)
+    # print("flow.shape,pooled.shape,downsampled.shape: ",
+    #       flow.shape,pooled.shape,downsampled.shape)
 
     # -- update means --
     means[...,-2] = means[...,-2] + downsampled[...,0]
     means[...,-1] = means[...,-1] + downsampled[...,1]
 
     # -- return --
-    pooled = rearrange(pooled,'b h w f -> b f h w')
-    return pooled,means
+    # pooled = rearrange(pooled,'b h w f -> b f h w')
+    return pooled.round(),means
+
+def spix_pool_vid(vid,spix):
+    # -- prepare --
+    # vid = rearrange(vid,'b f h w -> b h w f')
+    vid = vid.contiguous()
+    spix = spix.contiguous()
+    nspix = spix.max()+1
+    # print("labels.shape: ",labels.shape)
+
+    # -- run --
+    # import st_spix_cuda
+    # fxn = st_spix_cuda.sp_pooling_fwd
+    # pooled,downsampled = fxn(labels,spix,nspix)
+    pooled,downsampled = pooling(vid,spix,nspix)
+
+    return pooled,downsampled
 
 
 def pool_flow_and_shift_mean_v0(flow,means,spix,ids):
@@ -122,19 +152,24 @@ def sp_pool_from_spix_v0(labels,spix):
 def sp_pool_from_spix_v1(labels,spix,return_ds=False):
 
     # -- prepare --
-    labels = rearrange(labels,'b f h w -> b h w f')
+    # labels = rearrange(labels,'b f h w -> b h w f')
     labels = labels.contiguous()
     spix = spix.contiguous()
     nspix = spix.max()+1
     # print("labels.shape: ",labels.shape)
 
     # -- run --
-    import st_spix_cuda
-    fxn = st_spix_cuda.sp_pooling
-    pooled,downsampled = fxn(labels,spix,nspix)
+    # import st_spix_cuda
+    # fxn = st_spix_cuda.sp_pooling_fwd
+    # pooled,downsampled = fxn(labels,spix,nspix)
+
+    pooled,downsampled = pooling(labels,spix,nspix)
+    # print("labels.shape,pooled.shape,downsampled.shape: ",
+    #       labels.shape,pooled.shape,downsampled.shape)
+    # exit()
 
     # -- return --
-    pooled = rearrange(pooled,'b h w f -> b f h w')
+    # pooled = rearrange(pooled,'b h w f -> b f h w')
     if return_ds:
         return pooled,downsampled
     else:
@@ -214,11 +249,37 @@ def swap_c(img):
     return rearrange(img,'... h w f -> ... f h w')
 
 def mark_spix_vid(vid,spix):
+    if vid.ndim == 5:
+        print("Only using first video batch.")
+        vid = vid[0]
     marked = []
     for ix,spix_t in enumerate(spix):
-        img = rearrange(vid[:,ix],'b f h w -> b h w f')
+        img = rearrange(vid[ix],'f h w -> h w f')
         marked_t = mark_boundaries(img.cpu().numpy(),spix_t.cpu().numpy())
         marked_t = to_th(swap_c(marked_t))
         marked.append(marked_t)
-    marked = th.cat(marked)
+    marked = th.stack(marked)
     return marked
+
+def fill_spix(vid,spix,spix_id):
+    vid[:,0][th.where(spix == spix_id)] = 0.
+    vid[:,1][th.where(spix == spix_id)] = 0.
+    vid[:,2][th.where(spix == spix_id)] = 1.
+
+def to_np(tensor):
+    return tensor.cpu().numpy()
+def to_th(tensor):
+    return th.from_numpy(tensor)
+def swap_c0(img):
+    return rearrange(img,'... h w f -> ... f h w')
+def swap_c3(img):
+    return rearrange(img,'... f h w -> ... h w f')
+def mark_spix(img,spix):
+    marked = to_th(swap_c0(mark_boundaries(to_np(img),to_np(spix))))
+    if th.any(spix==-1):
+        args = th.where(spix==-1)
+        marked[0][args] = 0
+        marked[1][args] = 0
+        marked[2][args] = 1.
+    return marked
+

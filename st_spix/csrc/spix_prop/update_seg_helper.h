@@ -88,43 +88,51 @@ void transition_cov_probs(float& probs, double4 cov, double4 cov_prior, float df
   float logdet = (df/2.) * logf(cov_prior.w) - (df+3)/2. * logf(cov.w);
   float gamma_p =  -1/2.*CUDART_LNPI_F - lgammaf(df/2.) - lgammaf((df-1)/2.);
   float Z =  - df * CUDART_LN2_F - gamma_p;
-  probs = mmtr + logdet + Z;
+  probs += mmtr + logdet + Z;
+}
+
+__device__ inline void
+xfer_updated_cov(float& xfer, int spix,
+                 int sign, int widx, int hidx,
+                 superpixel_params* sp_params,
+                 superpixel_params* sp_params_prev,
+                 superpixel_GPU_helper* sp_gpu_helper){
+  float df = sp_params_prev[spix].count;
+  double4 cov_prior = read_cov(sp_params_prev,spix);
+  double4 cov = get_updated_cov(widx, hidx, sp_params, sp_gpu_helper, spix, sign);
+  transition_cov_probs(xfer, cov, cov_prior, df);
+}
+
+__device__ inline void
+xfer_same_cov(float& xfer, int spix,
+              superpixel_params* sp_params,
+              superpixel_params* sp_params_prev){
+  /* float3 mu_prior = sp_params_prev[spix].mu_i; */
+  /* float3 mu = sp_params[spix].mu_i; */
+  /* transition_mean_probs(xfer, mu, mu_prior); */
+  float df = sp_params_prev[spix].count;
+  double4 cov_prior = read_cov(sp_params_prev,spix);
+  double4 cov = read_cov(sp_params,spix);
+  transition_cov_probs(xfer, cov, cov_prior, df);
 }
 
 __device__ inline
-void xfer_case0_cov(float& xferA, float& xferC,
-                    int spix_C, int spix_A,
+void xfer_case0_cov(float& xferA, float& xferB,
+                    int spix_A, int spix_B,
                     int width_ix, int height_ix,
                     superpixel_params* sp_params,
                     superpixel_params* sp_params_prev,
                     superpixel_GPU_helper* sp_gpu_helper){
 
-  // -- compute 1st mean term -- p(\theta_c) / p(\theta_c^b)
-  int sign = -1;
-  float df = 1;
-  double4 cov_prior = read_cov(sp_params_prev,spix_C);
-  double4 cov_curr = read_cov(sp_params,spix_C);
-  double4 cov_prop = get_updated_cov(width_ix, height_ix,
-                                     sp_params, sp_gpu_helper, spix_C, sign);
-  float xferA_cov_c,xferC_cov_c;
-  transition_cov_probs(xferA_cov_c, cov_curr, cov_prior, df);
-  transition_cov_probs(xferC_cov_c, cov_prop, cov_prior, df);
+  // -=-=-=-   update "widx,hidx" from "C=B -> A"  -=-=-=-
+  xfer_updated_cov(xferA,spix_A,1,width_ix,height_ix,
+                   sp_params,sp_params_prev,sp_gpu_helper);
+  xfer_updated_cov(xferA,spix_B,-1,width_ix,height_ix,
+                   sp_params,sp_params_prev,sp_gpu_helper);
 
-  // -- compute 2nd mean term --
-  sign = 1;
-  cov_prior = read_cov(sp_params_prev,spix_A);
-  cov_curr = read_cov(sp_params,spix_A);
-  cov_prop = get_updated_cov(width_ix, height_ix,
-                             sp_params, sp_gpu_helper, spix_A, sign);
-  float xferA_cov_p, xferC_cov_p;
-  transition_cov_probs(xferA_cov_p, cov_curr, cov_prior, df);
-  transition_cov_probs(xferC_cov_p, cov_prop, cov_prior, df);
-
-  // -- total mean probs --
-  xferA = xferA_cov_p + xferA_cov_c; // NOT MLE updated theta
-  xferC = xferC_cov_p + xferC_cov_c; // MLE updated theta
-  /* xferA = 0; */
-  /* xferC = 0; */
+  // -=-=-=-  no change (B=C); compute prob of current parameters under prior  -=-=-=-
+  xfer_same_cov(xferB,spix_A,sp_params,sp_params_prev);
+  xfer_same_cov(xferB,spix_B,sp_params,sp_params_prev);
 
 }
 
@@ -136,32 +144,15 @@ void xfer_case1_cov(float& xferA, float& xferB,
                     superpixel_params* sp_params_prev,
                     superpixel_GPU_helper* sp_gpu_helper){
 
-  // -- compute 1st mean term -- p(\theta_c) / p(\theta_c^b)
-  int sign = -1;
-  float df = 1;
-  double4 cov_prior = read_cov(sp_params_prev,spix_A);
-  double4 cov_0 = read_cov(sp_params,spix_A);
-  double4 cov_1 = get_updated_cov(width_ix, height_ix,
-                                  sp_params, sp_gpu_helper, spix_B, sign);
-  float xferA_cov_c,xferB_cov_c;
-  transition_cov_probs(xferA_cov_c, cov_0, cov_prior, df);
-  transition_cov_probs(xferB_cov_c, cov_1, cov_prior, df);
+  // -=-=-=-   updated after "pix" from "C -> A"  -=-=-=-
+  xfer_updated_cov(xferA,spix_A,1,width_ix,height_ix,
+                   sp_params,sp_params_prev,sp_gpu_helper);
+  xfer_same_cov(xferA,spix_B,sp_params,sp_params_prev);
 
-  // -- compute 2nd mean term --
-  sign = 1;
-  cov_prior = read_cov(sp_params_prev,spix_B);
-  cov_0 = read_cov(sp_params,spix_B);
-  cov_1 = get_updated_cov(width_ix, height_ix,
-                          sp_params, sp_gpu_helper, spix_B, sign);
-  float xferA_cov_p, xferB_cov_p;
-  transition_cov_probs(xferA_cov_p, cov_0, cov_prior, df);
-  transition_cov_probs(xferB_cov_p, cov_1, cov_prior, df);
-
-  // -- total mean probs --
-  xferA = xferA_cov_p + xferA_cov_c; // NOT MLE updated theta
-  xferB = xferB_cov_p + xferB_cov_c; // MLE updated theta
-  /* xferA = 0; */
-  /* xferB = 0; */
+  // -=-=-=-   updated after "pix" from "C -> B"  -=-=-=-
+  xfer_same_cov(xferB,spix_A,sp_params,sp_params_prev);
+  xfer_updated_cov(xferB,spix_B,1,width_ix,height_ix,
+                   sp_params,sp_params_prev,sp_gpu_helper);
 
 }
 
@@ -204,80 +195,41 @@ xfer_updated_means(float& xfer, int spix, int sign, float* pix,
 
 __device__ inline void
 xfer_same_means(float& xfer, int spix,
-                superpixel_params* sp_params_prev,
-                superpixel_params* sp_params){
+                superpixel_params* sp_params,
+                superpixel_params* sp_params_prev){
   float3 mu_prior = sp_params_prev[spix].mu_i;
   float3 mu = sp_params[spix].mu_i;
   transition_mean_probs(xfer, mu, mu_prior);
 }
 
 __device__ inline void
-xfer_case0_means(float& xferA, float& xferC,
-                 int spix_C, int spix_A, float* pix,
+xfer_case0_means(float& xferA, float& xferB,
+                 int spix_A, int spix_B, float* pix,
                  superpixel_params* sp_params,
                  superpixel_params* sp_params_prev,
                  superpixel_GPU_helper* sp_gpu_helper){
-
-  // -=-=-=-   updated after "pix" from "C -> A"  -=-=-=-
+  // -=-=-=-   updated after "pix" from "C=B -> A"  -=-=-=-
   xfer_updated_means(xferA,spix_A,1,pix,sp_params_prev,sp_gpu_helper);
-  xfer_updated_means(xferA,spix_C,-1,pix,sp_params_prev,sp_gpu_helper);
+  xfer_updated_means(xferA,spix_B,-1,pix,sp_params_prev,sp_gpu_helper);
 
-  // -=-=-=-  no change; compute prob of current parameters under prior  -=-=-=-
-  xfer_same_means(xferC,spix_A,sp_params_prev,sp_gpu_helper);
-  xfer_same_means(xferC,spix_C,sp_params_prev,sp_gpu_helper);
-
-  /* int sign = -1; */
-  /* float3 mu_prior = sp_params_prev[spix_C].mu_i; */
-  /* float3 mu = get_updated_means(pix, sp_gpu_helper, spix_C, sign); */
-  /* transition_mean_probs(xferA, mu_A, mu_prior); */
-
-  /* mu = sp_params[spix_C].mu_i; */
-  /* transition_mean_probs(xferA_means_c, mu_C, mu_prior); */
-
-  /* // -- compute xfer terms 1 -- */
-  /* sign = 1; */
-  /* mu_prior = sp_params_prev[spix_A].mu_i; */
-  /* mu_C = sp_params[spix_A].mu_i; */
-  /* mu_A = get_updated_means(pix, sp_gpu_helper, spix_A, sign); */
-  /* float xferA_means_p, xferC_means_p; */
-  /* transition_mean_probs(xferA_means_p, mu_C, mu_prior); */
-  /* transition_mean_probs(xferC_means_p, mu_A, mu_prior); */
-
-  /* // -- total mean probs -- */
-  /* xferA = xferA_means_p + xferA_means_c; // NOT MLE updated theta */
-  /* xferC = xferC_means_p + xferC_means_c; // MLE updated theta */
-
+  // -=-=-=-  no change (B=C); compute prob of current parameters under prior  -=-=-=-
+  xfer_same_means(xferB,spix_A,sp_params,sp_params_prev);
+  xfer_same_means(xferB,spix_B,sp_params,sp_params_prev);
 }
-
 
 __device__ inline void
 xfer_case1_means(float& xferA, float& xferB,
-                 int spix_A, int spix_B,
-                 float* pix, superpixel_params* sp_params,
+                 int spix_A, int spix_B, float* pix,
+                 superpixel_params* sp_params,
                  superpixel_params* sp_params_prev,
                  superpixel_GPU_helper* sp_gpu_helper){
+  // -=-=-=-   updated after "pix" from "C -> A"  -=-=-=-
+  xfer_updated_means(xferA,spix_A,1,pix,sp_params_prev,sp_gpu_helper);
+  xfer_same_means(xferA,spix_B,sp_params,sp_params_prev);
 
-  // -- compute xfer term 0 -- p(\theta_c) / p(\theta_c^b)
-  int sign = -1;
-  float3 mu_prior = sp_params_prev[spix_C].mu_i;
-  float3 mu_B = get_updated_means(pix, sp_gpu_helper, spix_B, sign);
-  float3 mu_A = get_updated_means(pix, sp_gpu_helper, spix_A, sign);
-  float xferA_means_c,xferB_means_c;
-  transition_mean_probs(xferA_means_c, mu_C, mu_prior);
-  transition_mean_probs(xferB_means_c, mu_A, mu_prior);
-
-  // -- compute xfer term 1 --
-  sign = 1;
-  mu_prior = sp_params_prev[spix_A].mu_i;
-  mu_C = sp_params[spix_A].mu_i;
-  mu_A = get_updated_means(pix, sp_gpu_helper, spix_A, sign);
-  float xferA_means_p, xferB_means_p;
-  transition_mean_probs(xferA_means_p, mu_C, mu_prior);
-  transition_mean_probs(xferB_means_p, mu_A, mu_prior);
-
-  // -- total mean probs --
-  xferA = xferA_means_p + xferA_means_c; // NOT MLE updated theta
-  xferB = xferB_means_p + xferB_means_c; // MLE updated theta
+  // -=-=-=-   updated after "pix" from "C -> B"  -=-=-=-
+  xfer_same_means(xferB,spix_A,sp_params,sp_params_prev);
+  xfer_updated_means(xferB,spix_B,1,pix,sp_params_prev,sp_gpu_helper);
 
 }
 
@@ -293,71 +245,37 @@ xfer_case1_means(float& xferA, float& xferB,
 
 __device__ inline void
 xfer_case0(float& xferA, float& xferB,
-           int spix_C, int spix_A,
+           int spix_A, int spix_B,
            float* pix, int width_ix, int height_ix,
            superpixel_params* sp_params,
            superpixel_params* sp_params_prev,
            superpixel_GPU_helper* sp_gpu_helper){
-  //
-  // current spix -> A
-  //      or spix -> C (stays the same)
-  //
-  // spix_A != spix_C but spix_B == spix_C
-  // assume spix_A is "numerator"
+  // A != C but B = C
 
   // means
-  float xferA_means,xferB_means;
-  xferA_means = xferB_means = 0;
-  xfer_case0_means(xferA_means,xferB_means,
-                   spix_C, spix_A, pix,
-                   sp_params, sp_params_prev,
-                   sp_gpu_helper);
-
+  xfer_case0_means(xferA,xferB, spix_A, spix_B, pix,
+                   sp_params, sp_params_prev, sp_gpu_helper);
   // covariance
-  float xferA_cov,xferB_cov;
-  xferA_cov = xferB_cov = 0;
-  xfer_case0_cov(xferA_cov,xferB_cov,
-                 spix_C, spix_A,
-                 width_ix, height_ix,
-                 sp_params, sp_params_prev,
-                 sp_gpu_helper);
-
-  // total
-  xferA = xferA_means + xferA_cov;
-  xferB = xferB_means + xferB_cov;
+  xfer_case0_cov(xferA,xferB, spix_A, spix_B, width_ix, height_ix,
+                 sp_params, sp_params_prev, sp_gpu_helper);
 
 }
 
 __device__ inline void
 xfer_case1(float& xferA, float& xferB,
-           int spix_A, int spix_B, int spix_C,
+           int spix_A, int spix_B,
            float* pix, int width_ix, int height_ix,
            superpixel_params* sp_params,
            superpixel_params* sp_params_prev,
            superpixel_GPU_helper* sp_gpu_helper){
-
+  // A != C and B != C
 
   // means
-  float xferA_means,xferB_means;
-  xferA_means = xferB_means = 0;
-  xfer_case1_means(xferA_means,xferB_means,
-                   spix_A, spix_B,
-                   pix, sp_params, sp_params_prev,
-                   sp_gpu_helper);
-
+  xfer_case1_means(xferA,xferB, spix_A, spix_B, pix,
+                   sp_params, sp_params_prev, sp_gpu_helper);
   // covariance
-  float xferA_cov,xferB_cov;
-  xferA_cov = xferB_cov = 0;
-  xfer_case1_cov(xferA_cov,xferB_cov,
-                 spix_A, spix_B,
-                 width_ix, height_ix,
-                 sp_params, sp_params_prev,
-                 sp_gpu_helper);
-
-  // total
-  xferA = xferA_means + xferA_cov;
-  xferB = xferB_means + xferB_cov;
-
+  xfer_case1_cov(xferA,xferB, spix_A, spix_B, width_ix, height_ix,
+                 sp_params, sp_params_prev, sp_gpu_helper);
 }
 
 
@@ -369,20 +287,18 @@ calc_transition(float& xferA,float& xferB,
                 superpixel_params* sp_params_prev,
                 superpixel_GPU_helper* sp_gpu_helper){
 
-  // float xferA,xferB;
-  if (spix_A == spix_C){
+  if (spix_B == spix_C){ // when called, we know A != C
     xfer_case0(xferA,xferB,spix_A,spix_B,
                pix,width_ix,height_ix,
                sp_params,sp_params_prev,
                sp_gpu_helper);
-  }else if (spix_B == spix_C){
-    xfer_case0(xferB,xferA,spix_A,spix_B,
+  }else if (spix_A == spix_C){ // when called, we know B != C
+    xfer_case0(xferB,xferA,spix_B,spix_A,
                pix,width_ix,height_ix,
                sp_params,sp_params_prev,
                sp_gpu_helper);
-  }else{
-    xfer_case1(xferB,xferA,
-               spix_A,spix_B,spix_C,
+  }else{ // when called, we know A != C and B != C
+    xfer_case1(xferB,xferA,spix_A,spix_B,
                pix,width_ix,height_ix,
                sp_params,sp_params_prev,
                sp_gpu_helper);

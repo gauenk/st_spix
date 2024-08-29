@@ -43,8 +43,9 @@ void scatter_spix_forward_kernel(float* img, float* flow,
     float wi_f = wi + dw;
 
     // -- bilinear write --
+    float eps = 1e-4;
     bilin2d_interpolate(img_ptr, scatter, counts,
-                        hi_f, wi_f, height, width, nftrs);
+                        hi_f, wi_f, height, width, nftrs, eps);
 
 }
 

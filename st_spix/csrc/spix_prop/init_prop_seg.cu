@@ -79,6 +79,9 @@ __host__ void init_prop_seg(float* img, int* seg,
 
     while (num_neg_cpu > 0){
 
+      // -- early break [ for viz ] --
+      // if (iter >= nInnerIters){ break; }
+
       //  -- find border pixels --
       cudaMemset(num_neg_gpu, 0, sizeof(int));
       cudaMemset(border, 0, nbatch*nPixels*sizeof(bool));
@@ -90,6 +93,20 @@ __host__ void init_prop_seg(float* img, int* seg,
       // fprintf(stdout,"num negative spix: %d\n",num_neg_cpu);
       // fprintf(stdout,"a\n");
       // cudaDeviceSynchronize();
+
+      // -- copy for debug --
+      if (debug_fill and (iter < nInnerIters)){
+        int* debug_spix_iter = debug_spix+iter*nbatch*nPixels;
+        cudaMemcpy(debug_spix_iter,seg,
+                   nbatch*nPixels*sizeof(int),cudaMemcpyDeviceToDevice);
+        bool* debug_border_iter = debug_border+iter*nbatch*nPixels;
+        cudaMemcpy(debug_border_iter,border,
+                   nbatch*nPixels*sizeof(bool),cudaMemcpyDeviceToDevice);
+        // gpuErrchk( cudaPeekAtLastError() );
+        // gpuErrchk( cudaDeviceSynchronize() );
+        // fprintf(stdout,"c\n");
+        // cudaDeviceSynchronize();
+      }
 
       //  -- update segmentation --
       for (int xmod3 = 0 ; xmod3 < 2; xmod3++){
@@ -107,27 +124,16 @@ __host__ void init_prop_seg(float* img, int* seg,
         }
       }
 
-      // -- copy for debug --
-      if (debug_fill and (iter < nInnerIters)){
-        int* debug_spix_iter = debug_spix+iter*nbatch*nPixels;
-        cudaMemcpy(debug_spix_iter,seg,
-                   nbatch*nPixels*sizeof(int),cudaMemcpyDeviceToDevice);
-        bool* debug_border_iter = debug_border+iter*nbatch*nPixels;
-        cudaMemcpy(debug_border_iter,border,
-                   nbatch*nPixels*sizeof(bool),cudaMemcpyDeviceToDevice);
-        // gpuErrchk( cudaPeekAtLastError() );
-        // gpuErrchk( cudaDeviceSynchronize() );
-        // fprintf(stdout,"c\n");
-        // cudaDeviceSynchronize();
-      }
-      iter++;
 
       // -- update previous --
+      iter++;
       if ((iter>0) and (num_neg_cpu == prev_neg)){
         fprintf(stdout,"An error of some type, the border won't shrink.\n");
         break;
       }
       prev_neg = num_neg_cpu;
+
+
 
     }
 

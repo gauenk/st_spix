@@ -10,8 +10,8 @@ def index_grid(H,W,dtype=th.float,device="cuda",normalize=False):
     grid_y, grid_x = th.meshgrid(th.arange(0, H, dtype=dtype, device=device),
                                  th.arange(0, W, dtype=dtype, device=device))
     if normalize:
-        grid_y = grid_y / (H-1)
         grid_x = grid_x / (W-1)
+        grid_y = grid_y / (H-1)
     grid = th.stack((grid_x, grid_y), 0).float()[None,:]  # 1, 2, W(x), H(y)
     grid.requires_grad = False
     return grid
@@ -41,13 +41,6 @@ def flow_warp(x, flow, interp_mode='bilinear',
 
     # -- create mesh grid --
     grid = index_grid(h,w,dtype=x.dtype,device=x.device)
-    # grid_y, grid_x = th.meshgrid(th.arange(0, h, dtype=x.dtype, device=x.device),
-    #                              th.arange(0, w, dtype=x.dtype, device=x.device))
-    # grid = th.stack((grid_x, grid_y), 0).float()[None,:]  # 2, W(x), H(y)
-    # grid.requires_grad = False
-
-    flow = flow.flip(1)
-    # flow[:,1] = -flow[:,1]
     vgrid = grid + flow
 
     # -- scale grid to [-1,1] --
@@ -58,7 +51,7 @@ def flow_warp(x, flow, interp_mode='bilinear',
 
     # -- resample --
     output = th_f.grid_sample(x, vgrid_scaled, mode=interp_mode,
-                           padding_mode=padding_mode, align_corners=align_corners)
+                              padding_mode=padding_mode, align_corners=align_corners)
 
     return output
 

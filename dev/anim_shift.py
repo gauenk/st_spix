@@ -16,6 +16,8 @@ from skimage.segmentation import mark_boundaries
 import torchvision.utils as tv_utils
 import torch.nn.functional as th_f
 
+from st_spix.spix_utils import mark_spix_vid,fill_spix
+
 import seaborn as sns
 import matplotlib.pyplot as plt
 from dev_basics.utils.metrics import compute_psnrs
@@ -111,7 +113,7 @@ def run_stnls(img0,img1,in_flow,ws,ps,full_ws=False):
     out_flow = rearrange(flows_k,'b 1 h w 1 f -> b f h w')
     return out_flow
 
-def shift_labels(spix,means,flow):
+def shift_labels(spix,means,flow,eps):
 
     # -- unpack --
     B,H,W = spix.shape
@@ -124,18 +126,19 @@ def shift_labels(spix,means,flow):
     gscatter,gcnts = st_spix.scatter.run(grid,flow,swap_c=True)
 
     # -- invalidate --
-    eps = 1e-13
+    # eps = 1e-13
     invalid = th.where(th.logical_or(gcnts<(1-eps),(1+eps)<gcnts))
     for i in range(2):
         gscatter[:,i][invalid] = -100.
 
     # -- all pairwise differences --
     locs = th.stack([means[:,-2]/(W-1),means[:,-1]/(H-1)],-1)
+    # locs = th.stack([means[:,-1]/(H-1),means[:,-2]/(W-1)],-1)
     gscatter = rearrange(gscatter,'b f h w -> (b h w) f')
     dists = th.cdist(gscatter,locs)
 
     # -- gather --
-    spix_grid = th.arange(means.shape[0]).to(spix.device)+1
+    spix_grid = th.arange(means.shape[0]).to(spix.device)
     shifted_spix = spix_grid[dists.argmin(1)].int()
     # print("shaped: ",means.shape,flow.shape,shifted_spix.shape)
     shifted_spix = rearrange(shifted_spix,'(b h w) -> b h w',h=H,w=W)
@@ -151,36 +154,67 @@ def prop_seg(img,spix,flow,means,cov,counts,ids,
     # print(spix.min(),spix.max())
     K = spix.max().item()+1
     max_SP = K-1
-    eps = 1e-13
+    eps = 0.#1e-13
     # print("K: ",K)
 
     # -- rigid shift --
     # flow_sp = st_spix.sp_pool_from_spix(flow,spix)
-    flow_sp,_means = st_spix.pool_flow_and_shift_mean(flow,means.clone(),spix,ids,K)
-    spix_s,cnts = shift_labels(spix.clone(),means[0],flow_sp) # propogate labels
+    flow_sp,_means = st_spix.pool_flow_and_shift_mean(flow,means.clone(),spix,ids)
+    spix_s,cnts = shift_labels(spix.clone(),means[0],flow_sp,eps) # propogate labels
+    # flow_sp,_means = st_spix.pool_flow_and_shift_mean(flow,means.clone(),spix,ids,K)
+    # spix_s,cnts = shift_labels(spix.clone(),means[0],flow_sp) # propogate labels
     means = _means
 
     # -- mark overlapping and holes --
-    invalid = th.logical_or(cnts>(1+eps),cnts<(1-eps))
+    invalid = th.logical_or(cnts>1+eps,cnts<1-eps)
     missing = th.where(invalid.ravel())[0][None,:].type(th.int)
     spix_s[th.where(invalid)] = -1
+    spix_s_0 = spix_s.clone()
+
+    # print("Comparing negatives: ",missing.shape,th.sum(spix_s==-1))
     # print(spix_s.shape,missing.shape,K,max_SP,img.shape)
-    # th.cuda.synchronize()
+    th.cuda.synchronize()
     # exit()
 
     # -- exec filling --
-    niters_refine = 0
-    fill_debug = True
+    refine_iters = 0 # don't refine.
+    niters_refine = refine_iters
+    fill_debug = False
+    use_xfer = True
+    # print(img.shape,spix_s.shape,missing.shape,means.shape,cov.shape,
+    #       counts.shape,npix_in_side,i_std,alpha,beta,niters,
+    #       inner_niters,niters_refine,K,max_SP,fill_debug)
+    # exit()
+
     fxn = st_spix_prop_cuda.spix_prop_dev
-    border,spix_s,debug = fxn(img,spix_s,missing,means,cov,counts,
-                              npix_in_side,i_std,alpha,beta,niters,
-                              inner_niters,niters_refine,K,max_SP,fill_debug)
-    assert spix_s.max() <= means.shape[1],"Must be equal or less than."
+    # print("[prop] img.min(), img.max(): ",img.min(), img.max())
+    # print("[info0] spix: ",spix_s.min().item(),spix_s.max().item())
+    outs = fxn(img,spix_s,missing,means,cov,counts,npix_in_side,
+               i_std,alpha,beta,niters,inner_niters,niters_refine,
+               K,max_SP,fill_debug,0,use_xfer)
+    boarder,spix_s,db_spix,db_border,db_seg,_means,cov,counts,unique_ids = outs
+
+    # # -- mark overlapping and holes --
+    # invalid = th.logical_or(cnts>(1+eps),cnts<(1-eps))
+    # missing = th.where(invalid.ravel())[0][None,:].type(th.int)
+    # spix_s[th.where(invalid)] = -1
+    # # print(spix_s.shape,missing.shape,K,max_SP,img.shape)
+    # # th.cuda.synchronize()
+    # # exit()
+
+    # # -- exec filling --
+    # niters_refine = 0
+    # fill_debug = True
+    # fxn = st_spix_prop_cuda.spix_prop_dev
+    # border,spix_s,debug = fxn(img,spix_s,missing,means,cov,counts,
+    #                           npix_in_side,i_std,alpha,beta,niters,
+    #                           inner_niters,niters_refine,K,max_SP,fill_debug)
+    # assert spix_s.max() <= means.shape[1],"Must be equal or less than."
     # print("[info] spix: ",spix_s.min().item(),spix_s.max().item())
 
     # -- exec refine --
 
-    return spix_s,cnts,debug,means,border
+    return spix_s,cnts,db_spix,means,db_border
 
 def viz_marked_debug(img,debug,root):
 
@@ -203,15 +237,15 @@ def viz_marked_debug(img,debug,root):
     marks = th.stack(marks)
     tv_utils.save_image(marks,root / "marked_debug.png")
 
-def mark_spix_vid(vid,spix):
-    marked = []
-    for ix,spix_t in enumerate(spix):
-        img = rearrange(vid[:,ix],'b f h w -> b h w f')
-        marked_t = mark_boundaries(img.cpu().numpy(),spix_t.cpu().numpy())
-        marked_t = to_th(swap_c(marked_t))
-        marked.append(marked_t)
-    marked = th.cat(marked)
-    return marked
+# def mark_spix_vid(vid,spix):
+#     marked = []
+#     for ix,spix_t in enumerate(spix):
+#         img = rearrange(vid[:,ix],'b f h w -> b h w f')
+#         marked_t = mark_boundaries(img.cpu().numpy(),spix_t.cpu().numpy())
+#         marked_t = to_th(swap_c(marked_t))
+#         marked.append(marked_t)
+#     marked = th.cat(marked)
+#     return marked
 
 def img4bass(img):
     img = rearrange(img,'... f h w -> ... h w f')
@@ -264,22 +298,21 @@ def run_exp(cfg):
     timer = ExpTimer()
 
     # -- config --
-    npix_in_side = 80
+    npix_in_side = 40
     niters,inner_niters = 1,25
     # i_std,alpha,beta = 0.018,20.,100.
-    i_std,alpha,beta = 0.1,0.001,100.
-    cnt_eps = 1e-3
-
+    i_std,alpha,beta = 0.1,0.001,10.
+    cnt_eps = 0.#1e-8
 
     # -- load images --
-    vid = st_spix.data.davis_example(isize=None,nframes=10)[:1,:10,:,:480,:480]
+    vid = st_spix.data.davis_example(isize=None,nframes=10)[0,:3,:,:480,:480]
     # vid = vid + (25./255.)*th.randn_like(vid)
     vid = th.clip(255.*vid,0.,255.).type(th.uint8)
-    B,T,F,H,W = vid.shape
-    tv_utils.save_image(vid[0]/255.,root/"vid.png")
+    T,F,H,W = vid.shape
+    tv_utils.save_image(vid/255.,root/"vid.png")
 
     # -- bass --
-    img0 = img4bass(vid[:,0])
+    img0 = img4bass(vid[None,0])
     bass_fwd = st_spix_cuda.bass_forward
     spix0,means,cov,counts,ids = bass_fwd(img0,npix_in_side,i_std,alpha,beta)
     # print(len(th.unique(spix0)))
@@ -289,17 +322,17 @@ def run_exp(cfg):
     spix0,means,cov,counts,ids = bass_fwd(img0,npix_in_side,i_std,alpha,beta)
     timer.sync_stop("bass")
 
-    timer.sync_start("remap")
-    # spix0 = remap_spix(spix0,ids,device="cuda")
-    timer.sync_stop("remap")
+    # timer.sync_start("remap")
+    # # spix0 = remap_spix(spix0,ids,device="cuda")
+    # timer.sync_stop("remap")
 
     # -- run flow --
     timer.sync_start("flow")
-    flows = flow_pkg.run(vid/255.,sigma=0.0,ftype="cv2")
-    flow = flows.fflow[0,0][None,:]
+    flows = flow_pkg.run(vid[None,:]/255.,sigma=0.0,ftype="cv2")
     # flow = flows.bflow[0,1][None,:]
     timer.sync_stop("flow")
     ids = ids.unsqueeze(1).expand(-1, means.size(-1)).long()[None,:]
+
 
     # -- iterations --
     spix_st = [spix0]
@@ -307,21 +340,37 @@ def run_exp(cfg):
 
     # -- unpack --
     ix = 0
-    img_curr = img4bass(vid[:,ix+1])
+    img_curr = img4bass(vid[None,ix+1])
     flow_curr = flows.fflow[0,ix][None,:]
+    # print(spix0.min(),spix0.max())
 
     # -- run --
+    th.cuda.synchronize()
     timer.sync_start("st_iter_%d"%ix)
-    spix_curr_st,cnts,debug,means,_ = prop_seg(img_curr,spix_st[-1],flow_curr,
-                                               means,cov,counts,ids,niters,
-                                               inner_niters,npix_in_side,i_std,alpha,beta)
+    spix_curr_st,cnts,debug,means,_ = prop_seg(img_curr,spix_st[-1],
+                                               flow_curr,means,cov,counts,
+                                               ids,niters,inner_niters,
+                                               npix_in_side,i_std,alpha,beta)
     timer.sync_stop("st_iter_%d"%ix)
+    print(cnts.shape)
+    print(cnts[0,23:28,16:20])
+    print(cnts[0,63:68,16:20])
+    print(cnts[0,73:80,16:20])
+    th.save(cnts,"cnts.pth")
 
-    # # -=-=-=-=-=-=-=-=-=-=-=-
-    # #
-    # #   Animate the Filling
-    # #
-    # # -=-=-=-=-=-=-=-=-=-=-=-
+
+
+    spix_g = th.stack([spix0[0],spix_curr_st[0]])
+    marked = mark_spix_vid(vid,spix_g)
+    fill_spix(marked,spix_g,10)
+    print(marked.shape)
+    tv_utils.save_image(marked,root / "marked.png")
+
+    # -=-=-=-=-=-=-=-=-=-=-=-
+    #
+    #   Animate the Filling
+    #
+    # -=-=-=-=-=-=-=-=-=-=-=-
 
     # # print(debug.shape)
     # # for ix in range(nsteps):
@@ -329,94 +378,94 @@ def run_exp(cfg):
     root_fill = root/"fill_frames"
     if not root_fill.exists():
         root_fill.mkdir(parents=True)
-    # for fn in root_fill.iterdir(): os.remove(str(fn))
-    # fnames_fill = []
-    # spix = spix_st[-1]
-    # K = spix_st[-1].max().item()+1
-    # flow_sp,_ = st_spix.pool_flow_and_shift_mean(flow_curr,means.clone(),
-    #                                              spix_st[-1],ids,K)
-    # nsteps = 0
-    # negative_spix = True
+    for fn in root_fill.iterdir(): os.remove(str(fn))
+    fnames_fill = []
+    spix = spix_st[-1]
+    K = spix_st[-1].max().item()+1
+    flow_sp,_ = st_spix.pool_flow_and_shift_mean(flow_curr,means.clone(),
+                                                 spix_st[-1],ids)
+    nsteps = 10
+    negative_spix = True
     # while negative_spix:
-    # # for ix in range(nsteps):
-    #     ix = nsteps
-    #     inner_niters = nsteps
-    #     # if ix < 5: inner_niters = ix
-    #     # else: inner_niters = 2*ix
-    #     flow_sp,_ = st_spix.pool_flow_and_shift_mean(flow_curr,means.clone(),
-    #                                                  spix_st[-1],ids,K)
-    #     scatter,cnts = st_spix.scatter.run(vid[:,0].contiguous()/255.,flow_sp)
-    #     cmp1 = scatter.clone()
-    #     img_curr = img4bass(vid[:,1])
-    #     spix1,_,debug,_,border = prop_seg(img_curr,spix,flow_curr,
-    #                                       means,cov,counts,ids,niters,
-    #                                       inner_niters,npix_in_side,
-    #                                       i_std,alpha,beta)
+    for ix in range(nsteps):
+        # ix = nsteps
+        # inner_niters = nsteps
+        if ix < 5: inner_niters = ix
+        else: inner_niters = 2*ix
+        flow_sp,_ = st_spix.pool_flow_and_shift_mean(flow_curr,means.clone(),
+                                                     spix_st[-1],ids)
+        scatter,cnts = st_spix.scatter.run(vid[None,0].contiguous()/255.,flow_sp)
+        cmp1 = scatter.clone()
+        img_curr = img4bass(vid[None,1])
+        spix1,_,debug,_,border = prop_seg(img_curr,spix,flow_curr,
+                                          means,cov,counts,ids,niters,
+                                          inner_niters,npix_in_side,
+                                          i_std,alpha,beta)
 
-    #     # -- fillin new information with frame t+1 info --
-    #     scatter = th.clamp(scatter,0,1.)
-    #     img1 = vid[:,1]/255.
-    #     for i in range(3):
-    #         # -- still invalid --
-    #         bool0 = th.logical_and(cnts>(1+cnt_eps),spix1==-1)
-    #         bool1 = th.logical_and(cnts<(1-cnt_eps),spix1==-1)
-    #         scatter[:,i][th.where(bool0)] = i==0
-    #         scatter[:,i][th.where(bool1)] = i==2
+        # -- fillin new information with frame t+1 info --
+        scatter = th.clamp(scatter,0,1.)
+        img1 = vid[None,1]/255.
+        for i in range(3):
+            # -- still invalid --
+            bool0 = th.logical_and(cnts>(1+cnt_eps),spix1==-1)
+            bool1 = th.logical_and(cnts<(1-cnt_eps),spix1==-1)
+            scatter[:,i][th.where(bool0)] = i==0
+            scatter[:,i][th.where(bool1)] = i==2
 
-    #         # -- valid filled with img1 --
-    #         scatter[:,i][th.where(spix1!=-1)] = img1[:,i][th.where(spix1!=-1)]
+            # -- valid filled with img1 --
+            scatter[:,i][th.where(spix1!=-1)] = img1[:,i][th.where(spix1!=-1)]
 
-    #         # -- 'filled-in' region --
-    #         bool_f = th.logical_and(cnts>(1+cnt_eps),spix1!=-1)
-    #         bool_f = th.logical_or(bool_f,th.logical_and(cnts<(1-cnt_eps),spix1!=-1))
-    #         scatter[:,i][th.where(bool_f)] = img1[:,i][th.where(bool_f)]
+            # -- 'filled-in' region --
+            bool_f = th.logical_and(cnts>(1+cnt_eps),spix1!=-1)
+            bool_f = th.logical_or(bool_f,th.logical_and(cnts<(1-cnt_eps),spix1!=-1))
+            scatter[:,i][th.where(bool_f)] = img1[:,i][th.where(bool_f)]
 
-    #         # -- along the boarder --
-    #         scatter[:,i][th.where(border)] = i==1
+            # -- along the boarder --
+            scatter[:,i][th.where(border)] = i==1
 
-    #     # -- compute diff to reference frame --
-    #     delta = th.mean((img1 - scatter)**2,1,keepdim=True).repeat(1,3,1,1)
-    #     # delta = delta / (1e-8+delta.max())
-    #     # print(spix1.shape,delta.shape,scatter.shape)
-    #     # print(delta.max(),delta.min())
-    #     args = th.where(spix1==-1)
-    #     # for i in range(3):
-    #     #     delta[:,i][args] = 0.
-    #     # # print(delta.max(),delta.min())
-    #     # delta = delta / (1e-8+delta.max())
-    #     for i in range(3):
-    #         delta[:,i][args] = scatter[:,i][args]
+        # -- compute diff to reference frame --
+        delta = th.mean((img1 - scatter)**2,1,keepdim=True).repeat(1,3,1,1)
+        # delta = delta / (1e-8+delta.max())
+        # print(spix1.shape,delta.shape,scatter.shape)
+        # print(delta.max(),delta.min())
+        args = th.where(spix1==-1)
+        # for i in range(3):
+        #     delta[:,i][args] = 0.
+        # # print(delta.max(),delta.min())
+        # delta = delta / (1e-8+delta.max())
+        for i in range(3):
+            delta[:,i][args] = scatter[:,i][args]
 
-    #     # -- create frame --
-    #     # print(scatter.shape,delta.shape)
-    #     frame_ix = scatter
-    #     # frame_ix = th.cat([scatter,delta])
-    #     # frame_ix = tv_utils.make_grid(frame_ix,nrow=2)
-    #     # frame_ix = scatter
+        # -- create frame --
+        # print(scatter.shape,delta.shape)
+        frame_ix = scatter
+        # frame_ix = th.cat([scatter,delta])
+        # frame_ix = tv_utils.make_grid(frame_ix,nrow=2)
+        # frame_ix = scatter
 
-    #     # -- save --
-    #     fn_ix = str(root_fill/("frame_%d.png"%ix))
-    #     fnames_fill.append(fn_ix)
-    #     tv_utils.save_image(frame_ix,fn_ix)
+        # -- save --
+        fn_ix = str(root_fill/("frame_%d.png"%ix))
+        fnames_fill.append(fn_ix)
+        tv_utils.save_image(frame_ix,fn_ix)
 
-    #     # -- update --
-    #     negative_spix = th.any(spix1==-1)
-    #     nsteps = nsteps + 1
-    #     if nsteps > 30: break
-
-
-    # # -- filenames to gif --
-    # nstart = 3
-    # nend = 5
-    # name = "fill"
-    # filenames2gif(fnames_fill,nstart,nend,name,root)
+        # -- update --
+        negative_spix = th.any(spix1==-1)
+        nsteps = nsteps + 1
+        if nsteps > 30: break
 
 
-    # # -=-=-=-=-=-=-=-=-=-=-=-
-    # #
-    # #   Animate the Shifting
-    # #
-    # # -=-=-=-=-=-=-=-=-=-=-=-
+    # -- filenames to gif --
+    nstart = 3
+    nend = 5
+    name = "fill"
+    filenames2gif(fnames_fill,nstart,nend,name,root)
+
+
+    # -=-=-=-=-=-=-=-=-=-=-=-
+    #
+    #   Animate the Shifting
+    #
+    # -=-=-=-=-=-=-=-=-=-=-=-
 
     # # # nsteps = 10 # from above
     root_shift = root/"shift_frames"
@@ -426,7 +475,7 @@ def run_exp(cfg):
     # fnames_shift = []
     # K = spix_st[-1].max().item()+1
     # flow_sp,_ = st_spix.pool_flow_and_shift_mean(flow_curr,means.clone(),
-    #                                              spix_st[-1],ids,K)
+    #                                              spix_st[-1],ids)
     # for ix in range(nsteps):
     #     timer.sync_start("shift_img_%d"%ix)
     #     _flow_sp = (ix/(nsteps-1.)) * flow_sp.contiguous()
@@ -501,8 +550,8 @@ def run_exp(cfg):
         root_seq.mkdir(parents=True)
     for fn in root_seq.iterdir(): os.remove(str(fn))
 
-    img0 = vid[:,0].cpu()/255.
-    img1 = vid[:,1].cpu()/255.
+    img0 = vid[None,0].cpu()/255.
+    img1 = vid[None,1].cpu()/255.
     N = len(list(root_shift.iterdir()))
     fnames_shift = []
     fnames_fill = []

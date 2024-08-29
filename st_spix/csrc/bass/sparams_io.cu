@@ -23,6 +23,7 @@ void copy_spix_to_params(float* means, float* cov, int* counts,
 
     // -- read spix --
     int sp_index = ids[ix];
+    if (sp_index < 0){ return; }
     auto params_ix = sp_params[sp_index];
       
     // -- fill params --
@@ -53,6 +54,7 @@ void copy_spix_to_params_icov2cov(float* means, float* cov, int* counts,
 
     // -- read spix --
     int sp_index = ids[ix];
+    if (sp_index < 0){ return; }
     auto params_ix = sp_params[sp_index];
       
     // -- fill params --
@@ -94,16 +96,28 @@ void copy_params_to_spix(float* means, float* cov, int* counts,
 
     // -- read spix --
     int sp_index = ids[ix];
+    if (sp_index < 0){ return; }
     auto params_ix = sp_params[sp_index];
       
     // -- fill params --
-    params_ix.sigma_s.x = cov_ix[0];
-    params_ix.sigma_s.y = cov_ix[1];
-    params_ix.sigma_s.z = cov_ix[2];
+    double3 sigma_s;
+    sigma_s.x = cov_ix[0];
+    sigma_s.y = cov_ix[1];
+    sigma_s.z = cov_ix[2];
+    params_ix.sigma_s = sigma_s;
+    // params_ix.sigma_s.x = cov_ix[0];
+    // params_ix.sigma_s.y = cov_ix[1];
+    // params_ix.sigma_s.z = cov_ix[2];
     params_ix.logdet_Sigma_s = cov_ix[3];
-    params_ix.mu_i.x = means_ix[0];
-    params_ix.mu_i.y = means_ix[1];
-    params_ix.mu_i.z = means_ix[2];
+
+    float3 mu_i;
+    mu_i.x = means_ix[0];
+    mu_i.y = means_ix[1];
+    mu_i.z = means_ix[2];
+    params_ix.mu_i = mu_i;
+    // params_ix.mu_i.x = means_ix[0];
+    // params_ix.mu_i.y = means_ix[1];
+    // params_ix.mu_i.z = means_ix[2];
     params_ix.mu_s.x = means_ix[3];
     params_ix.mu_s.y = means_ix[4];
     params_ix.count = counts_ix[0];

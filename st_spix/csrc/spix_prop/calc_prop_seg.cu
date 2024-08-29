@@ -40,14 +40,15 @@
 #endif
 
 __host__ void calc_prop_seg(float* image_gpu_double, int* seg_gpu,
+                            int* missing_gpu,
                             int* seg_potts_label, bool* border_gpu,
                             superpixel_params* sp_params, 
                             superpixel_params* sp_params_prev, 
                             superpixel_GPU_helper* sp_gpu_helper,
                             const float3 J_i, const float logdet_Sigma_i, 
                             superpixel_options sp_options,
-                            int nbatch, int nftrs, int dim_x, int dim_y, int nSPs,
-                            bool use_transition){
+                            int nbatch, int nftrs, int dim_x, int dim_y,
+                            int nSPs, bool use_transition, float* debug_seg){
 
 
     // -- init --
@@ -67,6 +68,7 @@ __host__ void calc_prop_seg(float* image_gpu_double, int* seg_gpu,
     int split_merge_start = sp_options.split_merge_start;
     int nSPs_buffer = nSPs * 45 ;
     // fprintf(stdout,"split_merge_start: %d\n",split_merge_start);
+    float* debug_seg_i = debug_seg;
 
     int count = 1;
     int count_split =0;
@@ -78,9 +80,15 @@ __host__ void calc_prop_seg(float* image_gpu_double, int* seg_gpu,
     // for (int i = 0; i < 3; i++) {
         // "M step"
 
+      // Uncomment me probably :D
       update_param(image_gpu_double, seg_gpu, sp_params,
                    sp_gpu_helper, npixels, nSPs, nSPs_buffer,
                    nbatch, dim_x, dim_y, nftrs, prior_sigma_s, prior_count);
+      // update_param_spaceonly(image_gpu_double, seg_gpu, sp_params,
+      //                        sp_gpu_helper, npixels, nSPs, nSPs_buffer,
+      //                        nbatch, dim_x, dim_y, nftrs, prior_sigma_s, prior_count);
+
+
         // gpuErrchk( cudaPeekAtLastError() );
         // gpuErrchk( cudaDeviceSynchronize() );
 
@@ -146,13 +154,16 @@ __host__ void calc_prop_seg(float* image_gpu_double, int* seg_gpu,
 
 
         //"(Hard) E step" - find only the max value after potts term to get the best label
+      // todo: include a "missing_gpu" as a boolean mask on the image pixels
+      debug_seg_i = debug_seg + i * nInnerIters * npixels * 45;
         update_prop_seg(image_gpu_double, seg_gpu, seg_potts_label, border_gpu,
-                        sp_params, sp_params_prev, sp_gpu_helper,
-                        J_i, logdet_Sigma_i,
+                        sp_params, sp_params_prev,
+                        // sp_params_prev, sp_params_prev,
+                        sp_gpu_helper, J_i, logdet_Sigma_i,
                         cal_cov, i_std, s_std, nInnerIters,
                         npixels, nSPs, nSPs_buffer, nbatch,
                         dim_x, dim_y, nftrs, sp_options.beta_potts_term,
-                        use_transition);
+                        use_transition,debug_seg_i);
         // gpuErrchk( cudaPeekAtLastError() );
         // gpuErrchk( cudaDeviceSynchronize() );
 

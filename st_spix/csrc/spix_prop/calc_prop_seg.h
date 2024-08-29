@@ -15,12 +15,12 @@
 
 
 __host__ void calc_prop_seg(float* image_gpu_double, int* seg_gpu,
-                            int* seg_potts_label, bool* border_gpu,
+                            int* missing_gpu, int* seg_potts_label, bool* border_gpu,
                             superpixel_params* sp_params,
                             superpixel_params* sp_params_prev,
                             superpixel_GPU_helper* sp_gpu_helper,
                             const float3 J_i, const float logdet_Sigma_i,
                             superpixel_options sp_options,
                             int nbatch, int nftrs, int dim_x, int dim_y, int nSPs,
-                            bool use_transition);
+                            bool use_transition, float* debug_seg);
 

@@ -47,7 +47,8 @@ __host__ void update_prop_seg(float* img, int* seg,
                               int nInnerIters, const int nPixels,
                               const int nSPs, int nSPs_buffer,
                               int nbatch, int xdim, int ydim, int nftrs,
-                              float beta_potts_term, bool use_transition){
+                              float beta_potts_term, bool use_transition,
+                              float* debug_seg){
     
     int num_block = ceil( double(nPixels) / double(THREADS_PER_BLOCK) ); 
     // int num_block2 = ceil( double(nPixels*4) / double(THREADS_PER_BLOCK) ); 
@@ -55,34 +56,45 @@ __host__ void update_prop_seg(float* img, int* seg,
     dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
     dim3 BlockPerGrid(num_block,nbatch);
     // dim3 BlockPerGrid2(num_block2,nbatch);
+    float* debug_seg_i = debug_seg;
 
     int single_border = 0;
     // cudaMemset(post_changes, 0, nPixels*sizeof(post_changes_helper));
     for (int iter = 0 ; iter < nInnerIters; iter++){
+
+        debug_seg_i = debug_seg + iter * nPixels * 45;
+
     	// strides of 2*2
-        // cudaMemset(border, 0, nPixels*sizeof(bool));
+        cudaMemset(border, 0, nPixels*sizeof(bool));
         find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(seg, border, nPixels,
                                                             nbatch, xdim, ydim,
                                                             single_border);
         // gpuErrchk( cudaPeekAtLastError() );
         // gpuErrchk( cudaDeviceSynchronize() );
 
-        for (int xmod3 = 0 ; xmod3 <2; xmod3++){
-            for (int ymod3 = 0; ymod3 <2; ymod3++){
+        int xmod3 = (rand() > 0.5) ? 1 : 0; // reverse order half of the time
+        // bool yorder = (rand() > 0.5);
+        for (int _xmod3 = 0 ; _xmod3 <2; _xmod3++){
+            int ymod3 = (rand() > 0.5) ? 1 : 0; // reverse order half of the time
+            for (int _ymod3 = 0; _ymod3 <2; _ymod3++){
                 //find the border pixels
+              // if (rand() > 0.75){ continue; }
                 update_prop_seg_subset<<<BlockPerGrid,ThreadPerBlock>>>(img, seg, \
                      seg_potts_label,border, sp_params, sp_params_prev, \
                      sp_gpu_helper, J_i, logdet_Sigma_i, cal_cov, \
                      i_std, s_std, nPixels, nSPs, \
                      nbatch, xdim, ydim, nftrs, xmod3, \
-                     ymod3, beta_potts_term, use_transition);
+                     ymod3, beta_potts_term, use_transition, debug_seg_i);
                 // gpuErrchk( cudaPeekAtLastError() );
                 // gpuErrchk( cudaDeviceSynchronize() );
-
+                ymod3 = 1 - ymod3; // update x mod 3: 0 -> 1 and 1 -> 0
             }
+            xmod3 = 1 - xmod3; // update x mod 3: 0 -> 1 and 1 -> 0
         }
+
+
     }
-    // cudaMemset(border, 0, nPixels*sizeof(bool));
+    cudaMemset(border, 0, nPixels*sizeof(bool));
     find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(\
            seg, border, nPixels, nbatch, xdim, ydim, single_border);
 }
@@ -103,7 +115,7 @@ __global__  void update_prop_seg_subset(
     const int nPts,const int nSuperpixels,
     const int nbatch, const int xdim, const int ydim, const int nftrs,
     const int xmod3, const int ymod3, const float beta_potts_term,
-    const bool use_transition){
+    const bool use_transition, float* debug_seg){
 
     int label_check;
     int idx = threadIdx.x + blockIdx.x*blockDim.x;
@@ -198,6 +210,8 @@ __global__  void update_prop_seg_subset(
    
     // -- index image --
     float* imgC = img + idx * 3;
+    float* debugC = debug_seg + idx * 45;
+    // debugC[44] = 1;
 
     // -- compute posterior --
     label_check = N;
@@ -206,44 +220,47 @@ __global__  void update_prop_seg_subset(
     xfer0=xfer1=0;
     res_max = cal_posterior_prop(imgC,seg,x,y,sp_params,sp_params_prev,
                                  label_check,J_i,logdet_Sigma_i,i_std,s_std,
-                                 count_diff_nbrs_N,beta,res_max,xfer0,xfer1);
-
+                                 count_diff_nbrs_N,beta,res_max,
+                                 xfer0,xfer1,debugC);
     // int P = -1;
     // float xfer_P = 0; // p for "Pick"
     label_check = S;
     assert(label_check >= 0);
     if(label_check!=N){
-      if (use_transition){
-        calc_transition(xfer0,xfer1,N,S,C,imgC,x,y,
-                        sp_params,sp_params_prev,sp_gpu_helper);
-      }
+      // if (use_transition){
+      //   calc_transition(xfer0,xfer1,N,S,C,imgC,x,y,
+      //                   sp_params,sp_params_prev,sp_gpu_helper);
+      // }
       res_max = cal_posterior_prop(imgC,seg,x,y,sp_params,sp_params_prev,
                                    label_check,J_i,logdet_Sigma_i,i_std,s_std,
-                                   count_diff_nbrs_S,beta,res_max,xfer0,xfer1);
+                                   count_diff_nbrs_S,beta,res_max,
+                                   xfer0,xfer1,debugC+11);
     }
 
     label_check = W;
     assert(label_check >= 0);
     if((label_check!=S)&&(label_check!=N)){
-      if (use_transition){
-        calc_transition(xfer0,xfer1,res_max.y,label_check,
-                        C,imgC,x,y,sp_params,sp_params_prev,sp_gpu_helper);
-      }
+      // if (use_transition){
+      //   calc_transition(xfer0,xfer1,res_max.y,label_check,C,imgC,x,y,
+      //                   sp_params,sp_params_prev,sp_gpu_helper);
+      // }
       res_max = cal_posterior_prop(imgC,seg,x,y,sp_params,sp_params_prev,
                                    label_check,J_i,logdet_Sigma_i,i_std,s_std,
-                                   count_diff_nbrs_W,beta,res_max,xfer0,xfer1);
+                                   count_diff_nbrs_W,beta,res_max,
+                                   xfer0,xfer1,debugC+22);
     }
     
     label_check = E;
     assert(label_check >= 0);
     if((label_check!=W)&&(label_check!=S)&&(label_check!=N)){
-      if (use_transition){      
-        calc_transition(xfer0,xfer1,res_max.y,label_check,
-                        C,imgC,x,y,sp_params,sp_params_prev,sp_gpu_helper);
-      }
+      // if (use_transition){      
+      //   calc_transition(xfer0,xfer1,res_max.y,label_check,
+      //                   C,imgC,x,y,sp_params,sp_params_prev,sp_gpu_helper);
+      // }
       res_max = cal_posterior_prop(imgC,seg,x,y, sp_params, sp_params_prev,
                                    label_check,J_i, logdet_Sigma_i,i_std,s_std,
-                                   count_diff_nbrs_E,beta,res_max,xfer0,xfer1);
+                                   count_diff_nbrs_E,beta,res_max,
+                                   xfer0,xfer1,debugC+33);
     }
 
     seg[seg_idx] = res_max.y;

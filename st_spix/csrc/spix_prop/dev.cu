@@ -39,9 +39,25 @@
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 #define THREADS_PER_BLOCK 512
 
+__global__
+void copy_only_spatial_mean(superpixel_params* sp_params_dest,
+                            superpixel_params* sp_params_src, int nspix){
+
+    // -- filling superpixel params into image --
+    int ix = threadIdx.x + blockIdx.x * blockDim.x;  
+    if (ix>=nspix) return; 
+
+    // -- read params --
+    auto params_src = sp_params_src[ix];
+    auto params_dest = sp_params_dest[ix];
+      
+    // -- fill params --
+    params_dest.mu_s = params_src.mu_s;
+
+}
 
 std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,
-             torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor>
+             torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor>
 spix_prop_dev_cuda(const torch::Tensor imgs,
                    const torch::Tensor in_spix,
                    const torch::Tensor in_missing,
@@ -53,6 +69,7 @@ spix_prop_dev_cuda(const torch::Tensor imgs,
                    int niters, int inner_niters, int niters_refine,
                    int nspix, int max_SP, bool debug_fill, bool prop_type,
                    bool use_transition){
+
 
 
     // -- check --
@@ -104,10 +121,12 @@ spix_prop_dev_cuda(const torch::Tensor imgs,
     //                       in_cov.data<float>(),
     //                       in_counts.data<int>(),
     //                       nspix,max_SP);
+      
 
 
     // -- use current image to compute params, skipping invalid --
     sp.run_update_param();
+
 
     // fprintf(stdout,"3\n");
     // cudaDeviceSynchronize();
@@ -129,11 +148,17 @@ spix_prop_dev_cuda(const torch::Tensor imgs,
 
     int* debug_spix_gpu = nullptr;
     bool* debug_border_gpu = nullptr;
+    float* debug_seg_gpu = nullptr;
     int niters_total = niters * inner_niters;
+    int total_refine = niters_refine * inner_niters;
     int debug_size = niters_total*nPix;
+    int debug_size_seg = total_refine*nPix;
     if (debug_fill){
+
       throw_on_cuda_error(cudaMalloc((void**)&debug_spix_gpu,debug_size*sizeof(int)));
       throw_on_cuda_error(cudaMalloc((void**)&debug_border_gpu,debug_size*sizeof(bool)));
+      throw_on_cuda_error(cudaMalloc((void**)&debug_seg_gpu,
+                                     45*debug_size_seg*sizeof(float)));
     }
 
 
@@ -179,11 +204,11 @@ spix_prop_dev_cuda(const torch::Tensor imgs,
 
     // gpuErrchk( cudaPeekAtLastError() );
     // gpuErrchk( cudaDeviceSynchronize() );
-    cudaMemcpy(sp.seg_cpu, seg_gpu, nPix*sizeof(int), cudaMemcpyDeviceToHost);
+    // cudaMemcpy(sp.seg_cpu, seg_gpu, nPix*sizeof(int), cudaMemcpyDeviceToHost);
     // gpuErrchk( cudaPeekAtLastError() );
     // gpuErrchk( cudaDeviceSynchronize() );
 
-    cudaMemcpy(sp.seg_gpu, seg_gpu, nPix*sizeof(int), cudaMemcpyDeviceToDevice);
+    // cudaMemcpy(sp.seg_gpu, seg_gpu, nPix*sizeof(int), cudaMemcpyDeviceToDevice);
 
 
     // gpuErrchk( cudaPeekAtLastError() );
@@ -203,12 +228,28 @@ spix_prop_dev_cuda(const torch::Tensor imgs,
       superpixel_params* sp_params_prev;
       throw_on_cuda_error(cudaMalloc((void**)&sp_params_prev,sp.nSPs_buffer*sofsparams));
 
+      // -- copy from input data --
+      torch::Tensor ids = torch::arange(nspix).to(torch::kInt32);
+      int num_blocks_i = ceil( double(nspix) / double(THREADS_PER_BLOCK) ); 
+      dim3 nthreads_i(THREADS_PER_BLOCK);
+      dim3 nblocks_i(num_blocks_i);
+      copy_params_to_spix<<<nblocks_i,nthreads_i>>>(in_means.data<float>(),
+                                                    in_cov.data<float>(),
+                                                    in_counts.data<int>(),
+                                                    sp_params_prev,
+                                                    ids.data<int>(), nspix);
+      // copy_only_spatial_mean<<<nblocks_i,nthreads_i>>>(sp_params_prev,
+      //                                                  sp.sp_params,nspix);
+
       // -- run modified bass iters using sp_params_prev prior --
       sp.sp_options.nEMIters = niters_refine; // set iters 
-      calc_prop_seg(sp.image_gpu_double, seg_gpu, sp.seg_potts_label,
-                    border_gpu, sp.sp_params, sp_params_prev, 
+      calc_prop_seg(sp.image_gpu_double, seg_gpu,
+                    missing_gpu, sp.seg_potts_label,border_gpu,
+                    sp.sp_params, sp_params_prev,
+                    // sp_params_prev, sp_params_prev,
                     sp.sp_gpu_helper,sp.J_i,sp.logdet_Sigma_i,sp.sp_options,
-                    nbatch, nftrs, width, height, nspix, use_transition);
+                    nbatch, nftrs, width, height, nspix, use_transition,
+                    debug_seg_gpu);
 
       // -- free previous superpixels --
       cudaFree(sp_params_prev);
@@ -222,7 +263,8 @@ spix_prop_dev_cuda(const torch::Tensor imgs,
     torch::Tensor spix = torch::zeros({nbatch, height, width}, options_i32);
 
     // -- copy spix --
-    cudaMemcpy(spix.data<int>(),sp.seg_gpu,nPix*sizeof(int),cudaMemcpyDeviceToDevice);
+    cudaMemcpy(spix.data<int>(),seg_gpu,nPix*sizeof(int),cudaMemcpyDeviceToDevice);
+
 
     // // -- dispatch info --
     // int num_blocks1 = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
@@ -247,7 +289,8 @@ spix_prop_dev_cuda(const torch::Tensor imgs,
     int nspix_r = unique_ids.sizes()[0];
     int label_min = torch::min(unique_ids).item<int>();
     int label_max = torch::max(unique_ids).item<int>();
-    assert(label_min>=0); // must not be negative
+    // assert(label_min>=0); // should only be negative when vizualizing
+
     // fprintf(stdout,"unique [min,max]: %d,%d\n",label_min,label_max);
     // fprintf(stdout,"nspix,nspix_r: %d,%d\n",nspix,nspix_r);
     // assert(nspix_r <= nspix);//"Must be equal; no superpixels added/removed yet."
@@ -284,26 +327,33 @@ spix_prop_dev_cuda(const torch::Tensor imgs,
     // torch::Tensor debug_border = torch::zeros(debug_shape,options_bool);
     torch::Tensor debug_spix;
     torch::Tensor debug_border;
+    torch::Tensor debug_seg;
     if (debug_fill){
       debug_spix = torch::zeros({niters_total, height, width}, options_i32);
       debug_border = torch::zeros({niters_total, height, width},options_bool);
+      debug_seg = torch::zeros({total_refine, height, width, 45},options_f32);
     }else{
+      // debug_seg.data<float>());
       debug_spix = torch::zeros({1, 1, 1}, options_i32);
       debug_border = torch::zeros({1, 1, 1},options_bool);
+      debug_seg = torch::zeros({1, 1, 1, 1},options_f32);
     }
 
     if (debug_fill){
       int* debug_spix_th_ptr = debug_spix.data_ptr<int>();
       bool* debug_border_th_ptr = debug_border.data_ptr<bool>();
+      float* debug_seg_th_ptr = debug_seg.data_ptr<float>();
       cudaMemcpy(debug_spix_th_ptr,debug_spix_gpu,
                  debug_size*sizeof(int),cudaMemcpyDeviceToDevice);
       cudaMemcpy(debug_border_th_ptr,debug_border_gpu,
                  debug_size*sizeof(bool),cudaMemcpyDeviceToDevice);
+      cudaMemcpy(debug_seg_th_ptr,debug_seg_gpu,
+                 45*debug_size_seg*sizeof(float),cudaMemcpyDeviceToDevice);
     }
 
 
 
-    return std::make_tuple(boarder,spix,debug_spix,debug_border,
+    return std::make_tuple(boarder,spix,debug_spix,debug_border,debug_seg,
                            means,cov,counts,unique_ids);
 }
 

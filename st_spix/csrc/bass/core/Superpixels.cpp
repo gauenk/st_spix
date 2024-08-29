@@ -175,8 +175,8 @@ void Superpixels::init_from_previous(int* spix, float* means, float* cov,
     //                  nSPs, nSPs_buffer, nPixels);
 
     // -- load sp params --
-    CudaLoadSpParams(means,cov,counts,K,sp_params,sp_options.s_std,
-                     sp_options.i_std,nSPs,nSPs_buffer,nPixels);
+    // CudaLoadSpParams(means,cov,counts,K,sp_params,sp_options.s_std,
+    //                  sp_options.i_std,nSPs,nSPs_buffer,nPixels);
 
 }
 
@@ -226,12 +226,15 @@ void Superpixels::load_img(float* imgP) {
     memcpy(image_cpu, imgP, dim_i * nPixels * sizeof(unsigned char));
     cudaMemcpy(image_gpu, image_cpu, dim_i * nPixels * sizeof(unsigned char), cudaMemcpyHostToDevice);
     Rgb2Lab(image_gpu, image_gpu_double, nPixels, nbatch);
+    // Rgb2Normz(image_gpu, image_gpu_double, nPixels, nbatch);
 }
 
 void Superpixels::load_gpu_img(float* imgP) {
     cudaMemcpy(image_gpu, imgP, dim_i * nPixels * sizeof(unsigned char),
                cudaMemcpyDeviceToDevice);
     Rgb2Lab(image_gpu, image_gpu_double, nPixels, nbatch);
+    // Rgb2Normz(image_gpu, image_gpu_double, nPixels, nbatch);
+    // cudaMemcpy(image_gpu_double, image_gpu, nPixels * sizeof(int), cudaMemcpyHostToDevice);
 }
 
 void Superpixels::run_update_param(){

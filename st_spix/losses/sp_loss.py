@@ -4,7 +4,6 @@ import torch.nn as nn
 import torchvision
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
-import stnls
 from einops import rearrange
 from easydict import EasyDict as edict
 from st_spix.utils import append_grid

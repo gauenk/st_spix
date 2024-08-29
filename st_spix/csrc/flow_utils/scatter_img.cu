@@ -22,7 +22,8 @@
 __global__
 void scatter_img_forward_kernel(float* img, float* flow,
                                 float* scatter, float* counts,
-                                int height, int width, int npix, int nftrs){
+                                int height, int width, int npix,
+                                int nftrs, float eps){
 
     // -- rasterize --
     int cuda_ix = threadIdx.x + blockIdx.x * blockDim.x;  
@@ -47,14 +48,14 @@ void scatter_img_forward_kernel(float* img, float* flow,
     // bilin2d_interpolate_v1(img_ptr, scatter, counts,
     //                        hi_f, wi_f, height, width, nftrs);
     bilin2d_interpolate(img_ptr, scatter, counts,
-                        hi_f, wi_f, height, width, nftrs);
+                        hi_f, wi_f, height, width, nftrs, eps);
 
 
 }
 
 std::tuple<torch::Tensor,torch::Tensor>
 scatter_img_forward(const torch::Tensor imgs,
-                const torch::Tensor flow){
+                    const torch::Tensor flow, float eps){
 
     // -- check --
     CHECK_INPUT(imgs);
@@ -83,7 +84,7 @@ scatter_img_forward(const torch::Tensor imgs,
                                                        flow.data<float>(),
                                                        scatter_img.data<float>(),
                                                        count_img.data<float>(),
-                                                       height,width,npix,nftrs);
+                                                       height,width,npix,nftrs,eps);
 
     // -- return --
     return std::make_tuple(scatter_img,count_img);

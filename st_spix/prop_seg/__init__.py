@@ -17,8 +17,8 @@ from skimage.segmentation import mark_boundaries
 import torchvision.utils as tv_utils
 import torch.nn.functional as th_f
 
-import seaborn as sns
-import matplotlib.pyplot as plt
+# import seaborn as sns
+# import matplotlib.pyplot as plt
 from dev_basics.utils.metrics import compute_psnrs
 
 try:
@@ -31,11 +31,51 @@ from dev_basics.utils.timer import ExpTimer,TimeIt
 
 from easydict import EasyDict as edict
 
-
 # -- colorwheel --
-import matplotlib.pyplot as plt
-import matplotlib as mpl
-from matplotlib.colors import LinearSegmentedColormap, ListedColormap
+# import matplotlib.pyplot as plt
+# import matplotlib as mpl
+# from matplotlib.colors import LinearSegmentedColormap, ListedColormap
+
+def stream_bass(vid,sp_size=80,beta=10.):
+
+    # -- config --
+    npix_in_side = sp_size
+    niters,inner_niters = 1,0
+    # i_std,alpha,beta = 0.018,20.,100.
+    i_std,alpha = 0.1,0.001
+
+    # -- load images --
+    vid = th.clip(255.*vid,0.,255.).type(th.uint8)
+    T,F,H,W = vid.shape
+
+    # -- run flow --
+    flows = flow_pkg.run(vid[None,:]/255.,sigma=0.0,ftype="cv2")
+
+    # -- bass --
+    img0 = img4bass(vid[None,0])
+    bass_fwd = st_spix_cuda.bass_forward
+    spix0,means,cov,counts,ids = bass_fwd(img0,npix_in_side,i_std,alpha,beta)
+    ids = ids.unsqueeze(1).expand(-1, means.size(-1)).long()[None,:]
+
+    # -- iterations --
+    spix = [spix0]
+    for ix in range(vid.shape[0]-1):
+
+        # -- unpack --
+        img_curr = img4bass(vid[None,ix+1])
+        flow_curr = flows.fflow[0,ix][None,:]
+
+        # -- run --
+        refine_iters = 20
+        outs = prop_seg(img_curr.clone(),spix[-1].clone(),flow_curr.clone(),
+                        means.clone(),cov.clone(),counts.clone(),ids.clone(),
+                        niters,inner_niters,npix_in_side,i_std,
+                        alpha,beta,refine_iters)
+        spix_t,shift_st,dbs,dbp,missing,_means = outs
+        spix.append(spix_t)
+    spix = th.stack(spix)[:,0]
+    return spix,flows.fflow[0,:]
+
 
 def img_for_bass(img,device="cuda"):
     img= (th.clip(img,0.,1.)*255.).type(th.uint8)
@@ -122,28 +162,39 @@ def shift_labels(spix,means,flow):
     # -- scatter --
     grid = futils.index_grid(H,W,dtype=spix.dtype,
                              device=spix.device,normalize=True)
+    # grid = rearrange(grid,'b h w f -> b f h w')
+    # print("grid.shape,flow.shape: ",grid.shape,flow.shape)
     grid = st_spix.sp_pool_from_spix(grid,spix)
+    # print("grid.shape,flow.shape: ",grid.shape,flow.shape,means.shape)
     gscatter,gcnts = st_spix.scatter.run(grid,flow,swap_c=True)
+    # print("[0] gscatter.shape: ",gscatter.shape)
+    # print("[0] gcnts.shape: ",gcnts.shape)
+    # exit()
 
     # -- invalidate --
     eps = 1e-13
     invalid = th.where(th.logical_or(gcnts<1-eps,1+eps<gcnts))
     for i in range(2):
         gscatter[:,i][invalid] = -100.
+    # print("gscatter.shape: ",gscatter.shape)
 
     # -- all pairwise differences --
     locs = th.stack([means[:,-2]/(W-1),means[:,-1]/(H-1)],-1)
+    # print("[2] gscatter.shape,locs.shape: ",gscatter.shape,locs.shape)
+    # gscatter = rearrange(gscatter,'b h w f -> (b h w) f')
     gscatter = rearrange(gscatter,'b f h w -> (b h w) f')
     dists = th.cdist(gscatter,locs)
+    # print("dists.shape: ",dists.shape)
+    # print("means.shape: ",means.shape)
 
     # -- gather --
     spix_grid = th.arange(means.shape[0]).to(spix.device) #  I think "0" in invalid?
+    # print("spix_grid.shape: ",spix_grid.shape)
     shifted_spix = spix_grid[dists.argmin(1)].int()
     # print(shifted_spix.min() >= -1)
     # print("shaped: ",means.shape,flow.shape,shifted_spix.shape)
     shifted_spix = rearrange(shifted_spix,'(b h w) -> b h w',h=H,w=W)
     shifted_spix[invalid] = -1
-
 
     return shifted_spix,gcnts
 
@@ -178,7 +229,7 @@ def prop_seg(img,spix,flow,means,cov,counts,ids,
 
     # -- exec filling --
     niters_refine = refine_iters
-    fill_debug = True
+    fill_debug = False
     use_xfer = True
     fxn = st_spix_prop_cuda.spix_prop_dev
     # print("[prop] img.min(), img.max(): ",img.min(), img.max())
@@ -424,16 +475,3 @@ def run_exp(cfg):
     spix_noshift = [spix_st[0],]*len(spix_st)
     marked = mark_spix_vid(vid,spix_noshift)
     tv_utils.save_image(marked,root / "marked_noshift.png")
-    marked = mark_spix_vid(vid,spix_s)
-    tv_utils.save_image(marked,root / "marked_space.png")
-
-
-def main():
-
-    print("PID: ",os.getpid())
-    cfg = edict()
-    cfg.name = "a"
-    run_exp(cfg)
-
-if __name__ == "__main__":
-    main()

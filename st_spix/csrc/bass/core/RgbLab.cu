@@ -8,8 +8,6 @@ using namespace std;
 #include <stdio.h>
 #include <math.h>
 
-
-
 __host__ void Rgb2Lab(uchar3* image_gpu, float* image_gpu_double,
                       int nPixels, int nbatch){
 	int num_block = ceil( double(nPixels) / double(THREADS_PER_BLOCK) ); 
@@ -17,6 +15,26 @@ __host__ void Rgb2Lab(uchar3* image_gpu, float* image_gpu_double,
 	dim3 BlockPerGrid(num_block,nbatch);
 	rgb_to_lab<<<BlockPerGrid,ThreadPerBlock>>>(image_gpu,image_gpu_double,
                                                 nPixels,nbatch);
+}
+
+
+__host__ void Rgb2Normz(uchar3* image_gpu, float* image_gpu_double,
+                        int nPixels, int nbatch){
+	int num_block = ceil( double(nPixels) / double(THREADS_PER_BLOCK) ); 
+	dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
+	dim3 BlockPerGrid(num_block,nbatch);
+	rgb_normz<<<BlockPerGrid,ThreadPerBlock>>>(image_gpu,image_gpu_double,
+                                               nPixels,nbatch);
+}
+
+__global__ void rgb_normz(uchar3* image_gpu,
+                          float* image_gpu_double,int nPts, int nbatch) {
+	int t = threadIdx.x + blockIdx.x * blockDim.x;  
+	if (t>=nPts) return;
+	uchar3 p = image_gpu[t];
+	image_gpu_double[3*t] = (double)p.x/255.0;
+	image_gpu_double[3*t+1] = (double)p.y/255.0;
+	image_gpu_double[3*t] = (double)p.z/255.0;
 }
 
 __global__ void rgb_to_lab(uchar3* image_gpu, float* image_gpu_double,
@@ -95,6 +113,7 @@ __host__ void Lab2Rgb(uchar3* image_gpu, float* image_gpu_double,
 	lab_to_rgb<<<BlockPerGrid,ThreadPerBlock>>>(image_gpu,image_gpu_double,
                                                 nPixels,nbatch);
 }
+
 
 __global__ void lab_to_rgb( uchar3* image_gpu, float* image_gpu_double,
                             int nPixels, int nbatch) {

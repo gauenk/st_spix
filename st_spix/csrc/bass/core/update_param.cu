@@ -23,6 +23,41 @@
 #include <math.h>
 
 
+__host__ void update_param_spaceonly(const float* image_gpu_double, const int* seg_gpu,
+                           superpixel_params* sp_params,
+                           superpixel_GPU_helper* sp_gpu_helper,
+                           const int nPixels, const int nSps,
+                           const int nSps_buffer, const int nbatch,
+                           const int xdim, const int ydim, const int nftrs,
+                           const int prior_sigma_s, const int prior_count){
+
+  // todo -- add nbatch and nftrs
+  	dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
+
+    int num_block1 = ceil( double(nPixels) / double(THREADS_PER_BLOCK) ); 
+  	//int num_block2 = ceil( double(nSps) / double(THREADS_PER_BLOCK) );
+	int num_block2 = ceil( double(nSps_buffer) / double(THREADS_PER_BLOCK) );
+    dim3 BlockPerGrid1(num_block1,nbatch);
+    dim3 BlockPerGrid2(num_block2,nbatch);
+    // fprintf(stdout,"nPixels,nSps_buffer,num_block1,num_block2: %d,%d,%d,%d\n",
+    //         nPixels,nSps_buffer,num_block1,num_block2);
+	
+    clear_fields_spaceonly<<<BlockPerGrid2,ThreadPerBlock>>>(sp_params,sp_gpu_helper,
+                                                             nSps,nSps_buffer,nftrs);
+    // gpuErrchk( cudaPeekAtLastError() );
+    // gpuErrchk( cudaDeviceSynchronize() );
+
+	cudaMemset(sp_gpu_helper, 0, nSps_buffer*sizeof(superpixel_GPU_helper));
+    sum_by_label<<<BlockPerGrid1,ThreadPerBlock>>>(image_gpu_double, seg_gpu,
+                                                   sp_params,sp_gpu_helper,
+                                                   nPixels,nbatch,xdim,nftrs);
+    // gpuErrchk( cudaPeekAtLastError() );
+    // gpuErrchk( cudaDeviceSynchronize() );
+
+	calculate_mu_spaceonly<<<BlockPerGrid2,ThreadPerBlock>>>(\
+     sp_params, sp_gpu_helper, nSps, nSps_buffer, prior_sigma_s, prior_count, nftrs); 
+
+}
 
 __host__ void update_param(const float* image_gpu_double, const int* seg_gpu,
                            superpixel_params* sp_params,
@@ -62,6 +97,27 @@ __host__ void update_param(const float* image_gpu_double, const int* seg_gpu,
 
 }
 
+__global__ void clear_fields_spaceonly(superpixel_params* sp_params,
+                                       superpixel_GPU_helper* sp_gpu_helper,
+                                       const int nsuperpixel,
+                                       const int nsuperpixel_buffer,
+                                       const int nftrs){
+
+  // todo -- nbatch, nftrs
+	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
+
+	if (k>=nsuperpixel_buffer) return;
+	if (sp_params[k].valid == 0) return;
+
+	sp_params[k].count = 0;
+	sp_params[k].log_count = 0.1;
+
+	double2 mu_s;
+	mu_s.x = 0;
+	mu_s.y = 0;
+	sp_params[k].mu_s = mu_s;
+
+}
 __global__ void clear_fields(superpixel_params* sp_params,
                              superpixel_GPU_helper* sp_gpu_helper,
                              const int nsuperpixel,
@@ -147,6 +203,37 @@ __global__ void sum_by_label(const float* image_gpu_double,
 
 
 __global__
+void calculate_mu_spaceonly(superpixel_params*  sp_params,
+                            superpixel_GPU_helper* sp_gpu_helper,
+                            const int nsuperpixel, const int nsuperpixel_buffer,
+                            const int prior_sigma_s, const int prior_count,
+                            const int nftrs) {
+
+	int k = threadIdx.x + blockIdx.x * blockDim.x; // the label
+
+	if (k>=nsuperpixel_buffer) return;
+	if (sp_params[k].valid == 0) return;
+	//printf("Roy: %d",nsuperpixel_buffer);
+
+	int count_int = sp_params[k].count;
+	float a_prior = sp_params[k].prior_count;
+	float prior_sigma_s_2 = a_prior * a_prior;
+	double count = count_int * 1.0;
+	double mu_x = 0.0;
+	double mu_y = 0.0;
+
+	//calculate the mean
+	if (count_int>0){
+		sp_params[k].log_count = log(count);
+	    mu_x = sp_gpu_helper[k].mu_s_sum.x / count;   
+	    mu_y = sp_gpu_helper[k].mu_s_sum.y / count;  
+		sp_params[k].mu_s.x = mu_x; 
+	    sp_params[k].mu_s.y = mu_y;
+    }
+}
+
+
+__global__
 void calculate_mu_and_sigma(superpixel_params*  sp_params,
                             superpixel_GPU_helper* sp_gpu_helper,
                             const int nsuperpixel, const int nsuperpixel_buffer,
@@ -188,11 +275,12 @@ void calculate_mu_and_sigma(superpixel_params*  sp_params,
 
 	//calculate the covariance
 	
-	double C00 = sp_gpu_helper[k].sigma_s_sum.x ;
-	double C01 =  sp_gpu_helper[k].sigma_s_sum.y ;
+	double C00 = sp_gpu_helper[k].sigma_s_sum.x;
+	double C01 = sp_gpu_helper[k].sigma_s_sum.y;
 	double C11 = sp_gpu_helper[k].sigma_s_sum.z; 
 	//double total_count = (double) sp_params[k].count + prior_count; 
 	// double total_count = (double) sp_params[k].count + a_prior*50;
+
 	// double total_count = (double) sp_params[k].count + a_prior*50;
 	double total_count = (double) sp_params[k].count + a_prior;
 	if (count_int > 3){	    

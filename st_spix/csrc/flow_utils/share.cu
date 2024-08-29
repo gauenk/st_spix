@@ -102,10 +102,12 @@ void bilin2d_interpolate_v1(float* src_pix, float* dest, float* cnts,
 
 __device__ __forceinline__ 
 void bilin2d_interpolate(float* src_pix, float* dest, float* cnts,
-                         float hi, float wi, int H, int W, int F){
+                         float hi, float wi, int H, int W, int F, float eps){
 
   // -- interpolated locations --
   int h_interp,w_interp;
+  float interp_h;
+  float interp_w;
   float interp_weight;
 
   // -- interpolate pixel value --
@@ -116,16 +118,23 @@ void bilin2d_interpolate(float* src_pix, float* dest, float* cnts,
 
       // -- interpolation weight --
       h_interp = __float2int_rz(hi+ix);
-      interp_weight = max(0.,1-fabs(h_interp-hi));
+      interp_h = max(0.,1-fabs(h_interp-hi));
+      interp_h = (interp_h < eps) ? 0 : interp_h;
+      interp_h = (interp_h > (1-eps)) ? 1 : interp_h;
+      
       w_interp = __float2int_rz(wi+jx);
-      interp_weight = interp_weight*max(0.,1-fabs(w_interp-wi));
+      interp_w = max(0.,1-fabs(w_interp-wi));
+      interp_w = (interp_w < eps) ? 0 : interp_w;
+      interp_w = (interp_w > (1-eps)) ? 1 : interp_w;
+
+      interp_weight = interp_h * interp_w;
 
       // -- round down when very small --
-      if (interp_weight < 1e-4){
-        interp_weight = 0;
-      }else if (interp_weight > (1-1e-4)){
-        interp_weight = 1.;
-      }
+      // if (interp_weight < eps){
+      //   interp_weight = 0;
+      // }else if (interp_weight > (1-eps)){
+      //   interp_weight = 1.;
+      // }
 
       // -- ensure legal bounds --
       if (not check_bound(h_interp,H)){ continue;}
