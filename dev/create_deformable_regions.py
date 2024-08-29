@@ -26,6 +26,7 @@ from st_spix.sp_pooling import pooling,SuperpixelPooling
 import stnls
 from dev_basics import flow as flow_pkg
 
+from matplotlib import colormaps
 from matplotlib import patches, pyplot as plt
 # import matplotlib.pyplot as plt
 
@@ -91,13 +92,18 @@ def viz_sample(pixels,locations,masks,spix_id,root):
         axes[i].yaxis.set_inverted(True)
     plt.savefig(root/"scatter.png")
 
-def viz_pi_sample(pi,locs,mask,root):
+def viz_pi_sample(pi_vals,pi_inds,locs,mask,root):
 
     # -- sample --
     locs = locs.cpu().numpy()
     mask = mask.cpu().numpy()
-    pi = pi.cpu().numpy()
-
+    beta = 30
+    print(pi_vals[0,0])
+    print(pi_vals[0,3])
+    pi_vals = th.softmax(beta*pi_vals,-1).cpu().numpy()
+    # print(pi_vals[0,0],pi_vals.sum(-1))
+    # print(pi_vals[0,3],pi_vals.sum(-1))
+    pi_inds = pi_inds.cpu().numpy()
 
     # -- init plot --
     fig, axes = plt.subplots(1, 3, layout='constrained', figsize=(10, 4))
@@ -110,20 +116,30 @@ def viz_pi_sample(pi,locs,mask,root):
         axes[i].set_aspect("equal","datalim")
         axes[i].yaxis.set_inverted(True)
 
+    # -- colors --
+    # prop_cycle = plt.rcParams['axes.prop_cycle']
+    # colors = prop_cycle.by_key()['color']
+
     # -- create some quivers --
     base_size = 2.
-    for j in range(0,100,10):
-        for i in range(10):
-            quiver_size = base_size * pi[0,j,i]
+    for j in range(0,pi_vals.shape[1],25):
+        color = "black"
+        # color = colormaps['prism'](j/(100.-1))
+        # print(color)
+        for i in range(pi_vals.shape[-1]):
+            # quiver_size = base_size * pi[0,j,i]
+            quiver_size = base_size * pi_vals[0,j,i]
             quiver_start = locs[0,j]
-            quiver_end = locs[1,i]
+            # quiver_end = locs[1,i]
+            quiver_end = locs[1,pi_inds[0,j,i]]
             arrow = patches.ConnectionPatch(
                 quiver_start,
                 quiver_end,
                 coordsA=axes[0].transData,
                 coordsB=axes[1].transData,
                 # Default shrink parameter is 0 so can be omitted
-                color="black",
+                # color="black",
+                color=color,
                 arrowstyle="-|>",  # "normal" arrow
                 mutation_scale=2*quiver_size,  # controls arrow head size
                 linewidth=quiver_size,
@@ -212,8 +228,12 @@ def run_sinkhorn(regions,locations,masks,spix,root):
     # print(delta_a,delta_b)
 
     # -- flows and weights from transport map --
-    print(pi_est[0,0])
-    viz_pi_sample(pi_est,locs,mask,root)
+    print(pi_est[0,0,:10])
+    vals,inds = th.topk(pi_est,10,-1)
+    print(vals.shape)
+    print(inds.shape)
+    # viz_pi_sample(pi_est,locs,mask,root)
+    viz_pi_sample(vals,inds,locs,mask,root)
 
 
 def main():
