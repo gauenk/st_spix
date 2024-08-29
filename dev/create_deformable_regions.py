@@ -56,6 +56,9 @@ def get_scattering_field(spix,R):
     sinds = sinds + spix.reshape(B,-1)*R
     return sinds
 
+def run_sinkhorn(regions):
+    pass
+
 def main():
 
     # -- get root --
@@ -96,11 +99,12 @@ def main():
 
     # -- fill into contiguous tensor [very very silly] --
     inds = get_scattering_field(spix,R)
+    inds_e = inds[:,:,None].expand((-1,-1,3))
     regions = th.zeros((B,nspix*R,F),device=spix.device)
-    print(inds.shape,regions.shape,vid.shape)
     vid_r = rearrange(vid,'b f h w -> b (h w) f')
-    regions = regions.scatter_(1,inds[...,None],vid_r)
+    regions = regions.scatter_(1,inds_e,vid_r)
     regions = regions.reshape(B,nspix,R,F)
+    print("inds.shape: ",inds.shape)
     print(regions.shape)
     th.save(regions,"regions.pth")
 
@@ -110,16 +114,19 @@ def main():
     #
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-    print(inds)
-    print(th.min(inds),th.max(inds))
+    # -- gather --
+    npix = vid_r.shape[1]
+    vid_f = th.gather(regions.reshape(B,-1,F),1,inds_e,sparse_grad=True)
+    print("Difference: ",th.mean( (vid_r - vid_r)**2 ).item())
 
+    # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    #
+    #      Run Optimal Transport Examples
+    #
+    # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-    # exit()
-    # # inds.shape = (B,HW,F)
-    # # max(inds) = nspix * R; min(inds) = 0
-    # # regions[batch_ix,inds[batch_ix,hw_ix,ftr_ix],ftr_ix]
-    # #        = vid[batch_ix,hw_ix,ftr_ix]
-    # regions = regions.reshape(B,nspix,R,F)
+    run_sinkhorn(regions)
+
 
 if __name__ == "__main__":
     main()
