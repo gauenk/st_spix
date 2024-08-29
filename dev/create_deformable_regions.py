@@ -97,13 +97,15 @@ def viz_pi_sample(pi_vals,pi_inds,locs,mask,root):
     # -- sample --
     locs = locs.cpu().numpy()
     mask = mask.cpu().numpy()
-    beta = 30
-    print(pi_vals[0,0])
-    print(pi_vals[0,3])
-    pi_vals = th.softmax(beta*pi_vals,-1).cpu().numpy()
+    beta = 100
+    # print(pi_vals[0,0])
+    # print(pi_vals[0,3])
+    pi_vals = th.softmax(beta*pi_vals,-2).cpu().numpy()
     # print(pi_vals[0,0],pi_vals.sum(-1))
     # print(pi_vals[0,3],pi_vals.sum(-1))
     pi_inds = pi_inds.cpu().numpy()
+    print("pi_vals.shape: ",pi_vals.shape)
+    print("pi_inds.shape: ",pi_inds.shape)
 
     # -- init plot --
     fig, axes = plt.subplots(1, 3, layout='constrained', figsize=(10, 4))
@@ -121,17 +123,21 @@ def viz_pi_sample(pi_vals,pi_inds,locs,mask,root):
     # colors = prop_cycle.by_key()['color']
 
     # -- create some quivers --
+    print(pi_inds.shape,locs.shape)
     base_size = 2.
-    for j in range(0,pi_vals.shape[1],25):
+    for i in range(0,pi_vals.shape[-1],5):
         color = "black"
         # color = colormaps['prism'](j/(100.-1))
         # print(color)
-        for i in range(pi_vals.shape[-1]):
+        for j in range(pi_vals.shape[-2]):
             # quiver_size = base_size * pi[0,j,i]
+            # quiver_size = base_size * pi_vals[0,j,i]
             quiver_size = base_size * pi_vals[0,j,i]
-            quiver_start = locs[0,j]
+            quiver_start = locs[0,pi_inds[0,j,i]]
+            # quiver_start = locs[0,j]
             # quiver_end = locs[1,i]
-            quiver_end = locs[1,pi_inds[0,j,i]]
+            # quiver_end = locs[1,pi_inds[0,j,i]]
+            quiver_end = locs[1,i]
             arrow = patches.ConnectionPatch(
                 quiver_start,
                 quiver_end,
@@ -161,7 +167,7 @@ def run_sinkhorn(regions,locations,masks,spix,root):
     device = regions.device
 
     # -- config --
-    spix_idx = 100
+    spix_idx = 20
     pix = regions[:,spix_idx]
     locs = locations[:,spix_idx]
     mask = masks[:,spix_idx].bool()
@@ -182,7 +188,8 @@ def run_sinkhorn(regions,locations,masks,spix,root):
     a,b = 1.*(mask[:-1]>0),1.*(mask[1:]>0)
     a,b = a.reshape(B-1,S,1),b.reshape(B-1,S,1)
     costC = th.cdist(locs[:-1],locs[1:])
-    maskM = (mask[:-1,None]  * mask[1:,:,None])>0
+    # maskM = ((mask[:-1,None]  * mask[1:,:,None])>0).transpose(-2,-1)
+    maskM = (mask[:-1,:,None]  * mask[1:,None])>0
 
     # print(maskM)
     # print("mask.shape: ",mask.shape)
@@ -195,7 +202,7 @@ def run_sinkhorn(regions,locations,masks,spix,root):
     u = th.ones((B-1,S,1),device=device)/S
 
     print(a.shape,K.shape,v.shape)
-    niters = 100
+    niters = 300
     for iter_i in range(niters):
 
         # -- error --
@@ -229,7 +236,7 @@ def run_sinkhorn(regions,locations,masks,spix,root):
 
     # -- flows and weights from transport map --
     print(pi_est[0,0,:10])
-    vals,inds = th.topk(pi_est,10,-1)
+    vals,inds = th.topk(pi_est,10,-2)
     print(vals.shape)
     print(inds.shape)
     # viz_pi_sample(pi_est,locs,mask,root)
