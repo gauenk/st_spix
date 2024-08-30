@@ -92,63 +92,6 @@ def viz_sample(pixels,locations,masks,spix_id,root):
         axes[i].yaxis.set_inverted(True)
     plt.savefig(root/"scatter.png")
 
-def viz_pi_sample(pi_vals,pi_inds,locs,mask,root):
-
-    # -- sample --
-    beta = 100
-    locs,mask = locs.cpu().numpy(),mask.bool().cpu().numpy()
-    pi_vals = th.softmax(beta*pi_vals,-2).cpu().numpy()
-    pi_inds = pi_inds.cpu().numpy()
-    # print("pi_vals.shape: ",pi_vals.shape)
-    # print("pi_inds.shape: ",pi_inds.shape)
-
-    # -- init plot --
-    fig, axes = plt.subplots(1, 3, layout='constrained', figsize=(10, 4))
-
-    # -- plot scattering --
-    for i in range(3):
-        mask_i = mask[i]
-        locs_i = locs[i].T
-        axes[i].scatter(locs_i[0][mask_i],locs_i[1][mask_i])
-        axes[i].set_aspect("equal","datalim")
-        axes[i].yaxis.set_inverted(True)
-
-    # -- colors --
-    # prop_cycle = plt.rcParams['axes.prop_cycle']
-    # colors = prop_cycle.by_key()['color']
-
-    # -- create some quivers --
-    print(pi_inds.shape,locs.shape)
-    base_size = 2.
-    for i in range(0,pi_vals.shape[-1],5):
-        color = "black"
-        # color = colormaps['prism'](j/(100.-1))
-        # print(color)
-        for j in range(pi_vals.shape[-2]):
-            # quiver_size = base_size * pi[0,j,i]
-            # quiver_size = base_size * pi_vals[0,j,i]
-            quiver_size = base_size * pi_vals[0,j,i]
-            quiver_start = locs[0,pi_inds[0,j,i]]
-            # quiver_start = locs[0,j]
-            # quiver_end = locs[1,i]
-            # quiver_end = locs[1,pi_inds[0,j,i]]
-            quiver_end = locs[1,i]
-            arrow = patches.ConnectionPatch(
-                quiver_start,
-                quiver_end,
-                coordsA=axes[0].transData,
-                coordsB=axes[1].transData,
-                # Default shrink parameter is 0 so can be omitted
-                # color="black",
-                color=color,
-                arrowstyle="-|>",  # "normal" arrow
-                mutation_scale=2*quiver_size,  # controls arrow head size
-                linewidth=quiver_size,
-            )
-            fig.patches.append(arrow)
-
-    plt.savefig(root/"xfer_scatter.png")
-
 def get_locs_extremes(locs,mask):
     x = locs[:,:,0][mask]
     xmin,xmax = x.min(),x.max()
@@ -178,7 +121,8 @@ def get_xfer_cost(regions,locations,masks):
 
     # -- cost --
     costC = th.cdist(locations[:-1],locations[1:])
-    maskM = (masks[:-1,:,None]  * masks[1:,:,:,None])>0
+    maskM = (masks[:-1,:,:,None]  * masks[1:,:,None])>0
+    # maskM = maskM.transpose(-2,-1)
     costC = costC * maskM
     # costC = th.cdist(locs[:-1],locs[1:])
     # maskM = (mask[:-1,:,None]  * mask[1:,None])>0
@@ -223,44 +167,39 @@ def run_sinkhorn(regions,locations,masks,spix,root):
     # -- get a single sample for easier dev --
     device = regions.device
     costC,maskM = get_xfer_cost(regions,locations,masks)
+    ot_scale = 1e3
+    K = th.exp(-ot_scale*costC)*maskM
+    # print("masks.shape: ",masks.shape)
+    # print("K.shape: ",K.shape)
+    Bm1,NS,S,S = K.shape
 
-    # K = th.exp(-ot_scale*costC)*maskM
-    # # print("K.shape: ",K.shape)
-    # v = th.ones((B-1,S,1),device=device)/S
-    # u = th.ones((B-1,S,1),device=device)/S
+    # -- init sinkhorn params --
+    ot_scale = 5e2
+    a,b = 1.*(masks[:-1]>0),1.*(masks[1:]>0)
+    a,b = a.reshape(Bm1,NS,S,1),b.reshape(Bm1,NS,S,1)
+    K = th.exp(-ot_scale*costC)*maskM
 
-    # print(a.shape,K.shape,v.shape)
-    # niters = 300
-    # for iter_i in range(niters):
+    # -- only one iter --
+    # u = a / (K.mean(-1,keepdim=True)+1e-10)
+    # v = b / (K.mean(-2,keepdim=True).transpose(-2,-1)+1e-10)
+    # pi_est = u * K * v.reshape(Bm1,NS,1,S)
 
-    #     # -- error --
-    #     if iter_i % 20 == 0:
-    #         a_est = u * (K @ v)
-    #         b_est = v * (K.transpose(-2,-1) @ u)
-    #         # print(a_est.shape)
-    #         # print(b_est.shape)
-    #         delta_a = th.mean((a_est - a)**2).item()
-    #         delta_b = th.mean((b_est - b)**2).item()
-    #         print(iter_i,delta_a,delta_b,ot_scale)
-    #         # if (iter_i % 200) == 0 and (iter_i > 0):
-    #         #     ot_scale = ot_scale * 2
-    #         #     K = th.exp(-ot_scale*costC)*maskM
+    # -- many iters --
+    niters = 100
+    v = b.clone()/b.sum(-2,keepdim=True)
+    u = a.clone()/a.sum(-2,keepdim=True)
+    for iter_i in range(niters):
+        u = a / ((K @ v)+1e-10)
+        v = b / ((K.transpose(-2,-1) @ u)+1e-10)
+    pi_est = u * K * v.reshape(Bm1,NS,1,S)
 
-    #     # -- updates --
-    #     u = a / ((K @ v)+1e-10)
-    #     v = b / ((K.transpose(-2,-1) @ u)+1e-10)
+    # -- flows and weights from transport map --
+    spix_idx = 20
+    pi_vals,pi_inds = th.topk(pi_est[:,spix_idx],10,-2)
+    viz_pi_sample(pi_vals,pi_inds,locations[:,spix_idx],
+                  masks[:,spix_idx],root,"batching")
 
-    # # -- compute transport map --
-    # pi_est = th.diag_embed(u[:,:,0]) @ K @ th.diag_embed(v[:,:,0])
-    # # pi_est_v2 = u * (K @ v)
-    # # print(pi_est_v2.shape)
-    # # print("pi comp: ",th.mean((pi_est - pi_est_v2)**2))
-    # # print(pi_est.shape)
-    # a_est = pi_est.sum(-1,keepdim=True)
-    # b_est = pi_est.sum(-2,keepdim=True).reshape(B-1,S,1)
-    # delta_a = th.mean((a_est - a)**2).item()
-    # delta_b = th.mean((b_est - b)**2).item()
-    # # print(delta_a,delta_b)
+    return pi_vals,pi_inds
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -269,6 +208,72 @@ def run_sinkhorn(regions,locations,masks,spix,root):
 #
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+
+def viz_pi_sample(pi_vals,pi_inds,locs,mask,root,prefix=""):
+
+    # -- sample --
+    beta = 1
+    locs,mask = locs.cpu().numpy(),mask.bool().cpu().numpy()
+    pi_vals = th.softmax(beta*pi_vals,-2).cpu().numpy()
+    pi_inds = pi_inds.cpu().numpy()
+    # print("pi_vals.shape: ",pi_vals.shape)
+    # print("pi_inds.shape: ",pi_inds.shape)
+
+    # -- init plot --
+    fig, axes = plt.subplots(1, 3, layout='constrained', figsize=(10, 4))
+
+    # -- plot scattering --
+    for i in range(3):
+        mask_i = mask[i]
+        locs_i = locs[i].T
+        axes[i].scatter(locs_i[0][mask_i],locs_i[1][mask_i])
+        axes[i].set_aspect("equal","datalim")
+        axes[i].yaxis.set_inverted(True)
+
+    # -- colors --
+    # prop_cycle = plt.rcParams['axes.prop_cycle']
+    # colors = prop_cycle.by_key()['color']
+
+    # -- create some quivers --
+    print(pi_inds.shape,locs.shape)
+    base_size = 2.
+    no_red = True
+    # for j in range(0,pi_vals.shape[-1],3):
+    for j in [100]:
+        color = "black"
+        # color = "red" if j >= (pi_vals.shape[-1]-20) else "black"
+        # if color == "red":
+        #     print("red starting: ",j)
+        # color = colormaps['prism'](j/(100.-1))
+        # print(color)
+        for i in range(pi_vals.shape[-2]):
+            # quiver_size = base_size * pi[0,j,i]
+            # quiver_size = base_size * pi_vals[0,j,i]
+            quiver_size = base_size * pi_vals[0,i,j]
+            quiver_start = locs[0,pi_inds[0,i,j]]
+            # quiver_start = locs[0,j]
+            # quiver_end = locs[1,i]
+            # quiver_end = locs[1,pi_inds[0,j,i]]
+            quiver_end = locs[1,j]
+            arrow = patches.ConnectionPatch(
+                quiver_start,
+                quiver_end,
+                coordsA=axes[0].transData,
+                coordsB=axes[1].transData,
+                # Default shrink parameter is 0 so can be omitted
+                # color="black",
+                color=color,
+                arrowstyle="-|>",  # "normal" arrow
+                mutation_scale=2*quiver_size,  # controls arrow head size
+                linewidth=quiver_size,
+            )
+            fig.patches.append(arrow)
+
+    # -- save --
+    if prefix: fn = "%s_xfer_scatter.png" % prefix
+    else: fn = "xfer_scatter.png"
+    plt.savefig(root/fn)
 
 def get_xfer_cost_single(regions,locations,masks,spix_idx):
 
@@ -295,10 +300,23 @@ def get_xfer_cost_single(regions,locations,masks,spix_idx):
     # print(maskM0[:,midx:,:].sum()+maskM0[:,:,midx:].sum())
 
     # -- sinkhorn pairs --
+    # print(locs.shape)
     costC = th.cdist(locs[:-1],locs[1:])
+    # print("costC.shape: ",costC.shape)
+    dist0 = th.sum((locs[0,[0]] - locs[1,:])**2,-1).sqrt()
+    # print(dist0[:10])
+    # print("src]: ",costC[0,0,:10])
+    # print("dest]: ",costC[0,:10,0])
+
     # maskM = (mask[:-1,:,None]  * mask[1:,None])>0
-    maskM = (mask[:-1,None]  * mask[1:,:,None])>0
-    costC = costC*maskM
+    # print("src] 0,-1: ",mask[0,-1])
+    # print("dest] 1,-1: ",mask[1,-1])
+    # exit()
+    # maskM = (mask[:-1,None]  * mask[1:,:,None])>0
+    maskM = (mask[:-1,:,None]  * mask[1:,None])>0
+    # maskM[b,i,j] = if src i and dest j are valid
+    # rows match src; cols match dest
+    costC = costC * maskM
 
     return costC,maskM
 
@@ -314,21 +332,25 @@ def run_sinkhorn_single(regions,locations,masks,spix_idx,root):
     a,b = 1.*(masks[:-1,spix_idx,:S]>0),1.*(masks[1:,spix_idx,:S]>0)
     a,b = a.reshape(Bm1,S,1),b.reshape(Bm1,S,1)
     K = th.exp(-ot_scale*costC)*maskM
-    v = th.ones((Bm1,S,1),device=device)/S
-    u = th.ones((Bm1,S,1),device=device)/S
+    # v = th.ones((Bm1,S,1),device=device)/S
+    # u = th.ones((Bm1,S,1),device=device)/S
+    v = b.clone()/b.sum(-2,keepdim=True)
+    u = a.clone()/a.sum(-2,keepdim=True)
 
     niters = 100
     for iter_i in range(niters):
 
         # -- error --
         if iter_i % 20 == 0:
-            a_est = u * (K @ v)
-            b_est = v * (K.transpose(-2,-1) @ u)
+            # pi_est = th.diag_embed(u[:,:,0]) @ K @ th.diag_embed(v[:,:,0])
+            pi_est = u * K.clone() * v.reshape(Bm1,1,S)
+            a_est = pi_est.sum(-1,keepdim=True)
+            b_est = pi_est.sum(-2,keepdim=True).reshape(Bm1,S,1)
             delta_a = th.mean((a_est - a)**2).item()
             delta_b = th.mean((b_est - b)**2).item()
             print(iter_i,delta_a,delta_b,ot_scale)
             if (iter_i % 20) == 0 and (iter_i > 0):
-                ot_scale = ot_scale * 2
+                ot_scale = ot_scale * 2.
                 K = th.exp(-ot_scale*costC)*maskM
 
         # -- updates --
@@ -336,15 +358,17 @@ def run_sinkhorn_single(regions,locations,masks,spix_idx,root):
         v = b / ((K.transpose(-2,-1) @ u)+1e-10)
 
     # -- compute transport map --
-    pi_est = th.diag_embed(u[:,:,0]) @ K @ th.diag_embed(v[:,:,0])
+    # pi_est = th.diag_embed(u[:,:,0]) @ K @ th.diag_embed(v[:,:,0])
+    pi_est = u * K.clone() * v.reshape(Bm1,1,S)
     a_est = pi_est.sum(-1,keepdim=True)
     b_est = pi_est.sum(-2,keepdim=True).reshape(Bm1,S,1)
     delta_a = th.mean((a_est - a)**2).item()
     delta_b = th.mean((b_est - b)**2).item()
 
     # -- flows and weights from transport map --
-    vals,inds = th.topk(pi_est,10,-2)
-    viz_pi_sample(vals,inds,locations[:,spix_idx],masks[:,spix_idx],root)
+    pi_vals,pi_inds = th.topk(pi_est,10,-2)
+    viz_pi_sample(pi_vals,pi_inds,locations[:,spix_idx],masks[:,spix_idx],
+                  root,prefix=str(spix_idx))
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #
@@ -458,11 +482,11 @@ def main():
         delta_m = th.mean((maskM[:,spix_idx,:S,:S]*1. - maskM_idx*1.)**2).item()
         out_c = costC[:,spix_idx,S:,:].abs().sum() + costC[:,spix_idx,:,S:].abs().sum()
         out_m = maskM[:,spix_idx,S:,:].abs().sum() + maskM[:,spix_idx,:,S:].abs().sum()
-        print("delta [c,m,oc,om]: ",delta_c,delta_m,out_c,out_m)
+        print("delta [c,m,oc,om]: ",delta_c,delta_m,out_c.item(),out_m.item())
 
 
     # -- next... --
-    # run_sinkhorn(regions,locs,masks,spix,root)
+    run_sinkhorn(regions,locs,masks,spix,root)
 
 
 if __name__ == "__main__":
