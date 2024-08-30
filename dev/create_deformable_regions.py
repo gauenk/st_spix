@@ -95,17 +95,12 @@ def viz_sample(pixels,locations,masks,spix_id,root):
 def viz_pi_sample(pi_vals,pi_inds,locs,mask,root):
 
     # -- sample --
-    locs = locs.cpu().numpy()
-    mask = mask.cpu().numpy()
     beta = 100
-    # print(pi_vals[0,0])
-    # print(pi_vals[0,3])
+    locs,mask = locs.cpu().numpy(),mask.bool().cpu().numpy()
     pi_vals = th.softmax(beta*pi_vals,-2).cpu().numpy()
-    # print(pi_vals[0,0],pi_vals.sum(-1))
-    # print(pi_vals[0,3],pi_vals.sum(-1))
     pi_inds = pi_inds.cpu().numpy()
-    print("pi_vals.shape: ",pi_vals.shape)
-    print("pi_inds.shape: ",pi_inds.shape)
+    # print("pi_vals.shape: ",pi_vals.shape)
+    # print("pi_inds.shape: ",pi_inds.shape)
 
     # -- init plot --
     fig, axes = plt.subplots(1, 3, layout='constrained', figsize=(10, 4))
@@ -161,62 +156,180 @@ def get_locs_extremes(locs,mask):
     ymin,ymax = y.min(),y.max()
     return xmin,xmax,ymin,ymax
 
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#
+#
+#          Batched Sinkhorn
+#
+#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+
+def get_xfer_cost(regions,locations,masks):
+
+    # -- center each frame's location --
+    # print("locations.shape: ",locations.shape)
+    masks = masks.bool()
+    masks_e2 = masks[...,None].expand((-1,-1,-1,2))
+    means = (locations * masks_e2).sum(-2,keepdim=True)/masks_e2.sum(-2,keepdim=True)
+    locations = locations - means
+    # locations[:,:,mask,0] -= locations[:,:,mask,0].mean(-1)
+    # locations[:,:,mask,1] -= locations[:,:,mask,1].mean(-1)
+
+    # -- cost --
+    costC = th.cdist(locations[:-1],locations[1:])
+    maskM = (masks[:-1,:,None]  * masks[1:,:,:,None])>0
+    costC = costC * maskM
+    # costC = th.cdist(locs[:-1],locs[1:])
+    # maskM = (mask[:-1,:,None]  * mask[1:,None])>0
+
+    #
+    # -- testing --
+    #
+
+    # -- checking --
+    # mask0 = th.any(maskM,-1)
+    # mask1 = th.any(maskM,-2)
+
+    # -- skip the check if its empty --
+    # empty0 = th.all(masks[:-1]==0,-1)
+    # empty1 = th.all(masks[1:]==0,-1)
+
+    # # -- viz sizes --
+    # print("mask0.shape: ",mask0.shape)
+    # print("mask1.shape: ",mask1.shape)
+    # print("masks.shape: ",masks.shape)
+    # print("empty0.shape: ",empty0.shape)
+    # print("empty1.shape: ",empty1.shape)
+
+    # -- run check --
+    # print((th.sum(1.*masks[-1:] - 1.*mask0,-1)*empty0).sum())
+    # print((th.sum(1.*masks[1:] - 1.*mask1,-1)*empty1).sum())
+    # exit()
+
+    # # -- compute lims --
+    # midx0 = th.max(th.where(masks[0,10]>0)[-1])
+    # midx1 = th.max(th.where(masks[1,10]>0)[-1])
+    # print(midx0,midx1)
+    # midx0 = th.max(th.where(maskM[0,10]>0)[-2])
+    # midx1 = th.max(th.where(maskM[0,10]>0)[-1])
+    # print(midx0,midx1)
+    # exit()
+
+    return costC,maskM
+
 def run_sinkhorn(regions,locations,masks,spix,root):
 
     # -- get a single sample for easier dev --
     device = regions.device
+    costC,maskM = get_xfer_cost(regions,locations,masks)
+
+    # K = th.exp(-ot_scale*costC)*maskM
+    # # print("K.shape: ",K.shape)
+    # v = th.ones((B-1,S,1),device=device)/S
+    # u = th.ones((B-1,S,1),device=device)/S
+
+    # print(a.shape,K.shape,v.shape)
+    # niters = 300
+    # for iter_i in range(niters):
+
+    #     # -- error --
+    #     if iter_i % 20 == 0:
+    #         a_est = u * (K @ v)
+    #         b_est = v * (K.transpose(-2,-1) @ u)
+    #         # print(a_est.shape)
+    #         # print(b_est.shape)
+    #         delta_a = th.mean((a_est - a)**2).item()
+    #         delta_b = th.mean((b_est - b)**2).item()
+    #         print(iter_i,delta_a,delta_b,ot_scale)
+    #         # if (iter_i % 200) == 0 and (iter_i > 0):
+    #         #     ot_scale = ot_scale * 2
+    #         #     K = th.exp(-ot_scale*costC)*maskM
+
+    #     # -- updates --
+    #     u = a / ((K @ v)+1e-10)
+    #     v = b / ((K.transpose(-2,-1) @ u)+1e-10)
+
+    # # -- compute transport map --
+    # pi_est = th.diag_embed(u[:,:,0]) @ K @ th.diag_embed(v[:,:,0])
+    # # pi_est_v2 = u * (K @ v)
+    # # print(pi_est_v2.shape)
+    # # print("pi comp: ",th.mean((pi_est - pi_est_v2)**2))
+    # # print(pi_est.shape)
+    # a_est = pi_est.sum(-1,keepdim=True)
+    # b_est = pi_est.sum(-2,keepdim=True).reshape(B-1,S,1)
+    # delta_a = th.mean((a_est - a)**2).item()
+    # delta_b = th.mean((b_est - b)**2).item()
+    # # print(delta_a,delta_b)
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#
+#
+#          Single Superpixel Sinkhorn
+#
+#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+def get_xfer_cost_single(regions,locations,masks,spix_idx):
 
     # -- config --
-    spix_idx = 20
     pix = regions[:,spix_idx]
     locs = locations[:,spix_idx]
     mask = masks[:,spix_idx].bool()
 
+    # -- center each frame's location --
+    mask_e2 = mask[...,None].expand((-1,-1,2))
+    means = (locs * mask_e2).sum(-2,keepdim=True)/mask_e2.sum(-2,keepdim=True)
+    locs = locs - means
+
     # -- shrink for easier dev --
-    midx = th.max(th.where(mask>0)[-1])
+    # print(mask.shape)
+    # exit()
+    # maskM0 = (mask[:-1,None]  * mask[1:,:,None])>0
+    midx = th.max(th.where(mask>0)[-1])+1
     F = pix.shape[-1]
     pix = pix[:,:midx]
     locs = locs[:,:midx]
     mask = mask[:,:midx]
-    # mask_eF = mask.expand((-1,-1,F))
-    # mask_e2 = mask[:,:,None].expand((-1,-1,2))
-    mask_e1 = mask[:,:,None]
     B,S = mask.shape
+    # print(maskM0[:,midx:,:].sum()+maskM0[:,:,midx:].sum())
 
     # -- sinkhorn pairs --
-    ot_scale = 5e2
-    a,b = 1.*(mask[:-1]>0),1.*(mask[1:]>0)
-    a,b = a.reshape(B-1,S,1),b.reshape(B-1,S,1)
     costC = th.cdist(locs[:-1],locs[1:])
-    # maskM = ((mask[:-1,None]  * mask[1:,:,None])>0).transpose(-2,-1)
-    maskM = (mask[:-1,:,None]  * mask[1:,None])>0
+    # maskM = (mask[:-1,:,None]  * mask[1:,None])>0
+    maskM = (mask[:-1,None]  * mask[1:,:,None])>0
+    costC = costC*maskM
 
-    # print(maskM)
-    # print("mask.shape: ",mask.shape)
-    # print("maskM.shape: ",maskM.shape)
-    # print(costC.shape)
-    # exit()
+    return costC,maskM
+
+def run_sinkhorn_single(regions,locations,masks,spix_idx,root):
+
+    # -- get a single sample for easier dev --
+    device = regions.device
+    costC,maskM = get_xfer_cost_single(regions,locations,masks,spix_idx)
+    Bm1,S,S = costC.shape
+
+    # -- init sinkhorn params --
+    ot_scale = 5e2
+    a,b = 1.*(masks[:-1,spix_idx,:S]>0),1.*(masks[1:,spix_idx,:S]>0)
+    a,b = a.reshape(Bm1,S,1),b.reshape(Bm1,S,1)
     K = th.exp(-ot_scale*costC)*maskM
-    # print("K.shape: ",K.shape)
-    v = th.ones((B-1,S,1),device=device)/S
-    u = th.ones((B-1,S,1),device=device)/S
+    v = th.ones((Bm1,S,1),device=device)/S
+    u = th.ones((Bm1,S,1),device=device)/S
 
-    print(a.shape,K.shape,v.shape)
-    niters = 300
+    niters = 100
     for iter_i in range(niters):
 
         # -- error --
         if iter_i % 20 == 0:
             a_est = u * (K @ v)
             b_est = v * (K.transpose(-2,-1) @ u)
-            # print(a_est.shape)
-            # print(b_est.shape)
             delta_a = th.mean((a_est - a)**2).item()
             delta_b = th.mean((b_est - b)**2).item()
             print(iter_i,delta_a,delta_b,ot_scale)
-            # if (iter_i % 200) == 0 and (iter_i > 0):
-            #     ot_scale = ot_scale * 2
-            #     K = th.exp(-ot_scale*costC)*maskM
+            if (iter_i % 20) == 0 and (iter_i > 0):
+                ot_scale = ot_scale * 2
+                K = th.exp(-ot_scale*costC)*maskM
 
         # -- updates --
         u = a / ((K @ v)+1e-10)
@@ -224,24 +337,22 @@ def run_sinkhorn(regions,locations,masks,spix,root):
 
     # -- compute transport map --
     pi_est = th.diag_embed(u[:,:,0]) @ K @ th.diag_embed(v[:,:,0])
-    # pi_est_v2 = u * (K @ v)
-    # print(pi_est_v2.shape)
-    # print("pi comp: ",th.mean((pi_est - pi_est_v2)**2))
-    # print(pi_est.shape)
     a_est = pi_est.sum(-1,keepdim=True)
-    b_est = pi_est.sum(-2,keepdim=True).reshape(B-1,S,1)
+    b_est = pi_est.sum(-2,keepdim=True).reshape(Bm1,S,1)
     delta_a = th.mean((a_est - a)**2).item()
     delta_b = th.mean((b_est - b)**2).item()
-    # print(delta_a,delta_b)
 
     # -- flows and weights from transport map --
-    print(pi_est[0,0,:10])
     vals,inds = th.topk(pi_est,10,-2)
-    print(vals.shape)
-    print(inds.shape)
-    # viz_pi_sample(pi_est,locs,mask,root)
-    viz_pi_sample(vals,inds,locs,mask,root)
+    viz_pi_sample(vals,inds,locations[:,spix_idx],masks[:,spix_idx],root)
 
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#
+#
+#                 Main
+#
+#
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 def main():
 
@@ -332,7 +443,26 @@ def main():
     viz_sample(regions,locs,masks,spix_id,root)
 
     # -- run sinkhorn --
-    run_sinkhorn(regions,locs,masks,spix,root)
+    spix_idx = 20
+    run_sinkhorn_single(regions,locs,masks,spix_idx,root)
+
+    # -- test xfer cost --
+    costC,maskM = get_xfer_cost(regions,locs,masks)
+    print("costC.shape: ",costC.shape)
+    print("maskM.shape: ",maskM.shape)
+    spix_idx_list = [20,50,100]
+    for spix_idx in spix_idx_list:
+        costC_idx,maskM_idx = get_xfer_cost_single(regions,locs,masks,spix_idx)
+        S = costC_idx.shape[-1]
+        delta_c = th.mean((costC[:,spix_idx,:S,:S] - costC_idx)**2).item()
+        delta_m = th.mean((maskM[:,spix_idx,:S,:S]*1. - maskM_idx*1.)**2).item()
+        out_c = costC[:,spix_idx,S:,:].abs().sum() + costC[:,spix_idx,:,S:].abs().sum()
+        out_m = maskM[:,spix_idx,S:,:].abs().sum() + maskM[:,spix_idx,:,S:].abs().sum()
+        print("delta [c,m,oc,om]: ",delta_c,delta_m,out_c,out_m)
+
+
+    # -- next... --
+    # run_sinkhorn(regions,locs,masks,spix,root)
 
 
 if __name__ == "__main__":
