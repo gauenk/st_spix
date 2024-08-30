@@ -36,13 +36,13 @@ from easydict import EasyDict as edict
 # import matplotlib as mpl
 # from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 
-def stream_bass(vid,sp_size=80,beta=10.,nrefine=30):
+def stream_bass(vid,sp_size=80,alpha=0.001,beta=10.,nrefine=30):
 
     # -- config --
     npix_in_side = sp_size
     niters,inner_niters = 1,1
     # i_std,alpha,beta = 0.018,20.,100.
-    i_std,alpha = 0.1,0.001
+    i_std = 0.1
 
     # -- load images --
     vid = th.clip(255.*vid,0.,255.).type(th.uint8)

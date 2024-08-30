@@ -108,7 +108,7 @@ def get_locs_extremes(locs,mask):
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 
-def get_xfer_cost(regions,locations,masks):
+def get_xfer_cost(regions,locations,masks,alpha):
 
     # -- center each frame's location --
     # print("locations.shape: ",locations.shape)
@@ -121,6 +121,8 @@ def get_xfer_cost(regions,locations,masks):
 
     # -- cost --
     costC = th.cdist(locations[:-1],locations[1:])
+    print(costC.shape)
+    costC = alpha*costC + (1-alpha)*th.cdist(regions[:-1],regions[1:])
     maskM = (masks[:-1,:,:,None]  * masks[1:,:,None])>0
     # maskM = maskM.transpose(-2,-1)
     costC = costC * maskM
@@ -162,19 +164,40 @@ def get_xfer_cost(regions,locations,masks):
 
     return costC,maskM
 
-def run_sinkhorn(regions,locations,masks,spix,root):
+def remap_inds(inds,locations,H,W):
+    """
+        Convert indices from Intra-Superpixels to Image Space
+    """
+    B,NS,R,two = locations.shape
+    Bm1,NS,K,R = inds.shape
+    locations = locations[:,:,None].expand((-1,-1,K,-1,-1))
+    inds = inds[...,None].expand((-1,-1,-1,-1,2)) # Bm1,NS,K,R,[2]
+    # print(inds.shape)
+    # print(locations.shape)
+    # inds.shape # Bm1,NS,K(small),R
+    img_inds = th.gather(locations[:-1],3,inds)
+    # print(img_inds.max(),img_inds.min())
+    img_inds[...,0] = img_inds[...,0]*(W-1)
+    img_inds[...,1] = img_inds[...,1]*(H-1)
+    img_inds = img_inds.long()
+    # print(img_inds.shape)
+    # print(img_inds.max(),img_inds.min())
+    # exit()
+    return img_inds
+
+def run_sinkhorn(regions,locations,masks,spix,cost_alpha,root):
 
     # -- get a single sample for easier dev --
     device = regions.device
-    costC,maskM = get_xfer_cost(regions,locations,masks)
-    ot_scale = 1e3
-    K = th.exp(-ot_scale*costC)*maskM
+    costC,maskM = get_xfer_cost(regions,locations,masks,cost_alpha)
+    # ot_scale = 1e3
+    # K = th.exp(-ot_scale*costC)*maskM
     # print("masks.shape: ",masks.shape)
     # print("K.shape: ",K.shape)
-    Bm1,NS,S,S = K.shape
+    Bm1,NS,S,S = costC.shape
 
     # -- init sinkhorn params --
-    ot_scale = 5e2
+    ot_scale = 1e3
     a,b = 1.*(masks[:-1]>0),1.*(masks[1:]>0)
     a,b = a.reshape(Bm1,NS,S,1),b.reshape(Bm1,NS,S,1)
     K = th.exp(-ot_scale*costC)*maskM
@@ -185,7 +208,7 @@ def run_sinkhorn(regions,locations,masks,spix,root):
     # pi_est = u * K * v.reshape(Bm1,NS,1,S)
 
     # -- many iters --
-    niters = 100
+    niters = 30
     v = b.clone()/b.sum(-2,keepdim=True)
     u = a.clone()/a.sum(-2,keepdim=True)
     for iter_i in range(niters):
@@ -195,8 +218,11 @@ def run_sinkhorn(regions,locations,masks,spix,root):
 
     # -- flows and weights from transport map --
     spix_idx = 20
-    pi_vals,pi_inds = th.topk(pi_est[:,spix_idx],10,-2)
-    viz_pi_sample(pi_vals,pi_inds,locations[:,spix_idx],
+    pi_vals,pi_inds = th.topk(pi_est,10,-2)
+    beta = 30.
+    pi_vals = th.softmax(beta*pi_vals,-2)
+    # pi_vals,pi_inds = th.topk(pi_est[:,spix_idx],10,-2)
+    viz_pi_sample(pi_vals[:,spix_idx],pi_inds[:,spix_idx],locations[:,spix_idx],
                   masks[:,spix_idx],root,"batching")
 
     return pi_vals,pi_inds
@@ -275,7 +301,7 @@ def viz_pi_sample(pi_vals,pi_inds,locs,mask,root,prefix=""):
     else: fn = "xfer_scatter.png"
     plt.savefig(root/fn)
 
-def get_xfer_cost_single(regions,locations,masks,spix_idx):
+def get_xfer_cost_single(regions,locations,masks,spix_idx,alpha):
 
     # -- config --
     pix = regions[:,spix_idx]
@@ -302,6 +328,8 @@ def get_xfer_cost_single(regions,locations,masks,spix_idx):
     # -- sinkhorn pairs --
     # print(locs.shape)
     costC = th.cdist(locs[:-1],locs[1:])
+    costC = alpha*costC + (1-alpha)*th.cdist(pix[:-1],pix[1:])
+    # costC = th.cdist(locs[:-1],locs[1:])
     # print("costC.shape: ",costC.shape)
     dist0 = th.sum((locs[0,[0]] - locs[1,:])**2,-1).sqrt()
     # print(dist0[:10])
@@ -320,11 +348,11 @@ def get_xfer_cost_single(regions,locations,masks,spix_idx):
 
     return costC,maskM
 
-def run_sinkhorn_single(regions,locations,masks,spix_idx,root):
+def run_sinkhorn_single(regions,locations,masks,spix_idx,cost_alpha,root):
 
     # -- get a single sample for easier dev --
     device = regions.device
-    costC,maskM = get_xfer_cost_single(regions,locations,masks,spix_idx)
+    costC,maskM = get_xfer_cost_single(regions,locations,masks,spix_idx,cost_alpha)
     Bm1,S,S = costC.shape
 
     # -- init sinkhorn params --
@@ -349,9 +377,9 @@ def run_sinkhorn_single(regions,locations,masks,spix_idx,root):
             delta_a = th.mean((a_est - a)**2).item()
             delta_b = th.mean((b_est - b)**2).item()
             print(iter_i,delta_a,delta_b,ot_scale)
-            if (iter_i % 20) == 0 and (iter_i > 0):
-                ot_scale = ot_scale * 2.
-                K = th.exp(-ot_scale*costC)*maskM
+            # if (iter_i % 20) == 0 and (iter_i > 0):
+            #     ot_scale = ot_scale * 2.
+            #     K = th.exp(-ot_scale*costC)*maskM
 
         # -- updates --
         u = a / ((K @ v)+1e-10)
@@ -385,20 +413,25 @@ def main():
     if not root.exists(): root.mkdir()
 
     # -- config --
-    npix_in_side = 40
-    niters,inner_niters = 1,2
-    i_std,alpha,beta = 0.1,0.1,10.
+    sp_size = 15
+    nrefine = 10
+    niters,inner_niters = 1,1
+    i_std,alpha,beta = 0.1,1.,1.
 
     # -- read img/flow --
     vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['tennis'])
-    vid = vid[0,3:6,:,:480,:480]
-    vid = resize(vid,(256,256))
+    # vid = vid[0,3:6,:,:340,:340]
+    vid = vid[0,3:6,:,:128,290-128:290]
+    print("vid.shape: ",vid.shape)
+    # vid = resize(vid,(156,156))
     flows = flow_pkg.run(vid[None,:],sigma=0.0,ftype="cv2")
     B,F,H,W = vid.shape
 
     # -- view --
-    spix,fflow = stream_bass(vid,sp_size=20,beta=5.)
+    spix,fflow = stream_bass(vid,sp_size=sp_size,alpha=alpha,
+                             beta=beta,nrefine=nrefine)
     B = spix.shape[0]
+    th.cuda.empty_cache()
 
     # -- save --
     marked = mark_spix_vid(vid,spix)
@@ -449,7 +482,10 @@ def main():
     # -- gather --
     npix = vid_r.shape[1]
     vid_f = th.gather(regions.reshape(B,-1,F),1,inds_e,sparse_grad=True)
-    print("Difference: ",th.mean( (vid_r - vid_r)**2 ).item())
+    tv_utils.save_image(rearrange(vid_f,'b (h w) f -> b f h w',h=H),
+                        root / "restored_img.png")
+    print("Restore Video from Superpixels: ",th.mean( (vid_r - vid_f)**2 ).item())
+    sp2vid_inds = inds_e
 
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     #
@@ -458,25 +494,27 @@ def main():
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
     # -- save --
-    spix_id = 20
-    marked = mark_spix_vid(vid,spix)
-    marked[:,0][th.where(spix==spix_id)] = 1.
-    marked[:,1][th.where(spix==spix_id)] = 0.
-    marked[:,2][th.where(spix==spix_id)] = 0.
-    tv_utils.save_image(marked,root / "marked_fill.png")
-    viz_sample(regions,locs,masks,spix_id,root)
+    spix_idx_list = th.randperm(spix.max()+1)[:3]
+    for i,spix_idx in enumerate(spix_idx_list):
+        marked = mark_spix_vid(vid,spix)
+        marked[:,0][th.where(spix==spix_idx)] = i==0
+        marked[:,1][th.where(spix==spix_idx)] = i==1
+        marked[:,2][th.where(spix==spix_idx)] = i==2
+        tv_utils.save_image(marked,root / "marked_fill.png")
+        viz_sample(regions,locs,masks,spix_idx,root)
 
     # -- run sinkhorn --
     spix_idx = 20
-    run_sinkhorn_single(regions,locs,masks,spix_idx,root)
+    cost_alpha = 0.0
+    run_sinkhorn_single(regions,locs,masks,spix_idx,cost_alpha,root)
 
     # -- test xfer cost --
-    costC,maskM = get_xfer_cost(regions,locs,masks)
+    costC,maskM = get_xfer_cost(regions,locs,masks,cost_alpha)
     print("costC.shape: ",costC.shape)
     print("maskM.shape: ",maskM.shape)
-    spix_idx_list = [20,50,100]
+    spix_idx_list = th.randperm(spix.max()+1)[:3]
     for spix_idx in spix_idx_list:
-        costC_idx,maskM_idx = get_xfer_cost_single(regions,locs,masks,spix_idx)
+        costC_idx,maskM_idx = get_xfer_cost_single(regions,locs,masks,spix_idx,cost_alpha)
         S = costC_idx.shape[-1]
         delta_c = th.mean((costC[:,spix_idx,:S,:S] - costC_idx)**2).item()
         delta_m = th.mean((maskM[:,spix_idx,:S,:S]*1. - maskM_idx*1.)**2).item()
@@ -486,7 +524,86 @@ def main():
 
 
     # -- next... --
-    run_sinkhorn(regions,locs,masks,spix,root)
+    vals,inds = run_sinkhorn(regions,locs,masks,spix,cost_alpha,root)
+
+    # -- remap indices from Intra-Superpixel view to Image view --
+    img_vals = rearrange(vals,'b ns k r -> b ns r k')
+    # print(img_vals.shape)
+    # exit()
+    Bm1,NS,K,R = inds.shape
+    img_inds = remap_inds(inds,locs,H,W)
+    img_inds = rearrange(img_inds,'bm1 ns k r tw -> bm1 ns r k tw')
+    # print(img_inds[0,0
+    # print(img_inds[...,0].max(),img_inds[...,0].min())
+    # print(img_inds[...,1].max(),img_inds[...,1].min())
+    sp2vid_inds = sp2vid_inds[:,:,None,:1].expand((-1,-1,K,2))
+    # print("img_inds.shape,sp2vid_inds.shape: ",img_inds.shape,sp2vid_inds.shape)
+    img_inds = th.gather(img_inds.reshape(B-1,-1,K,2),1,sp2vid_inds[1:])
+    # img_inds = img_inds.reshape(B-1,H,W,K,2)
+
+    sp2vid_inds = sp2vid_inds[...,:1]
+    # print("img_vals.shape,sp2vid_inds.shape: ",img_vals.shape,sp2vid_inds.shape)
+    img_vals = th.gather(img_vals.reshape(B-1,-1,K,1),1,sp2vid_inds[1:])
+    img_vals[th.where(th.isnan(img_vals))] = 0.
+    img_vals = img_vals.reshape(B-1,H,W,1,K)
+    if not(th.all(img_vals[...,0,0]>0).item()):
+        print("There are probably holes in your output.")
+
+    # print(img_inds[0,0,0])
+    # vid_r = rearrange(vid,'b f h w -> b (h w) f')
+    img_inds = img_inds.long()
+    img_inds = img_inds[...,0] + img_inds[...,1]*W # rasterize; B-1,HW,K
+    img_inds = img_inds[:,:,None].expand((-1,-1,F,-1)) # Bm1,HW,F,K
+    # print(img_inds.min(),img_inds.max())
+
+    # -- warp the image --
+    # img_inds = img_inds[:,None].expand((-1,F,-1,-1,))
+    # vid_f = th.gather(regions.reshape(B,-1,F),1,inds_e,sparse_grad=True)
+    vid_r = vid_r[...,None].expand((-1,-1,-1,K)) # Bm1,HW,F,K
+    print(img_inds.shape)
+    print("vid_r.shape: ",vid_r.shape)
+    warped_r = th.gather(vid_r[:-1],1,img_inds)
+    warped = warped_r.reshape(B-1,H,W,F,K)
+    # warped = th.mean(warped,-1)
+    warped = th.sum(warped * img_vals,-1)
+    warped = rearrange(warped,'b h w f -> b f h w')
+    tv_utils.save_image(warped,root / "warped.png")
+
+    delta = ((warped - vid[1:])**2).mean(-3)
+    delta = delta.ravel()
+    thresh = 0.001
+    args_rm = th.where(delta>thresh)
+    args_keep = th.where(delta<=thresh)
+    print("Average difference: ",th.mean(delta[args_keep]))
+
+    warped[:,0].view(-1)[args_rm] = 1.
+    warped[:,1].view(-1)[args_rm] = 0.
+    warped[:,2].view(-1)[args_rm] = 0.
+    tv_utils.save_image(warped,root / "warped_rmbig.png")
+
+    # exit()
+    # stack = th.gather(vid[0],img_inds)
+
+    # -- get deformed image by first deforming each region --
+    # def get_deform_region(reg0,reg1,vals,inds):
+    #     print(reg0.shape,reg1.shape)
+    #     print(vals.shape)
+    #     print(inds.shape)
+    #     exit()
+    # deformed_region = get_deform_region(regions[0],regions[1],vals[0],img_inds[0],H,W)
+    # deformed = th.gather(deformed_region.reshape(1,-1,F),1,sp2vid_inds[[1]])
+
+    # # -- get deformed video from (vals,img_inds) --
+    # def get_deformed_image(img0,img1,vals,inds,H,W):
+    #     print(img0.shape,img1.shape)
+    #     print(vals.shape)
+    #     print(inds.shape)
+    #     exit()
+    # deformed = get_deformed_image(img[0],img1[1],vals[0],img_inds[0],H,W)
+    # tv_utils.save_image(deformed,root / "marked.png")
+
+
+
 
 
 if __name__ == "__main__":
