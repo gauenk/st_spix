@@ -39,6 +39,42 @@ void copy_spix_to_params(float* means, float* cov, int* counts,
     counts_ix[0] = params_ix.count;
 }
 
+
+__global__
+void copy_spix_to_params_parents(float* means, float* cov,
+                                 int* counts, int* spix_parents,
+                                 superpixel_params* sp_params, int* ids, int nspix){
+
+    // -- filling superpixel params into image --
+    int ix = threadIdx.x + blockIdx.x * blockDim.x;  
+    if (ix>=nspix) return; 
+
+    // -- offset memory access --
+    float* means_ix = means + ix * 5;
+    float* cov_ix = cov + ix * 4;
+    int* counts_ix = counts + ix;
+    int* spix_ix = spix_parents + ix;
+
+    // -- read spix --
+    int sp_index = ids[ix];
+    if (sp_index < 0){ return; }
+    auto params_ix = sp_params[sp_index];
+      
+    // -- fill params --
+    cov_ix[0] = params_ix.sigma_s.x;
+    cov_ix[1] = params_ix.sigma_s.y;
+    cov_ix[2] = params_ix.sigma_s.z;
+    cov_ix[3] = params_ix.logdet_Sigma_s;
+    means_ix[0] = params_ix.mu_i.x;
+    means_ix[1] = params_ix.mu_i.y;
+    means_ix[2] = params_ix.mu_i.z;
+    means_ix[3] = params_ix.mu_s.x;
+    means_ix[4] = params_ix.mu_s.y;
+    counts_ix[0] = params_ix.count;
+    spix_ix[0] = params_ix.parent_spix;
+}
+
+
 __global__
 void copy_spix_to_params_icov2cov(float* means, float* cov, int* counts,
                                   superpixel_params* sp_params, int* ids, int nspix){

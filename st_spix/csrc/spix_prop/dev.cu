@@ -56,7 +56,7 @@ void copy_only_spatial_mean(superpixel_params* sp_params_dest,
 
 }
 
-std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,
+std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,
              torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor>
 spix_prop_dev_cuda(const torch::Tensor imgs,
                    const torch::Tensor in_spix,
@@ -109,7 +109,6 @@ spix_prop_dev_cuda(const torch::Tensor imgs,
     // fprintf(stdout,"1\n");
     // cudaDeviceSynchronize();
 
-
     // -- load single image --
     sp.load_gpu_img((float*)(imgs.data<uint8_t>()));
     // fprintf(stdout,"2\n");
@@ -126,7 +125,6 @@ spix_prop_dev_cuda(const torch::Tensor imgs,
 
     // -- use current image to compute params, skipping invalid --
     sp.run_update_param();
-
 
     // fprintf(stdout,"3\n");
     // cudaDeviceSynchronize();
@@ -297,6 +295,7 @@ spix_prop_dev_cuda(const torch::Tensor imgs,
     torch::Tensor means = torch::zeros({nbatch, nspix_r, 5}, options_f32);
     torch::Tensor cov = torch::zeros({nbatch, nspix_r, 4}, options_f32);
     torch::Tensor counts = torch::zeros({nbatch, nspix_r}, options_i32);
+    torch::Tensor spix_parents = torch::zeros({nbatch, nspix_r}, options_i32);
 
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
@@ -308,11 +307,18 @@ spix_prop_dev_cuda(const torch::Tensor imgs,
     dim3 nblocks0(num_blocks0);
 
     // -- launch --
-    copy_spix_to_params<<<nblocks0,nthreads0>>>(means.data<float>(),
-                                                cov.data<float>(),
-                                                counts.data<int>(),
-                                                sp.sp_params,
-                                                unique_ids.data<int>(),nspix_r);
+    // copy_spix_to_params<<<nblocks0,nthreads0>>>(means.data<float>(),
+    //                                             cov.data<float>(),
+    //                                             counts.data<int>(),
+    //                                             sp.sp_params,
+    //                                             unique_ids.data<int>(),nspix_r);
+    copy_spix_to_params_parents<<<nblocks0,nthreads0>>>(means.data<float>(),
+                                                        cov.data<float>(),
+                                                        counts.data<int>(),
+                                                        spix_parents.data<int>(),
+                                                        sp.sp_params,
+                                                        unique_ids.data<int>(),nspix_r);
+
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
 
@@ -353,8 +359,8 @@ spix_prop_dev_cuda(const torch::Tensor imgs,
 
 
 
-    return std::make_tuple(boarder,spix,debug_spix,debug_border,debug_seg,
-                           means,cov,counts,unique_ids);
+    return std::make_tuple(boarder,spix,spix_parents,debug_spix,
+                           debug_border,debug_seg,means,cov,counts,unique_ids);
 }
 
 

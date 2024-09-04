@@ -36,7 +36,7 @@ from easydict import EasyDict as edict
 # import matplotlib as mpl
 # from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 
-def stream_bass(vid,sp_size=80,alpha=0.001,beta=10.,nrefine=30):
+def stream_bass(vid,sp_size=80,alpha=0.001,beta=10.,nrefine=30,fflow=None):
 
     # -- config --
     npix_in_side = sp_size
@@ -47,9 +47,21 @@ def stream_bass(vid,sp_size=80,alpha=0.001,beta=10.,nrefine=30):
     # -- load images --
     vid = th.clip(255.*vid,0.,255.).type(th.uint8)
     T,F,H,W = vid.shape
+    B,F,H,W = vid.shape
 
-    # -- run flow --
-    flows = flow_pkg.run(vid[None,:]/255.,sigma=0.0,ftype="cv2")
+    # -- get flow --
+    if fflow is None:
+        # -- run flow [cv2] --
+        # flows = flow_pkg.run(vid[None,:]/255.,sigma=0.0,ftype="cv2")
+        # fflow = flows.fflow[0]
+        # print(fflow.shape)
+
+        # -- run flow [raft] --
+        from st_spix.flow_utils import run_raft
+        fflow,bflow = run_raft(vid)
+        # print("fflow.shape: ",fflow.shape)
+        # exit()
+
 
     # -- bass --
     img0 = img4bass(vid[None,0])
@@ -63,18 +75,17 @@ def stream_bass(vid,sp_size=80,alpha=0.001,beta=10.,nrefine=30):
 
         # -- unpack --
         img_curr = img4bass(vid[None,ix+1])
-        flow_curr = flows.fflow[0,ix][None,:]
+        flow_curr = fflow[[ix]].contiguous()
 
         # -- run --
         outs = prop_seg(img_curr.clone(),spix[-1].clone(),flow_curr.clone(),
                         means.clone(),cov.clone(),counts.clone(),ids.clone(),
                         niters,inner_niters,npix_in_side,i_std,
                         alpha,beta,nrefine)
-        spix_t,shift_st,dbs,dbp,missing,_means = outs
+        spix_t,shift_st,dbs,dbp,missing,means = outs
         spix.append(spix_t)
     spix = th.stack(spix)[:,0]
-    return spix,flows.fflow[0,:]
-
+    return spix,fflow
 
 def img_for_bass(img,device="cuda"):
     img= (th.clip(img,0.,1.)*255.).type(th.uint8)
@@ -165,7 +176,11 @@ def shift_labels(spix,means,flow):
     # print("grid.shape,flow.shape: ",grid.shape,flow.shape)
     grid = st_spix.sp_pool_from_spix(grid,spix)
     # print("grid.shape,flow.shape: ",grid.shape,flow.shape,means.shape)
+    # print(".")
+    # th.cuda.synchronize()
     gscatter,gcnts = st_spix.scatter.run(grid,flow,swap_c=True)
+    # th.cuda.synchronize()
+    # print("..")
     # print("[0] gscatter.shape: ",gscatter.shape)
     # print("[0] gcnts.shape: ",gcnts.shape)
     # exit()
@@ -211,6 +226,8 @@ def prop_seg(img,spix,flow,means,cov,counts,ids,
     # -- rigid shift --
     # flow_sp = st_spix.sp_pool_from_spix(flow,spix)
     flow_sp,_means = st_spix.pool_flow_and_shift_mean(flow,means.clone(),spix,ids)
+    # flow_sp = refine_flow_sp(vid,spix,flow_sp)
+    # flow_sp,_means = st_spix.pool_flow_and_shift_mean(flow,means.clone(),spix,ids)
     spix_s,cnts = shift_labels(spix.clone(),means[0],flow_sp) # propogate labels
     # print("spix_s.min(),spix_s.max(): ",spix_s.min(),spix_s.max())
     means = _means
@@ -221,6 +238,12 @@ def prop_seg(img,spix,flow,means,cov,counts,ids,
     spix_s[th.where(invalid)] = -1
     spix_s_0 = spix_s.clone()
 
+    # print(missing.numel())
+    if missing.numel() == 0:
+        # print("think of what to do.")
+        empty = th.tensor([])
+        return spix_s,spix_s_0,empty,empty,invalid,means
+
     # print("Comparing negatives: ",missing.shape,th.sum(spix_s==-1))
     # print(spix_s.shape,missing.shape,K,max_SP,img.shape)
     # th.cuda.synchronize()
@@ -229,7 +252,7 @@ def prop_seg(img,spix,flow,means,cov,counts,ids,
     # -- exec filling --
     niters_refine = refine_iters
     fill_debug = False
-    use_xfer = True
+    use_xfer = False
     fxn = st_spix_prop_cuda.spix_prop_dev
     # print("[prop] img.min(), img.max(): ",img.min(), img.max())
     # print("[info0] spix: ",spix_s.min().item(),spix_s.max().item())
@@ -245,6 +268,14 @@ def prop_seg(img,spix,flow,means,cov,counts,ids,
     # print("[prop] img.min(), img.max(): ",img.min(), img.max())
 
     return spix_s,spix_s_0,db_spix,db_border,invalid,means
+
+
+def refine_flow_sp(vid,spix,flow):
+    flow_r = flow.clone()
+    print("hi.")
+    exit()
+    return flow_r
+
 
 def viz_marked_debug(img,debug,debug_border,missing,root):
 

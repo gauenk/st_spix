@@ -13,6 +13,7 @@ struct alignas(16) superpixel_params{
     double log_count;
     int valid;
     float prior_count;
+    int spix_parent;
 };
 
 /* struct alignas(16) superpixel_GPU_helper_ptrs{ */

@@ -69,3 +69,59 @@ def viz_flow_quiver(name,flow,step=8):
                flow[::step, ::step, 0], flow[::step, ::step, 1])
     plt.savefig(name)
     plt.close("all")
+
+def run_raft(vid):
+
+    # -- raft imports --
+    import torch
+    import torch as th
+    from raft.raft import RAFT
+    from raft.utils.utils import InputPadder
+    from easydict import EasyDict as edict
+
+    # -- load model --
+    model_fn = "/home/gauenk/Documents/packages/RAFT/models/raft-kitti.pth"
+    args = {"model":model_fn, "small":False,
+            "mixed_precision":False, "alternate_corr":False}
+    args = edict(args)
+    model = torch.nn.DataParallel(RAFT(args))
+    model.load_state_dict(torch.load(args.model))
+    model = model.module
+    model.to(vid.device)
+    model.eval()
+
+    # -- viz --
+    # print("vid.min().item(),vid.max().item(): ",vid.min().item(),vid.max().item())
+
+    # -- run/collect flow --
+    fflow,bflow = [],[]
+    for ti in range(vid.shape[0]-1):
+
+        # -- unpack --
+        img1,img2 = vid[[ti]],vid[[ti+1]]
+
+        # -- normalize? --
+        # img1 = (img1*255.)
+        # img2 = (img2*255.)
+
+        # -- padding --
+        padder = InputPadder(img1.shape)
+        img1, img2 = padder.pad(img1, img2)
+
+        # -- compute padding --
+        _, fflow_ti = model(img1, img2, iters=20, test_mode=True)
+        _, bflow_ti = model(img2, img1, iters=20, test_mode=True)
+        # print("flow_low.shape,flow_up.shape: ",flow_low.shape,flow_up.shape)
+        fflow.append(fflow_ti)
+        bflow.append(bflow_ti)
+
+    # -- pad with zeros [for compatibility; dev only] --
+    zflow = th.zeros_like(fflow[0])
+    fflow = fflow   + [zflow]
+    bflow = [zflow] + bflow
+
+    # -- stacking --
+    fflow = th.cat(fflow)
+    bflow = th.cat(bflow)
+
+    return fflow,bflow

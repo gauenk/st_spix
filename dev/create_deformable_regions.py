@@ -3,6 +3,8 @@ import torch as th
 import numpy as np
 from einops import rearrange,repeat
 from pathlib import Path
+from functools import reduce
+
 
 # -- masked tensors --
 from torch.masked import masked_tensor, as_masked_tensor
@@ -26,6 +28,7 @@ from st_spix.sp_pooling import pooling,SuperpixelPooling
 import stnls
 from dev_basics import flow as flow_pkg
 
+import matplotlib.cm as cm
 from matplotlib import colormaps
 from matplotlib import patches, pyplot as plt
 # import matplotlib.pyplot as plt
@@ -114,20 +117,24 @@ def get_xfer_cost(regions,locations,masks,alpha):
     # print("locations.shape: ",locations.shape)
     masks = masks.bool()
     masks_e2 = masks[...,None].expand((-1,-1,-1,2))
-    means = (locations * masks_e2).sum(-2,keepdim=True)/masks_e2.sum(-2,keepdim=True)
+    means = (locations * masks_e2).sum(-2,keepdim=True)
+    means = means / (masks_e2.sum(-2,keepdim=True)+1e-10)
     locations = locations - means
     # locations[:,:,mask,0] -= locations[:,:,mask,0].mean(-1)
     # locations[:,:,mask,1] -= locations[:,:,mask,1].mean(-1)
 
     # -- cost --
+    print("any na? ",th.any(th.isnan(locations)).item())
     costC = th.cdist(locations[:-1],locations[1:])
-    print(costC.shape)
+    print("any na? ",th.any(th.isnan(costC)).item())
     costC = alpha*costC + (1-alpha)*th.cdist(regions[:-1],regions[1:])
+    print("any na? ",th.any(th.isnan(costC)).item())
     maskM = (masks[:-1,:,:,None]  * masks[1:,:,None])>0
+    # maskM = (masks[:-1,:,None]  * masks[1:,:,:,None])>0
     # maskM = maskM.transpose(-2,-1)
     costC = costC * maskM
     # costC = th.cdist(locs[:-1],locs[1:])
-    # maskM = (mask[:-1,:,None]  * mask[1:,None])>0
+
 
     #
     # -- testing --
@@ -197,7 +204,8 @@ def run_sinkhorn(regions,locations,masks,spix,cost_alpha,root):
     Bm1,NS,S,S = costC.shape
 
     # -- init sinkhorn params --
-    ot_scale = 1e3
+    # ot_scale = 5e3
+    ot_scale = 1
     a,b = 1.*(masks[:-1]>0),1.*(masks[1:]>0)
     a,b = a.reshape(Bm1,NS,S,1),b.reshape(Bm1,NS,S,1)
     K = th.exp(-ot_scale*costC)*maskM
@@ -208,18 +216,21 @@ def run_sinkhorn(regions,locations,masks,spix,cost_alpha,root):
     # pi_est = u * K * v.reshape(Bm1,NS,1,S)
 
     # -- many iters --
-    niters = 30
+    niters = 0
     v = b.clone()/b.sum(-2,keepdim=True)
     u = a.clone()/a.sum(-2,keepdim=True)
     for iter_i in range(niters):
         u = a / ((K @ v)+1e-10)
         v = b / ((K.transpose(-2,-1) @ u)+1e-10)
-    pi_est = u * K * v.reshape(Bm1,NS,1,S)
+    if niters == 0:
+        pi_est = K
+    else:
+        pi_est = u * K * v.reshape(Bm1,NS,1,S)
 
     # -- flows and weights from transport map --
-    spix_idx = 20
-    pi_vals,pi_inds = th.topk(pi_est,10,-2)
-    beta = 30.
+    spix_idx = 3
+    pi_vals,pi_inds = th.topk(pi_est,5,-2)
+    beta = 2.
     pi_vals = th.softmax(beta*pi_vals,-2)
     # pi_vals,pi_inds = th.topk(pi_est[:,spix_idx],10,-2)
     viz_pi_sample(pi_vals[:,spix_idx],pi_inds[:,spix_idx],locations[:,spix_idx],
@@ -266,7 +277,7 @@ def viz_pi_sample(pi_vals,pi_inds,locs,mask,root,prefix=""):
     base_size = 2.
     no_red = True
     # for j in range(0,pi_vals.shape[-1],3):
-    for j in [100]:
+    for j in [50]:
         color = "black"
         # color = "red" if j >= (pi_vals.shape[-1]-20) else "black"
         # if color == "red":
@@ -310,8 +321,9 @@ def get_xfer_cost_single(regions,locations,masks,spix_idx,alpha):
 
     # -- center each frame's location --
     mask_e2 = mask[...,None].expand((-1,-1,2))
-    means = (locs * mask_e2).sum(-2,keepdim=True)/mask_e2.sum(-2,keepdim=True)
+    means = (locs * mask_e2).sum(-2,keepdim=True)/(mask_e2.sum(-2,keepdim=True)+1e-10)
     locs = locs - means
+    print("[locs is na?] : ",th.any(th.isnan(locs)).item())
 
     # -- shrink for easier dev --
     # print(mask.shape)
@@ -346,6 +358,8 @@ def get_xfer_cost_single(regions,locations,masks,spix_idx,alpha):
     # rows match src; cols match dest
     costC = costC * maskM
 
+    # maskM = (masks[:-1,:,:,None]  * masks[1:,:,None])>0
+
     return costC,maskM
 
 def run_sinkhorn_single(regions,locations,masks,spix_idx,cost_alpha,root):
@@ -365,7 +379,7 @@ def run_sinkhorn_single(regions,locations,masks,spix_idx,cost_alpha,root):
     v = b.clone()/b.sum(-2,keepdim=True)
     u = a.clone()/a.sum(-2,keepdim=True)
 
-    niters = 100
+    niters = 0
     for iter_i in range(niters):
 
         # -- error --
@@ -384,6 +398,10 @@ def run_sinkhorn_single(regions,locations,masks,spix_idx,cost_alpha,root):
         # -- updates --
         u = a / ((K @ v)+1e-10)
         v = b / ((K.transpose(-2,-1) @ u)+1e-10)
+    if niters == 0:
+        pi_est = K
+    else:
+        pi_est = u * K * v.reshape(Bm1,NS,1,S)
 
     # -- compute transport map --
     # pi_est = th.diag_embed(u[:,:,0]) @ K @ th.diag_embed(v[:,:,0])
@@ -406,6 +424,94 @@ def run_sinkhorn_single(regions,locations,masks,spix_idx,cost_alpha,root):
 #
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
+def viz_shrunk(vid,spix,marked,warped,root):
+
+    delta = ((warped - vid[1:])**2).mean(-3)
+    # img0 = vid[37:48,11:21:]
+    # img1 = vid[37:48,158:168,:]
+    # img2 = vid[37:48,298:308,:]
+    # delta = delta[...,37:48,:]
+    delta = delta[...,35:46,:]
+    s0,s1 = 128+4,2*(128+4)
+    delta = [delta[0,...,158-s0:168-s0],delta[1,...,298-s1:308-s1]]
+    delta = th.stack(delta)
+    print(delta.max(),th.quantile(delta,0.90))
+    worst = delta>th.quantile(delta,0.90)
+    print("WORST.shape: ",worst.shape)
+    delta = th.clip(delta/(th.quantile(delta,0.90).item()+1e-10),0.,1.)
+    print(delta.shape)
+    tv_utils.save_image(delta[:,None],root / "shrunk_delta.png")
+
+    print("warped.shape: ",warped.shape)
+    warped = warped[...,35:46,:]
+    s0,s1 = 128+4,2*(128+4)
+    warped = [warped[0,...,158-s0:168-s0],
+              warped[1,...,298-s1:308-s1]]
+    print([m.shape for m in warped])
+    warped = th.stack(warped)
+    print(warped.shape)
+    tv_utils.save_image(warped,root / "shrunk_warped.png")
+
+    print("marked.shape: ",marked.shape)
+    marked = marked[...,35:46,:]
+    s0,s1 = 128+4,2*(128+4)
+    marked = [marked[0,...,11:21],
+              marked[1,...,158-s0:168-s0],
+              marked[2,...,298-s1:308-s1]]
+    print([m.shape for m in marked])
+    marked = th.stack(marked)
+    print(marked.shape)
+    tv_utils.save_image(marked,root / "shrunk_marked.png")
+
+    vid = vid[...,35:46,:]
+    s0,s1 = 128+4,2*(128+4)
+    vid = [vid[0,...,11:21],
+              vid[1,...,158-s0:168-s0],
+              vid[2,...,298-s1:308-s1]]
+    print([m.shape for m in vid])
+    vid = th.stack(vid)
+    print(vid.shape)
+    tv_utils.save_image(vid,root / "shrunk_vid.png")
+
+    print("spix.shape: ",spix.shape)
+    spix = spix[...,35:46,:]
+    s0,s1 = 128+4,2*(128+4)
+    spix = [spix[0,...,11:21],
+              spix[1,...,158-s0:168-s0],
+              spix[2,...,298-s1:308-s1]]
+    print([m.shape for m in spix])
+    spix = th.stack(spix)
+    sshape = spix.shape
+    # print(spix)
+    spix = spix.reshape(-1)
+    # print(spix.shape)
+    spix = th.argmax(1.*(spix[:,None] == th.unique(spix)[None,:]),-1)
+    spix = spix.reshape(sshape)
+    # print(spix)
+    spix = (spix+1) / (spix.max()+1)
+    # print(spix.shape)
+    tv_utils.save_image(spix[:,None],root / "shrunk_spix.png")
+
+    # vid = vid[...,35:46,:]
+    # s0,s1 = 128+4,2*(128+4)
+    # vid = [vid[0,...,11:21],
+    #        vid[1,...,158-s0:168-s0],
+    #        vid[2,...,298-s1:308-s1]]
+    # print([m.shape for m in vid])
+    # vid = th.stack(vid)
+    print(vid.shape)
+    alpha = 0.0
+    args = th.where(spix == th.mode(spix.ravel()).values.item())
+    args_w = th.where(worst)
+    print(args_w[1].max(),args_w[2].max())
+    vid[:,0][args] = 0.
+    vid[:,1][args] = 1.
+    vid[:,2][args] = 0.
+    # print("vid.shape: ",vid[1:,2].shape)
+    vid[1:,2][args_w] = 1.
+    tv_utils.save_image(vid,root / "shrunk_vid_f.png")
+
+
 def main():
 
     # -- get root --
@@ -414,22 +520,50 @@ def main():
 
     # -- config --
     sp_size = 15
-    nrefine = 10
+    nrefine = 20
     niters,inner_niters = 1,1
-    i_std,alpha,beta = 0.1,1.,1.
+    i_std,alpha,beta = 0.1,1.,10.
 
     # -- read img/flow --
     vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['tennis'])
-    # vid = vid[0,3:6,:,:340,:340]
+    # vid = vid[0,3:6,:,:256,:256]
     vid = vid[0,3:6,:,:128,290-128:290]
-    print("vid.shape: ",vid.shape)
+    # print("vid.shape: ",vid.shape)
     # vid = resize(vid,(156,156))
-    flows = flow_pkg.run(vid[None,:],sigma=0.0,ftype="cv2")
+
+    # -- debug --
+    def get_fstats(ftensor):
+        min0 = ftensor.reshape(-1,2).min(0).values.round(decimals=4)
+        max0 = ftensor.reshape(-1,2).max(0).values.round(decimals=4)
+        min0 = min0.detach().cpu().numpy().tolist()
+        max0 = max0.detach().cpu().numpy().tolist()
+        return min0,max0
+
+    # -- run flow [raft] --
+    from st_spix.flow_utils import run_raft
+    fflow,bflow = run_raft(vid)
+    # print(get_fstats(fflow),get_fstats(bflow))
+    # print(fflow.shape,bflow.shape,vid.shape)
+
+    # -- run flow [cv2] --
+    # flows = flow_pkg.run(vid,sigma=0.0,ftype="cv2")
+    # fflow,bflow = flows.fflow,flows.bflow
+    # print(get_fstats(fflow),get_fstats(bflow))
+    # print(fflow.shape,bflow.shape,vid.shape)
+
+    # -- shrink vid and flows --
+    # vid = vid[...,32:-32,32:-32]
+    # fflow = fflow[...,32:-32,32:-32]
+    # print("vid.shape: ",vid.shape)
+    # print("fflow.shape: ",fflow.shape)
+
+    # -- save --
     B,F,H,W = vid.shape
+    tv_utils.save_image(vid,root / "vid.png")
 
     # -- view --
     spix,fflow = stream_bass(vid,sp_size=sp_size,alpha=alpha,
-                             beta=beta,nrefine=nrefine)
+                             beta=beta,nrefine=nrefine,fflow=fflow)
     B = spix.shape[0]
     th.cuda.empty_cache()
 
@@ -451,6 +585,7 @@ def main():
 
     # -- fill into contiguous tensor [very very silly] --
     inds = get_scattering_field(spix,R)
+    print("[inds] is nan? ",th.any(th.isnan(inds)))
     inds_e2 = inds[:,:,None].expand((-1,-1,2))
     inds_e = inds[:,:,None].expand((-1,-1,3))
     vid_r = rearrange(vid,'b f h w -> b (h w) f')
@@ -464,6 +599,7 @@ def main():
     locs = th.zeros((B,nspix*R,2),device=spix.device)
     locs = locs.scatter_(1,inds_e2,grid)
     locs = locs.reshape(B,nspix,R,2)
+    print("[locs] is nan? ",th.any(th.isnan(locs)))
 
     masks = th.zeros((B,nspix*R),device=spix.device)
     masks = masks.scatter_(1,inds,th.ones_like(vid_r[:,:,0]))
@@ -494,17 +630,27 @@ def main():
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
     # -- save --
-    spix_idx_list = th.randperm(spix.max()+1)[:3]
+    # cmap = cm.get_cmap('gist_rainbow')
+    cmap = cm.get_cmap('jet')
+    PICK = 4
+    th.manual_seed(1)
+    spix_idx_list = th.randperm(spix.max()+1)[:PICK]
+    args = reduce(th.logical_or,[spix==idx for idx in spix_idx_list])
+    args = th.where(args)
+    marked = mark_spix_vid(vid,spix)
+    print(marked.shape)
+    for i in range(3): marked[:,i][args] = 0
     for i,spix_idx in enumerate(spix_idx_list):
-        marked = mark_spix_vid(vid,spix)
-        marked[:,0][th.where(spix==spix_idx)] = i==0
-        marked[:,1][th.where(spix==spix_idx)] = i==1
-        marked[:,2][th.where(spix==spix_idx)] = i==2
-        tv_utils.save_image(marked,root / "marked_fill.png")
-        viz_sample(regions,locs,masks,spix_idx,root)
+        # print(i,spix_idx,cmap(i/1.*PICK))
+        color = cmap(i/(1.*PICK))
+        for c,col in enumerate(color[:3]):
+            # print(c,col)
+            marked[:,c][th.where(spix==spix_idx)] = col
+    tv_utils.save_image(marked,root / "marked_fill.png")
+    viz_sample(regions,locs,masks,spix_idx,root)
 
     # -- run sinkhorn --
-    spix_idx = 20
+    spix_idx = 4
     cost_alpha = 0.0
     run_sinkhorn_single(regions,locs,masks,spix_idx,cost_alpha,root)
 
@@ -560,8 +706,8 @@ def main():
     # img_inds = img_inds[:,None].expand((-1,F,-1,-1,))
     # vid_f = th.gather(regions.reshape(B,-1,F),1,inds_e,sparse_grad=True)
     vid_r = vid_r[...,None].expand((-1,-1,-1,K)) # Bm1,HW,F,K
-    print(img_inds.shape)
-    print("vid_r.shape: ",vid_r.shape)
+    # print(img_inds.shape)
+    # print("vid_r.shape: ",vid_r.shape)
     warped_r = th.gather(vid_r[:-1],1,img_inds)
     warped = warped_r.reshape(B-1,H,W,F,K)
     # warped = th.mean(warped,-1)
@@ -576,10 +722,13 @@ def main():
     args_keep = th.where(delta<=thresh)
     print("Average difference: ",th.mean(delta[args_keep]))
 
-    warped[:,0].view(-1)[args_rm] = 1.
-    warped[:,1].view(-1)[args_rm] = 0.
-    warped[:,2].view(-1)[args_rm] = 0.
+    _warped = warped.clone()
+    _warped[:,0].view(-1)[args_rm] = 1.
+    _warped[:,1].view(-1)[args_rm] = 0.
+    _warped[:,2].view(-1)[args_rm] = 0.
     tv_utils.save_image(warped,root / "warped_rmbig.png")
+
+    viz_shrunk(vid,spix,marked,warped,root)
 
     # exit()
     # stack = th.gather(vid[0],img_inds)

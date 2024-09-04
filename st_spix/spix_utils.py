@@ -73,6 +73,10 @@ def pool_flow_and_shift_mean_v1(flow,means,spix,ids):
     means[...,-2] = means[...,-2] + downsampled[...,0]
     means[...,-1] = means[...,-1] + downsampled[...,1]
 
+    # -- [new] update means (means; WxH) --
+    # means[...,-2] = means[...,-2] + downsampled[...,1]
+    # means[...,-1] = means[...,-1] - downsampled[...,0]
+
     # -- return --
     # pooled = rearrange(pooled,'b h w f -> b f h w')
     return pooled.round(),means

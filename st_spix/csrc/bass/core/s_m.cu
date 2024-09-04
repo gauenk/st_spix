@@ -121,14 +121,26 @@ __host__ int CudaCalcSplitCandidate(const float* image_gpu_double, int* split_me
     int offset = count%2+1;
     cudaMemset(seg_split1, 0, nPixels*sizeof(int));
     cudaMemset(seg_split2, 0, nPixels*sizeof(int));
-    init_sm<<<BlockPerGrid2,ThreadPerBlock>>>(image_gpu_double,seg,sp_params,sp_gpu_helper_sm, nSPs_buffer, nbatch, xdim, nftrs, split_merge_pairs);
+    init_sm<<<BlockPerGrid2,ThreadPerBlock>>>(image_gpu_double,seg,sp_params,
+                                              sp_gpu_helper_sm, nSPs_buffer,
+                                              nbatch, xdim, nftrs, split_merge_pairs);
+    init_split<<<BlockPerGrid2,ThreadPerBlock>>>(border,seg_split1,sp_params,
+                                                 sp_gpu_helper_sm, nSPs_buffer,
+                                                 nbatch, xdim, ydim, offset, seg,
+                                                 max_sp, max_SP);
+    init_split<<<BlockPerGrid2,ThreadPerBlock>>>(border,seg_split2,sp_params,
+                                                 sp_gpu_helper_sm, nSPs_buffer,
+                                                 nbatch, xdim,ydim, -offset, seg,
+                                                 max_sp, max_SP);
 
-    init_split<<<BlockPerGrid2,ThreadPerBlock>>>(border,seg_split1,sp_params,sp_gpu_helper_sm, nSPs_buffer, nbatch, xdim, ydim, offset, seg, max_sp, max_SP);
-    init_split<<<BlockPerGrid2,ThreadPerBlock>>>(border,seg_split2,sp_params,sp_gpu_helper_sm, nSPs_buffer, nbatch, xdim,ydim, -offset, seg, max_sp, max_SP);
-    split_sp<<<BlockPerGrid,ThreadPerBlock>>>(seg,seg_split1, split_merge_pairs, sp_params, sp_gpu_helper_sm, nPixels, nbatch, xdim, ydim, max_SP);
+    // idk what "split_sp" is doing here; init_sm clears the merge fields and
+    // the function returns immediately...
+    split_sp<<<BlockPerGrid,ThreadPerBlock>>>(seg,seg_split1,split_merge_pairs,
+                                              sp_params, sp_gpu_helper_sm, nPixels,
+                                              nbatch, xdim, ydim, max_SP);
 
-    gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    // gpuErrchk( cudaPeekAtLastError() );
+    // gpuErrchk( cudaDeviceSynchronize() );
     
     while(done)
     {
@@ -141,8 +153,8 @@ __host__ int CudaCalcSplitCandidate(const float* image_gpu_double, int* split_me
                    seg_split1,border,distance, mutex_2, nPixels, nbatch, xdim, ydim); 
         distance++;
         cudaMemcpy(&done, mutex_2, sizeof(int), cudaMemcpyDeviceToHost);
-        gpuErrchk( cudaPeekAtLastError() );
-        gpuErrchk( cudaDeviceSynchronize() );
+        // gpuErrchk( cudaPeekAtLastError() );
+        // gpuErrchk( cudaDeviceSynchronize() );
 
     }
     done =1;
@@ -150,43 +162,66 @@ __host__ int CudaCalcSplitCandidate(const float* image_gpu_double, int* split_me
     while(done)
     {
 		cudaMemset(mutex_2, 0, sizeof(int));
-        cudaMemcpy(&done, mutex_2, sizeof(int), cudaMemcpyDeviceToHost);
+        cudaMemcpy(&done, mutex_2, sizeof(int), cudaMemcpyDeviceToHost);//?
         calc_split_candidate<<<BlockPerGrid,ThreadPerBlock>>>(\
                 seg_split2 ,border,distance, mutex_2, nPixels, nbatch, xdim, ydim); 
         distance++;
         cudaMemcpy(&done, mutex_2, sizeof(int), cudaMemcpyDeviceToHost);
 
-        gpuErrchk( cudaPeekAtLastError() );
-        gpuErrchk( cudaDeviceSynchronize() );
+        // gpuErrchk( cudaPeekAtLastError() );
+        // gpuErrchk( cudaDeviceSynchronize() );
 
     }
 
-    calc_seg_split<<<BlockPerGrid,ThreadPerBlock>>>(seg_split1,seg_split2, seg, seg_split3, nPixels, nbatch, max_SP);
-    sum_by_label_split<<<BlockPerGrid,ThreadPerBlock>>>(image_gpu_double,seg_split1,sp_params,sp_gpu_helper_sm, nPixels, nbatch, xdim,nftrs,max_SP);
-    gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
 
-    calc_bn_split<<<BlockPerGrid2,ThreadPerBlock>>>(seg_split3, split_merge_pairs, sp_params, sp_gpu_helper, sp_gpu_helper_sm, nPixels, nbatch, xdim, nSPs_buffer, b0, max_SP);
+    // updates the segmentation to the two new regions; split either left/right or up/down.
+    calc_seg_split<<<BlockPerGrid,ThreadPerBlock>>>(seg_split1,seg_split2,
+                                                    seg, seg_split3, nPixels,
+                                                    nbatch, max_SP);
+    // computes summaries stats for each split
+    sum_by_label_split<<<BlockPerGrid,ThreadPerBlock>>>(image_gpu_double,
+                                                        seg_split1,sp_params,
+                                                        sp_gpu_helper_sm,
+                                                        nPixels,nbatch,
+                                                        xdim,nftrs,max_SP);
+    // gpuErrchk( cudaPeekAtLastError() );
+    // gpuErrchk( cudaDeviceSynchronize() );
 
-    gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    calc_bn_split<<<BlockPerGrid2,ThreadPerBlock>>>(seg_split3, split_merge_pairs,
+                                                    sp_params, sp_gpu_helper,
+                                                    sp_gpu_helper_sm, nPixels,
+                                                    nbatch, xdim, nSPs_buffer,
+                                                    b0, max_SP);
 
-    calc_marginal_liklelyhoood_of_sp_split<<<BlockPerGrid2,ThreadPerBlock>>>(image_gpu_double,  split_merge_pairs,  sp_params,  sp_gpu_helper, sp_gpu_helper_sm,  nPixels, nbatch, xdim, nftrs, nSPs_buffer , a0, b0, max_SP);
+    // gpuErrchk( cudaPeekAtLastError() );
+    // gpuErrchk( cudaDeviceSynchronize() );
 
-    gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    calc_marginal_liklelyhoood_of_sp_split\
+      <<<BlockPerGrid2,ThreadPerBlock>>>(image_gpu_double,  split_merge_pairs,
+                                         sp_params,  sp_gpu_helper, sp_gpu_helper_sm,
+                                         nPixels, nbatch, xdim, nftrs, nSPs_buffer,
+                                         a0, b0, max_SP);
+
+    // gpuErrchk( cudaPeekAtLastError() );
+    // gpuErrchk( cudaDeviceSynchronize() );
 
     // fprintf(stdout,"[s_m.cu] max_SP: %d\n",max_SP);
-    calc_hasting_ratio_split<<<BlockPerGrid2,ThreadPerBlock>>>(image_gpu_double,  split_merge_pairs, sp_params, sp_gpu_helper, sp_gpu_helper_sm, nPixels, nbatch, xdim, nftrs, nSPs_buffer, a0,  b0, alpha_hasting_ratio, 0, max_SP, max_sp);
+    calc_hasting_ratio_split\
+      <<<BlockPerGrid2,ThreadPerBlock>>>(image_gpu_double,  split_merge_pairs,
+                                         sp_params, sp_gpu_helper, sp_gpu_helper_sm,
+                                         nPixels, nbatch, xdim, nftrs, nSPs_buffer,
+                                         a0,  b0, alpha_hasting_ratio,
+                                         0, max_SP, max_sp);
 
-    gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    // gpuErrchk( cudaPeekAtLastError() );
+    // gpuErrchk( cudaDeviceSynchronize() );
 
-    split_sp<<<BlockPerGrid,ThreadPerBlock>>>(seg,seg_split1, split_merge_pairs, sp_params, sp_gpu_helper_sm, nPixels, nbatch, xdim, ydim, max_SP);
+    split_sp<<<BlockPerGrid,ThreadPerBlock>>>(seg,seg_split1, split_merge_pairs,
+                                              sp_params, sp_gpu_helper_sm, nPixels,
+                                              nbatch, xdim, ydim, max_SP);
 
-    gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
-
+    // gpuErrchk( cudaPeekAtLastError() );
+    // gpuErrchk( cudaDeviceSynchronize() );
 
     cudaMemcpy(&max_SP, max_sp, sizeof(int), cudaMemcpyDeviceToHost);
     cudaFree(max_sp);
@@ -197,7 +232,12 @@ __host__ int CudaCalcSplitCandidate(const float* image_gpu_double, int* split_me
 
 
 
-__global__ void init_sm(const float* image_gpu_double, const int* seg_gpu, superpixel_params* sp_params, superpixel_GPU_helper_sm* sp_gpu_helper_sm, const int nsuperpixel_buffer, const int nbatch, const int xdim,const int nftrs,int* split_merge_pairs) {
+__global__ void init_sm(const float* image_gpu_double,
+                        const int* seg_gpu,
+                        superpixel_params* sp_params,
+                        superpixel_GPU_helper_sm* sp_gpu_helper_sm,
+                        const int nsuperpixel_buffer, const int nbatch,
+                        const int xdim,const int nftrs,int* split_merge_pairs) {
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
 	if (k>=nsuperpixel_buffer) return;
 	//if (sp_params[k].valid == 0) return;
@@ -220,7 +260,6 @@ __global__ void init_sm(const float* image_gpu_double, const int* seg_gpu, super
     sp_gpu_helper_sm[k].remove = false;
     split_merge_pairs[k*2+1] = 0;
     split_merge_pairs[k*2] = 0;
-
    
 
 }
@@ -266,12 +305,16 @@ __global__  void calc_merge_candidate(int* seg, bool* border, int* split_merge_p
     return;        
 }
 
-__global__  void calc_split_candidate(int* seg, bool* border,int distance, int* mutex, const int nPixels, const int nbatch, const int xdim, const int ydim){   
+__global__
+void calc_split_candidate(int* seg, bool* border, int distance,
+                          int* mutex, const int nPixels,
+                          const int nbatch, const int xdim, const int ydim){   
+
   // todo: add batch -- no nftrs
     int idx = threadIdx.x + blockIdx.x * blockDim.x;  
     
     if (idx>=nPixels) return; 
-    if(border[idx]) return; 
+    if (border[idx]) return; 
     int x = idx % xdim;
     int y = idx / xdim;
 
@@ -317,7 +360,14 @@ __global__  void calc_split_candidate(int* seg, bool* border,int distance, int* 
 }
 
 
-__global__ void init_split(const bool* border, int* seg_gpu, superpixel_params* sp_params, superpixel_GPU_helper_sm* sp_gpu_helper_sm, const int nsuperpixel_buffer, const int nbatch, const int xdim, const int ydim, const int offset, const int* seg, int* max_sp, int max_SP) {
+__global__ void init_split(const bool* border, int* seg_gpu,
+                           superpixel_params* sp_params,
+                           superpixel_GPU_helper_sm* sp_gpu_helper_sm,
+                           const int nsuperpixel_buffer,
+                           const int nbatch, const int xdim,
+                           const int ydim, const int offset,
+                           const int* seg, int* max_sp, int max_SP) {
+
   // todo: add batch -- no nftrs
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
     *max_sp = max_SP+1;
@@ -347,7 +397,9 @@ __global__ void init_split(const bool* border, int* seg_gpu, superpixel_params* 
 }
 
 
-__global__ void calc_seg_split(int* seg_split1, int* seg_split2,int* seg, int* seg_split3, const int nPixels, int nbatch, int max_SP) {
+__global__ void calc_seg_split(int* seg_split1, int* seg_split2,
+                               int* seg, int* seg_split3,
+                               const int nPixels, int nbatch, int max_SP) {
   // todo -- nbatch
     int t = threadIdx.x + blockIdx.x * blockDim.x;
 	if (t>=nPixels) return;
@@ -357,12 +409,13 @@ __global__ void calc_seg_split(int* seg_split1, int* seg_split2,int* seg, int* s
     seg_split1[t] = seg_val;
 
     return;
-    
 }
 
-
-__global__ void sum_by_label_sm(const float* image_gpu_double, const int* seg_gpu, superpixel_params* sp_params, superpixel_GPU_helper_sm* sp_gpu_helper_sm,
-                                const int nPixels, const int nbatch, const int xdim, const int nftrs) {
+__global__ void sum_by_label_sm(const float* image_gpu_double,
+                                const int* seg_gpu, superpixel_params* sp_params,
+                                superpixel_GPU_helper_sm* sp_gpu_helper_sm,
+                                const int nPixels, const int nbatch,
+                                const int xdim, const int nftrs) {
   // todo: nbatch
 	// getting the index of the pixel
     int t = threadIdx.x + blockIdx.x * blockDim.x;
@@ -379,7 +432,11 @@ __global__ void sum_by_label_sm(const float* image_gpu_double, const int* seg_gp
 	atomicAdd(&sp_gpu_helper_sm[k].squares_i.z,b*b);
 }
 
-__global__ void sum_by_label_split(const float* image_gpu_double, const int* seg, superpixel_params* sp_params, superpixel_GPU_helper_sm* sp_gpu_helper_sm, const int nPixels, const int nbatch, const int xdim, const int nftrs, int max_SP) {
+__global__ void sum_by_label_split(const float* image_gpu_double,
+                                   const int* seg, superpixel_params* sp_params,
+                                   superpixel_GPU_helper_sm* sp_gpu_helper_sm,
+                                   const int nPixels, const int nbatch,
+                                   const int xdim, const int nftrs, int max_SP) {
   // todo: nbatch
 	// getting the index of the pixel
     int t = threadIdx.x + blockIdx.x * blockDim.x;
@@ -402,8 +459,14 @@ __global__ void sum_by_label_split(const float* image_gpu_double, const int* seg
     return;
 }
 
-__global__ void calc_bn(int* seg, int* split_merge_pairs, superpixel_params* sp_params, superpixel_GPU_helper* sp_gpu_helper, superpixel_GPU_helper_sm* sp_gpu_helper_sm, const int nPixels, const int nbatch, const int xdim, const int nsuperpixel_buffer, float b_0) {
-  // todo -- add nbatch
+__global__ void calc_bn(int* seg, int* split_merge_pairs,
+                        superpixel_params* sp_params,
+                        superpixel_GPU_helper* sp_gpu_helper,
+                        superpixel_GPU_helper_sm* sp_gpu_helper_sm,
+                        const int nPixels, const int nbatch,
+                        const int xdim, const int nsuperpixel_buffer, float b_0) {
+
+    // todo -- add nbatch
 	// getting the index of the pixel
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
 	if (k>=nsuperpixel_buffer) return;
@@ -467,7 +530,6 @@ __global__ void calc_bn(int* seg, int* split_merge_pairs, superpixel_params* sp_
                                 (count_fk)));
 
 
-
     if(  sp_gpu_helper_sm[k].b_n.x<0)   sp_gpu_helper_sm[k].b_n.x = 0.1;
     if(  sp_gpu_helper_sm[k].b_n.y<0)   sp_gpu_helper_sm[k].b_n.y = 0.1;
     if(  sp_gpu_helper_sm[k].b_n.z<0)   sp_gpu_helper_sm[k].b_n.z = 0.1;
@@ -481,7 +543,13 @@ __global__ void calc_bn(int* seg, int* split_merge_pairs, superpixel_params* sp_
 
 
 
-__global__ void calc_bn_split(int* seg, int* split_merge_pairs, superpixel_params* sp_params, superpixel_GPU_helper* sp_gpu_helper, superpixel_GPU_helper_sm* sp_gpu_helper_sm, const int nPixels, const int nbatch, const int xdim, const int nsuperpixel_buffer, float b_0, int max_SP) {
+__global__ void calc_bn_split(int* seg, int* split_merge_pairs,
+                              superpixel_params* sp_params,
+                              superpixel_GPU_helper* sp_gpu_helper,
+                              superpixel_GPU_helper_sm* sp_gpu_helper_sm,
+                              const int nPixels, const int nbatch,
+                              const int xdim, const int nsuperpixel_buffer,
+                              float b_0, int max_SP) {
   // todo; -- add nbatch
 	// getting the index of the pixel
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
@@ -513,11 +581,10 @@ __global__ void calc_bn_split(int* seg, int* split_merge_pairs, superpixel_param
     float mu_k_y = __ldg(&sp_gpu_helper_sm[k].mu_i_sum.y);
     float mu_k_z = __ldg(&sp_gpu_helper_sm[k].mu_i_sum.z);
 
+    // -- this is correct; its the "helper" associated with "sp_params" --
     float mu_f_x =__ldg(&sp_gpu_helper[k].mu_i_sum.x);
     float mu_f_y = __ldg(&sp_gpu_helper[k].mu_i_sum.y);
     float mu_f_z = __ldg(&sp_gpu_helper[k].mu_i_sum.z);
-
-
 
     
     sp_gpu_helper_sm[k].b_n.x = b_0 + 0.5 * ((squares_k_x) -
@@ -546,13 +613,11 @@ __global__ void calc_bn_split(int* seg, int* split_merge_pairs, superpixel_param
     sp_gpu_helper_sm[s].b_n.z = b_0 + 0.5 * ((squares_s_z) -
                                 ( mu_s_z*mu_s_z/ count_s));
 
-/*
-     sp_gpu_helper_sm[s].b_n.x = b_0 + (squares_s_x)+(mu_s_x*mu_s_x)/(count_s*count_s)-2*(mu_s_x*mu_s_x)/(count_s)+(mu_s_x*mu_s_x)/(count_k*count_k);
-    sp_gpu_helper_sm[s].b_n.y = b_0 + (squares_s_y)+(mu_s_y*mu_s_y)/(count_s*count_s)-2*(mu_s_y*mu_s_y)/(count_s)+(mu_s_y*mu_s_y)/(count_k*count_k);
-                   
-    sp_gpu_helper_sm[s].b_n.z = b_0 + (squares_s_z)+(mu_s_z*mu_s_z)/(count_s*count_s)-2*(mu_s_z*mu_s_z)/(count_s)+(mu_s_z*mu_s_z)/(count_k*count_k);                             
-*/
+    //  sp_gpu_helper_sm[s].b_n.x = b_0 + (squares_s_x)+(mu_s_x*mu_s_x)/(count_s*count_s)-2*(mu_s_x*mu_s_x)/(count_s)+(mu_s_x*mu_s_x)/(count_k*count_k);
+    //  sp_gpu_helper_sm[s].b_n.y = b_0 + (squares_s_y)+(mu_s_y*mu_s_y)/(count_s*count_s)-2*(mu_s_y*mu_s_y)/(count_s)+(mu_s_y*mu_s_y)/(count_k*count_k);
+    //  sp_gpu_helper_sm[s].b_n.z = b_0 + (squares_s_z)+(mu_s_z*mu_s_z)/(count_s*count_s)-2*(mu_s_z*mu_s_z)/(count_s)+(mu_s_z*mu_s_z)/(count_k*count_k);                             
 
+    // -- this uses the sp_gpu_helper NOT sp_gpu_helper_sm --
     sp_gpu_helper_sm[k].b_n_f.x = b_0 + 0.5 * ((squares_k_x+squares_s_x) -
                                 ( mu_f_x*mu_f_x/ count_f));
  
@@ -567,7 +632,16 @@ __global__ void calc_bn_split(int* seg, int* split_merge_pairs, superpixel_param
 
 
 
-__global__ void calc_marginal_liklelyhoood_of_sp_split(const float* image_gpu_double, int* split_merge_pairs, superpixel_params* sp_params, superpixel_GPU_helper* sp_gpu_helper, superpixel_GPU_helper_sm* sp_gpu_helper_sm, const int nPixels, const int nbatch, const int xdim, const int nftrs, const int nsuperpixel_buffer,  float a_0, float b_0, int max_SP) {
+__global__
+void calc_marginal_liklelyhoood_of_sp_split(const float* image_gpu_double,
+                                            int* split_merge_pairs,
+                                            superpixel_params* sp_params,
+                                            superpixel_GPU_helper* sp_gpu_helper,
+                                            superpixel_GPU_helper_sm* sp_gpu_helper_sm,
+                                            const int nPixels, const int nbatch,
+                                            const int xdim, const int nftrs,
+                                            const int nsuperpixel_buffer,
+                                            float a_0, float b_0, int max_SP) {
   // todo -- add nbatch
 	// getting the index of the pixel
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
@@ -588,10 +662,9 @@ __global__ void calc_marginal_liklelyhoood_of_sp_split(const float* image_gpu_do
 	//get the label
     //a_0 = 1100*(count_f);
 
-    float a_n_k = a_0 + float(count_k)/2;
-    float a_n_s = a_0+ float(count_s)/2;
-    float a_n_f = a_0+ float(count_f)/2;
-    
+    float a_n_k = a_0+float(count_k)/2;
+    float a_n_s = a_0+float(count_s)/2;
+    float a_n_f = a_0+float(count_f)/2;
 
 
     float v_n_k = 1/float(count_k);
@@ -613,51 +686,56 @@ __global__ void calc_marginal_liklelyhoood_of_sp_split(const float* image_gpu_do
     float b_n_f_y = __ldg(&sp_gpu_helper_sm[k].b_n_f.y);
     float b_n_f_z = __ldg(&sp_gpu_helper_sm[k].b_n_f.z);
 
-    a_0 =a_n_k;
+    a_0 = a_n_k;
+    sp_gpu_helper_sm[k].numerator.x = a_0 * __logf(b_0) + \
+      lgammaf(a_n_k)+ 0.5*__logf(v_n_k);
+    sp_gpu_helper_sm[k].denominator.x = a_n_k * __logf (b_n_k_x) + \
+      0.5 * count_k * __logf (M_PI) + count_k * __logf (2) + lgammaf(a_0);
 
-    
-    sp_gpu_helper_sm[k].numerator.x = a_0 * __logf(b_0) + lgammaf(a_n_k)+ 0.5*__logf(v_n_k);
-    sp_gpu_helper_sm[k].denominator.x = a_n_k * __logf (b_n_k_x) + 0.5 * count_k * __logf (M_PI) + \
-                                        count_k * __logf (2) + lgammaf(a_0);
+    sp_gpu_helper_sm[k].denominator.y = a_n_k * __logf (b_n_k_y) + \
+      0.5 * count_k * __logf (M_PI) + count_k * __logf (2) + lgammaf(a_0);
 
-    sp_gpu_helper_sm[k].denominator.y = a_n_k * __logf (b_n_k_y) + 0.5 * count_k * __logf (M_PI) + \
-                                        count_k * __logf (2) + lgammaf(a_0);
-
-    sp_gpu_helper_sm[k].denominator.z = a_n_k * __logf (b_n_k_z) + 0.5 * count_k * __logf (M_PI) + \
-                                        count_k * __logf (2) + lgammaf(a_0);
-
-    
+    sp_gpu_helper_sm[k].denominator.z = a_n_k * __logf (b_n_k_z) + \
+      0.5 * count_k * __logf (M_PI) + count_k * __logf (2) + lgammaf(a_0);
 
 
-    a_0 =a_n_s;
+    a_0 = a_n_s;
+    sp_gpu_helper_sm[s].numerator.x = a_0 * __logf(b_0) + \
+      lgammaf(a_n_s)+0.5*__logf(v_n_s);
+    sp_gpu_helper_sm[s].denominator.x = a_n_s * __logf (b_n_s_x) + \
+      0.5 * count_s * __logf (M_PI) + count_s * __logf (2) + lgammaf(a_0);
 
-    sp_gpu_helper_sm[s].numerator.x = a_0 * __logf(b_0) + lgammaf(a_n_s)+0.5*__logf(v_n_s);
-    sp_gpu_helper_sm[s].denominator.x = a_n_s * __logf (b_n_s_x) + 0.5 * count_s * __logf (M_PI) + \
-                                        count_s * __logf (2) + lgammaf(a_0);
+    sp_gpu_helper_sm[s].denominator.y = a_n_s * __logf (b_n_s_y) + \
+      0.5 * count_s * __logf (M_PI) + count_s * __logf (2) + lgammaf(a_0);
 
-    sp_gpu_helper_sm[s].denominator.y = a_n_s * __logf (b_n_s_y) + 0.5 * count_s * __logf (M_PI) + \
-                                        count_s * __logf (2) + lgammaf(a_0);
-
-    sp_gpu_helper_sm[s].denominator.z = a_n_s * __logf (b_n_s_z) + 0.5 * count_s * __logf (M_PI) + \
-                                        count_s * __logf (2) + lgammaf(a_0);      
+    sp_gpu_helper_sm[s].denominator.z = a_n_s * __logf (b_n_s_z) + \
+      0.5 * count_s * __logf (M_PI) + count_s * __logf (2) + lgammaf(a_0);      
 
     a_0 =a_n_f;
 
-    sp_gpu_helper_sm[k].numerator_f.x = a_0 * __logf(b_0) + lgammaf(a_n_f)+0.5*__logf(v_n_f);
-    sp_gpu_helper_sm[k].denominator_f.x = a_n_f * __logf (b_n_f_x) + 0.5 * count_f * __logf (M_PI) + \
-                                        count_f * __logf (2) + lgammaf(a_0);
+    sp_gpu_helper_sm[k].numerator_f.x =a_0*__logf(b_0)+lgammaf(a_n_f)+0.5*__logf(v_n_f);
+    sp_gpu_helper_sm[k].denominator_f.x = a_n_f * __logf (b_n_f_x) + \
+      0.5 * count_f * __logf (M_PI) + count_f * __logf (2) + lgammaf(a_0);
 
-    sp_gpu_helper_sm[k].denominator_f.y = a_n_f * __logf (b_n_f_y) + 0.5 * count_f * __logf (M_PI) + \
-                                        count_f * __logf (2) + lgammaf(a_0);
+    sp_gpu_helper_sm[k].denominator_f.y = a_n_f * __logf (b_n_f_y) + \
+      0.5 * count_f * __logf (M_PI) + count_f * __logf (2) + lgammaf(a_0);
 
-    sp_gpu_helper_sm[k].denominator_f.z = a_n_f * __logf (b_n_f_z) + 0.5 * count_f * __logf (M_PI) + \
-                                        count_f * __logf (2) + lgammaf(a_0);        
-
+    sp_gpu_helper_sm[k].denominator_f.z = a_n_f * __logf (b_n_f_z) + \
+      0.5 * count_f * __logf (M_PI) + count_f * __logf (2) + lgammaf(a_0);        
 
 }   
 
 
-__global__ void calc_marginal_liklelyhoood_of_sp(const float* image_gpu_double, int* split_merge_pairs, superpixel_params* sp_params, superpixel_GPU_helper* sp_gpu_helper, superpixel_GPU_helper_sm* sp_gpu_helper_sm, const int nPixels, const int nbatch, const int xdim, const int nftrs, const int nsuperpixel_buffer,  float a_0, float b_0) {
+__global__
+void calc_marginal_liklelyhoood_of_sp(const float* image_gpu_double,
+                                      int* split_merge_pairs,
+                                      superpixel_params* sp_params,
+                                      superpixel_GPU_helper* sp_gpu_helper,
+                                      superpixel_GPU_helper_sm* sp_gpu_helper_sm,
+                                      const int nPixels, const int nbatch,
+                                      const int xdim, const int nftrs,
+                                      const int nsuperpixel_buffer,
+                                      float a_0, float b_0) {
   // todo -- add nbatch
 	// getting the index of the pixel
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
@@ -716,13 +794,17 @@ __global__ void calc_marginal_liklelyhoood_of_sp(const float* image_gpu_double, 
     sp_gpu_helper_sm[k].denominator_f.z = a_n_f* __logf (__ldg(&sp_gpu_helper_sm[k].b_n_f.z)) + 0.5 * count_f* __logf (M_PI) + \
                                         count_f * __logf (2) + lgammaf(a_0);         
 
-
 }   
 
 
-
-
-__global__ void calc_hasting_ratio(const float* image_gpu_double,int* split_merge_pairs, superpixel_params* sp_params, superpixel_GPU_helper* sp_gpu_helper, superpixel_GPU_helper_sm* sp_gpu_helper_sm, const int nPixels, const int nbatch, const int xdim, const int nftrs, const int nsuperpixel_buffer, float a0, float b0, float alpha_hasting_ratio, int* mutex ) {
+__global__ void calc_hasting_ratio(const float* image_gpu_double,
+                                   int* split_merge_pairs,
+                                   superpixel_params* sp_params,
+                                   superpixel_GPU_helper* sp_gpu_helper,
+                                   superpixel_GPU_helper_sm* sp_gpu_helper_sm,
+                                   const int nPixels, const int nbatch, const int xdim,
+                                   const int nftrs, const int nsuperpixel_buffer,
+                                   float a0, float b0, float alpha_hasting_ratio, int* mutex ) {
   // todo; add nbatch; 
 	// getting the index of the pixel
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
@@ -778,7 +860,14 @@ __global__ void calc_hasting_ratio(const float* image_gpu_double,int* split_merg
 }
 
 
-__global__ void calc_hasting_ratio2(const float* image_gpu_double,int* split_merge_pairs, superpixel_params* sp_params, superpixel_GPU_helper* sp_gpu_helper, superpixel_GPU_helper_sm* sp_gpu_helper_sm, const int nPixels, const int nbatch, const int xdim, const int nftrs, const int nsuperpixel_buffer, float a0, float b0, float alpha_hasting_ratio, int* mutex ) {
+__global__ void calc_hasting_ratio2(const float* image_gpu_double,
+                                    int* split_merge_pairs,
+                                    superpixel_params* sp_params,
+                                    superpixel_GPU_helper* sp_gpu_helper,
+                                    superpixel_GPU_helper_sm* sp_gpu_helper_sm,
+                                    const int nPixels, const int nbatch, const int xdim,
+                                    const int nftrs, const int nsuperpixel_buffer,
+                                    float a0, float b0, float alpha_hasting_ratio, int* mutex ) {
   // todo -- add nbatch and sftrs
 	// getting the index of the pixel
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
@@ -801,13 +890,20 @@ __global__ void calc_hasting_ratio2(const float* image_gpu_double,int* split_mer
 
         }
          
-    
-    
     return;
 
 }
 
-__global__ void calc_hasting_ratio_split(const float* image_gpu_double,int* split_merge_pairs, superpixel_params* sp_params, superpixel_GPU_helper* sp_gpu_helper, superpixel_GPU_helper_sm* sp_gpu_helper_sm, const int nPixels, const int nbatch, const int xdim, const int nftrs, const int nsuperpixel_buffer, float a0, float b0, float alpha_hasting_ratio, int* mutex, int max_SP, int* max_sp ) {
+__global__
+void calc_hasting_ratio_split(const float* image_gpu_double, int* split_merge_pairs,
+                              superpixel_params* sp_params,
+                              superpixel_GPU_helper* sp_gpu_helper,
+                              superpixel_GPU_helper_sm* sp_gpu_helper_sm,
+                              const int nPixels, const int nbatch,
+                              const int xdim, const int nftrs,
+                              const int nsuperpixel_buffer, float a0,
+                              float b0, float alpha_hasting_ratio,
+                              int* mutex, int max_SP, int* max_sp ) {
   // todo -- add nbatch and nftrs
 	// getting the index of the pixel
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
@@ -846,23 +942,23 @@ __global__ void calc_hasting_ratio_split(const float* image_gpu_double,int* spli
       + total_marginal_k + lgammaf(count_s) + total_marginal_s ;
     log_nominator = total_marginal_k + total_marginal_s ;
 
-    float log_denominator = lgammaf(count_f) + total_marginal_f;
+    float log_denominator = lgammaf(count_f) + total_marginal_f; // ?? what is this line for?
     log_denominator =total_marginal_f;
     sp_gpu_helper_sm[k].hasting = log_nominator - log_denominator;
 
     // ".merge" is merely a bool variable; nothing about merging here. only splitting
-    sp_gpu_helper_sm[k].merge = (sp_gpu_helper_sm[k].hasting > -2);
+    sp_gpu_helper_sm[k].merge = (sp_gpu_helper_sm[k].hasting > -2); // why "-2"?
     sp_gpu_helper_sm[s].merge = (sp_gpu_helper_sm[k].hasting > -2);
 
     if((sp_gpu_helper_sm[k].merge)) // split step
       {
 
-        s = atomicAdd(max_sp,1) +1;
+        s = atomicAdd(max_sp,1) +1; // ? can't multiple splits happen at one time? shouldn't this be mutexed somehow for __reading__?
         split_merge_pairs[2*k] = s;
 
         //atomicMax(max_sp,s);
         sp_params[k].prior_count/=2;
-        sp_params[s].prior_count=  sp_params[k].prior_count; //#check why.
+        sp_params[s].prior_count=  sp_params[k].prior_count; 
       }
 
 }
@@ -870,7 +966,11 @@ __global__ void calc_hasting_ratio_split(const float* image_gpu_double,int* spli
 
 
 
-__global__  void merge_sp(int* seg, bool* border, int* split_merge_pairs, superpixel_params* sp_params, superpixel_GPU_helper_sm* sp_gpu_helper_sm, const int nPixels, const int nbatch, const int xdim, const int ydim){   
+__global__ void merge_sp(int* seg, bool* border,
+                         int* split_merge_pairs,
+                         superpixel_params* sp_params,
+                         superpixel_GPU_helper_sm* sp_gpu_helper_sm,
+                         const int nPixels, const int nbatch, const int xdim, const int ydim){   
   // todo -- nbatch
     int idx = threadIdx.x + blockIdx.x * blockDim.x;  
     if (idx>=nPixels) return; 
@@ -884,18 +984,26 @@ __global__  void merge_sp(int* seg, bool* border, int* split_merge_pairs, superp
       
 }
 
-__global__  void split_sp(int* seg, int* seg_split1, int* split_merge_pairs, superpixel_params* sp_params, superpixel_GPU_helper_sm* sp_gpu_helper_sm, const int nPixels, const int nbatch, const int xdim, const int ydim, int max_SP){   
+__global__ void split_sp(int* seg, int* seg_split1, int* split_merge_pairs,
+                         superpixel_params* sp_params,
+                         superpixel_GPU_helper_sm* sp_gpu_helper_sm,
+                         const int nPixels, const int nbatch,
+                         const int xdim, const int ydim, int max_SP){   
+
   // todo: add nbatch, no sftrs
     int idx = threadIdx.x + blockIdx.x * blockDim.x;  
     if (idx>=nPixels) return; 
     int k = seg[idx]; // center 
     int k2 = k + max_SP;
-    if ((sp_gpu_helper_sm[k].merge == false)||sp_gpu_helper_sm[k2].merge == false ) return; 
+    if ((sp_gpu_helper_sm[k].merge == false)||sp_gpu_helper_sm[k2].merge == false){
+      return;
+    }
+
     if(seg_split1[idx]==k2) seg[idx] = split_merge_pairs[2*k];
     //seg[idx] = seg_split1[idx];
     //printf("Add the following: %d - %d'\n", k,split_merge_pairs[2*k]);
     sp_params[split_merge_pairs[2*k]].valid = 1;
-
+    // ?
 
     return;  
 }
