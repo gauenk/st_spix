@@ -50,7 +50,7 @@ template<bool mode> __global__
 void relabel_spix(int* spix, int* ids, int npix, int nspix){
 
   // -- filling superpixel params into image --
-  extern __shared__ int buff[];
+  // extern __shared__ int buff[];
   int ix = threadIdx.x + blockIdx.x * blockDim.x;  
   if (ix>=npix) return; 
 
@@ -58,7 +58,7 @@ void relabel_spix(int* spix, int* ids, int npix, int nspix){
   int spix_ix = *(spix + ix);
   int new_id = -1;
 
-  // -- offset of kx -- todo: replace with binary search
+  // -- offset of kx -- [binary search not needed]
   for (int kx=0; kx<nspix; kx++){
     if (ids[kx] == spix_ix){
       new_id = kx;

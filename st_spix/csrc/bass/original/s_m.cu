@@ -477,7 +477,6 @@ __global__ void calc_bn_split(int* seg, int* split_merge_pairs, superpixel_param
     float mu_f_z = __ldg(&sp_gpu_helper[k].mu_i_sum.z);
 
 
-
     
     sp_gpu_helper_sm[k].b_n.x = b_0 + 0.5 * ((squares_k_x) -
                                 ( (mu_k_x*mu_k_x)/ (count_k)));
@@ -792,8 +791,6 @@ __global__ void calc_hasting_ratio_split(const float* image_gpu_double,int* spli
     float total_marginal_f = (num_f - __ldg(&sp_gpu_helper_sm[k].denominator_f.x)) +  
                          (num_f - __ldg(&sp_gpu_helper_sm[k].denominator_f.y)) + 
                          (num_f - __ldg(&sp_gpu_helper_sm[k].denominator_f.z)); 
-
-
 
  
      //printf("hasating:x k: %d, count: %f, den: %f, %f, %f, b_n: %f, %f, %f, num: %f \n",k, count_k,  sp_gpu_helper_sm[k].denominator.x, sp_gpu_helper_sm[k].denominator.y,  sp_gpu_helper_sm[k].denominator.z,   __logf (sp_gpu_helper_sm[k].b_n.x) ,  __logf (sp_gpu_helper_sm[k].b_n.y),   __logf (sp_gpu_helper_sm[k].b_n.z), sp_gpu_helper_sm[k].numerator.x);

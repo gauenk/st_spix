@@ -32,9 +32,11 @@ setup(
             "st_spix/csrc/bass/original/update_param.cu",
             "st_spix/csrc/bass/original/update_seg.cu",
             "st_spix/csrc/bass/original/s_m.cu",
+            # -- shared utils --
+            "st_spix/csrc/bass/relabel.cu",
             # -- pybind --
             "st_spix/csrc/pybind_original.cpp",
-        ],extra_compile_args={'cxx': ['-g','-w'],'nvcc': ['-O2','-w']}),
+        ],extra_compile_args={'cxx': ['-g','-w'],'nvcc': ['-O1','-w']}),
         CUDAExtension('st_spix_cuda', [
             # -- pairwise distance --
             'st_spix/csrc/pwd/pair_wise_distance_cuda_source.cu',
@@ -69,7 +71,7 @@ setup(
             'st_spix/csrc/bass/share/gpu_utils.cu',
             "st_spix/csrc/bass/share/utils.cpp",
             # -- shared utils --
-            # "st_spix/csrc/bass/relabel.cu",
+            "st_spix/csrc/bass/relabel.cu",
             "st_spix/csrc/bass/sparams_io.cu",
             # -- prop bass spix  --
             "st_spix/csrc/spix_prop/dev.cu",
@@ -80,6 +82,7 @@ setup(
             # "st_spix/csrc/spix_prop/update_seg_helper.cu",
             "st_spix/csrc/spix_prop/calc_prop_seg.cu",
             "st_spix/csrc/spix_prop/update_prop_seg.cu",
+            "st_spix/csrc/spix_prop/split_disconnected.cu",
             # -- core --
             'st_spix/csrc/bass/core/Superpixels.cpp',
             "st_spix/csrc/bass/core/RgbLab.cu",

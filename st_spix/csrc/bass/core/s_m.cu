@@ -939,8 +939,8 @@ void calc_hasting_ratio_split(const float* image_gpu_double, int* split_merge_pa
      //printf("hasating:x k: %d, count: %f, den: %f, %f, %f, b_n: %f, %f, %f, num: %f \n",k, count_k,  sp_gpu_helper_sm[k].denominator.x, sp_gpu_helper_sm[k].denominator.y,  sp_gpu_helper_sm[k].denominator.z,   __logf (sp_gpu_helper_sm[k].b_n.x) ,  __logf (sp_gpu_helper_sm[k].b_n.y),   __logf (sp_gpu_helper_sm[k].b_n.z), sp_gpu_helper_sm[k].numerator.x);
 
     float log_nominator = __logf(alpha_hasting_ratio)+ lgammaf(count_k)\
-      + total_marginal_k + lgammaf(count_s) + total_marginal_s ;
-    log_nominator = total_marginal_k + total_marginal_s ;
+      + total_marginal_k + lgammaf(count_s) + total_marginal_s;
+    log_nominator = total_marginal_k + total_marginal_s;
 
     float log_denominator = lgammaf(count_f) + total_marginal_f; // ?? what is this line for?
     log_denominator =total_marginal_f;

@@ -260,6 +260,7 @@ void Superpixels::calc_seg() {
     int s_std = sp_options.s_std;
     int nInnerIters = sp_options.nInnerIters;
     int split_merge_start = sp_options.split_merge_start;
+    // split_merge_start = 10000;
     nSPs_buffer = nSPs * 45 ;
     // fprintf(stdout,"split_merge_start: %d\n",split_merge_start);
 
@@ -297,10 +298,9 @@ void Superpixels::calc_seg() {
                 // gpuErrchk( cudaDeviceSynchronize() );
 
 
-                update_param(image_gpu_double, seg_gpu, sp_params, sp_gpu_helper,
-                             nPixels, nSPs, nSPs_buffer,
-                             nbatch, dim_x, dim_y, nftrs,
-                             prior_sigma_s, prior_count);
+                update_param(image_gpu_double, seg_gpu, sp_params,
+                             sp_gpu_helper, nPixels, nSPs, nSPs_buffer,
+                             nbatch, dim_x, dim_y, nftrs, prior_sigma_s, prior_count);
 
                 // gpuErrchk( cudaPeekAtLastError() );
                 // gpuErrchk( cudaDeviceSynchronize() );
@@ -316,11 +316,9 @@ void Superpixels::calc_seg() {
                     // gpuErrchk( cudaPeekAtLastError() );
                     // gpuErrchk( cudaDeviceSynchronize() );
 
-                    update_param(image_gpu_double, seg_gpu,
-                                 sp_params, sp_gpu_helper,
-                                 nPixels, nSPs, nSPs_buffer,
-                                 nbatch, dim_x, dim_y, nftrs,
-                                 prior_sigma_s, prior_count);
+                    update_param(image_gpu_double, seg_gpu, sp_params,
+                                 sp_gpu_helper, nPixels, nSPs, nSPs_buffer,
+                                 nbatch, dim_x, dim_y, nftrs, prior_sigma_s, prior_count);
 
                     // gpuErrchk( cudaPeekAtLastError() );
                     // gpuErrchk( cudaDeviceSynchronize() );

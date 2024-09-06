@@ -31,6 +31,7 @@
 #include "calc_prop_seg.h"
 #include "init_prop_seg.h"
 #include "init_prop_seg_space.h"
+#include "split_disconnected.h"
 
 
 // -- define --
@@ -208,6 +209,14 @@ spix_prop_dev_cuda(const torch::Tensor imgs,
 
     // cudaMemcpy(sp.seg_gpu, seg_gpu, nPix*sizeof(int), cudaMemcpyDeviceToDevice);
 
+    // torch::Tensor children = run_split_disconnected(seg_gpu, nbatch,
+    //                                                 height, width, nspix);
+    // torch::Tensor children = run_split_disconnected(sp.image_gpu_double, seg_gpu,
+    //                        missing_gpu, border_gpu, sp.sp_params, nPix, nMissing,
+    //                        nbatch, width, height, nftrs,sp.J_i,sp.logdet_Sigma_i,
+    //                        i_std,sp.sp_options.s_std,sp.sp_options.nInnerIters,
+    //                        sp.nSPs,sp.nSPs_buffer,sp.sp_options.beta_potts_term,
+    //                        debug_spix_gpu, debug_border_gpu, debug_fill);
 
     // gpuErrchk( cudaPeekAtLastError() );
     // gpuErrchk( cudaDeviceSynchronize() );
@@ -362,7 +371,6 @@ spix_prop_dev_cuda(const torch::Tensor imgs,
     return std::make_tuple(boarder,spix,spix_parents,debug_spix,
                            debug_border,debug_seg,means,cov,counts,unique_ids);
 }
-
 
 
 void init_spix_prop_dev(py::module &m){

@@ -245,13 +245,10 @@ bass_forward_cuda(const torch::Tensor imgs,
                                                 sp.get_cuda_sp_params(),
                                                 unique_ids.data<int>(),nspix);
 
-
-    // -- dispatch info --
+    // -- relabel spix --
     int num_blocks1 = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
     dim3 nthreads1(THREADS_PER_BLOCK);
     dim3 nblocks1(num_blocks1);
-
-    // -- relabel spix --
     relabel_spix<false><<<nblocks1,nthreads1>>>(spix.data<int>(),
                                                 unique_ids.data<int>(),
                                                 npix, nspix);

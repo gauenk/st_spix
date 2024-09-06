@@ -86,13 +86,6 @@ __global__  void find_border_pixels(const int* seg, bool* border, const int nPix
     S = __ldg(&seg[idx+xdim]); // below
     E = __ldg(&seg[idx+1]);  // right
            
-    // ORIGINAL: does this create diagonals which get stuck
-    // If the nbr is different from the central pixel and is not out-of-bounds,
-    // then it is a border pixel.
-    // if ( (C!=N) || (C!=S) || (C!=E) || (C!=W) ){
-    //         border[idx]=1;  
-    // }
-
     // bool check0 = (C == N) and (N == W) and (W == S);
     if ( (C!=N) || (C!=S) || (C!=E) || (C!=W) ){
             border[idx]=1;  

@@ -15,23 +15,43 @@
 /* #define MY_SP_PROP_STRUCT */
 /* #include "../bass/share/my_sp_struct.h" */
 /* #endif */
+#include <torch/torch.h>
 
 
-/* __global__  void find_border_pixels( const int* seg, bool* border, const int nPixels, const int nbatch, const int xdim, const int ydim, const int single_border); */
-/* __global__  void find_border_pixels_end(const int* seg, bool* border, const int nPixels, const int nbatch, const int xdim, const int ydim, const int single_border); */
+__device__ inline
+bool check_oob(int hi,int ix,int wi,int jx,int H,int W){
+  bool oob = (hi+ix)<0 or (hi+ix)>(H-1);
+  oob = oob or (wi+jx)<0 or (wi+jx)>(W-1);
+  return oob;
+}
+
+__host__ std::tuple<torch::Tensor,torch::Tensor>
+run_split_disconnected(int* seg, int nbatch, int height, int width, int nspix);
 
 __host__
-void run_split_disconnected(float* img, int* seg,
-                            int* missing, bool* border,
-                            superpixel_params* sp_params, 
-                            const int nPixels, const int nMissing,
-                            int nbatch, int xdim, int ydim, int nftrs,
-                            const float3 J_i, const float logdet_Sigma_i, 
-                            float i_std, int s_std, int nInnerIters,
-                            const int nSPs, int nSPs_buffer,
-                            float beta_potts_term, int* debug_spix,
-                            bool* debug_border, bool debug_fill);
+std::tuple<torch::Tensor,torch::Tensor> get_regions(int* seg, int B, int H, int W,
+                                                    torch::Device device);
+__host__
+std::tuple<torch::Tensor,int> get_split_starts(torch::Tensor spix_counts);
 
-__global__ void mark_disconnected(int* seg, bool* border, bool* disc);
+__global__
+void update_spix(int* spix, int* regions, int* children,
+                 int* split_starts, int* region_offsets,
+                 int npix, int nspix, int max_nchild);
+
+__global__
+void compute_offsets(int* regions_spix, int* region_sizes,
+                     int* region_offsets, int nspix, int nregions, int max_nchild);
+
+__global__
+  void get_spix_counts(int* regions_spix, int* spix_counts, int nregions);
+
+__global__
+  void compute_region_sizes(int* size, int* regions, int npix, int nregions);
+
+__global__
+void find_spix_min(int* seg, int* curr, int* prev,
+                   int* changes, int H, int W, int npix);
+
 
 

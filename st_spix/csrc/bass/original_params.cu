@@ -14,6 +14,7 @@
 
 // -- local import --
 #include "original/Superpixels.h"
+#include "relabel.h"
 
 // -- define --
 #define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
@@ -230,11 +231,18 @@ bass_forward_cuda(const torch::Tensor imgs,
 
     // -- init spix --
     torch::Tensor spix = torch::zeros({nbatch, height, width}, options_i32);
-
-    // -- copy spix --
     cudaMemcpy(spix.data<int>(), sp.get_seg_cuda(),
-               npix * sizeof(int), cudaMemcpyDeviceToHost);
+               npix * sizeof(int), cudaMemcpyDeviceToDevice);
+    auto unique_ids = std::get<0>(at::_unique(spix));
+    int nspix = unique_ids.sizes()[0];
 
+    // -- relabel spix --
+    int num_blocks1 = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
+    dim3 nblocks1(num_blocks1);
+    dim3 nthreads1(THREADS_PER_BLOCK);
+    relabel_spix<false><<<nblocks1,nthreads1>>>(spix.data<int>(),
+                                                unique_ids.data<int>(),
+                                                npix, nspix);
 
     /*****************************************************
 
@@ -243,14 +251,14 @@ bass_forward_cuda(const torch::Tensor imgs,
     *****************************************************/
 
     // -- init covariance --
-    auto unique_ids = std::get<0>(at::_unique(spix));
-    int K = unique_ids.sizes()[0];
-    torch::Tensor means = torch::zeros({K, 5}, options_f32);
-    torch::Tensor cov = torch::zeros({K, 4}, options_f32);
-    torch::Tensor counts = torch::zeros({K}, options_i32);
+    // auto unique_ids = std::get<0>(at::_unique(spix));
+    // int K = unique_ids.sizes()[0];
+    torch::Tensor means = torch::zeros({nbatch, nspix, 5}, options_f32);
+    torch::Tensor cov = torch::zeros({nbatch, nspix, 4}, options_f32);
+    torch::Tensor counts = torch::zeros({nbatch, nspix}, options_i32);
 
     // -- dispatch info --
-    int num_blocks0 = ceil( double(K) / double(THREADS_PER_BLOCK) ); 
+    int num_blocks0 = ceil( double(nspix) / double(THREADS_PER_BLOCK) ); 
     dim3 nthreads0(THREADS_PER_BLOCK);
     dim3 nblocks0(num_blocks0);
 
@@ -259,7 +267,7 @@ bass_forward_cuda(const torch::Tensor imgs,
                                              cov.data<float>(),
                                              counts.data<int>(),
                                              sp.get_cuda_sp_params(),
-                                             unique_ids.data<int>(),K);
+                                             unique_ids.data<int>(),nspix);
 
     // -- return --
     return std::make_tuple(spix,means,cov,counts,unique_ids);
