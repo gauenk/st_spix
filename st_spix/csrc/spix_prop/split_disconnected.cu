@@ -38,7 +38,10 @@
 #include <torch/torch.h>
 
 #include "../bass/relabel.h"
+#ifndef SPLIT_DISC
+#define SPLIT_DISC
 #include "split_disconnected.h"
+#endif
 
 #include <stdio.h>
 #ifndef WIN32
@@ -54,6 +57,10 @@ void throw_on_cuda_error_split(cudaError_t code) // yes; I realize this is silly
   }
 }
 
+// -- define --
+#define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
+#define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
+#define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
 // __host__
 // torch::Tensor split_disconnected(int* seg, int nbatch, int height, int width,
@@ -203,7 +210,7 @@ get_split_starts(torch::Tensor spix_counts){
     auto cumsum_elements = torch::cumsum(spix_counts.index({args}),0).to(torch::kInt32);
     spix_counts = spix_counts.index_put_({args}, cumsum_elements);
 
-    // base case; no overlapping spix
+    // base case; no split spix
     if (args.sizes()[0] == 0){
       return std::make_tuple(split_starts,0);
     }
@@ -374,6 +381,9 @@ void find_spix_min(int* seg, int* curr, int* prev,
 
 std::tuple<torch::Tensor,torch::Tensor,torch::Tensor>
 split_disconnected(const torch::Tensor spix, int nspix){
+
+  // -- check input --
+  CHECK_INPUT(spix);
 
   // -- unpack --
   int nbatch = spix.size(0);

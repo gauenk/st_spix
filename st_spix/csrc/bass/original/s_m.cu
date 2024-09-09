@@ -124,12 +124,10 @@ __host__ int CudaCalcSplitCandidate(const float* image_gpu_double, int* split_me
     
     while(done)
     {
-
     
 		cudaMemset(mutex_2, 0, sizeof(int));
         cudaMemcpy(&done, mutex_2, sizeof(int), cudaMemcpyDeviceToHost);
-
-        calc_split_candidate<<<BlockPerGrid,ThreadPerBlock>>>(seg_split1,border,distance, mutex_2, nPixels, xdim, ydim); 
+        calc_split_candidate<<<BlockPerGrid,ThreadPerBlock>>>(seg_split1,seg,border,distance, mutex_2, nPixels, xdim, ydim); 
         distance++;
         cudaMemcpy(&done, mutex_2, sizeof(int), cudaMemcpyDeviceToHost);
 
@@ -141,7 +139,7 @@ __host__ int CudaCalcSplitCandidate(const float* image_gpu_double, int* split_me
     {
 		cudaMemset(mutex_2, 0, sizeof(int));
         cudaMemcpy(&done, mutex_2, sizeof(int), cudaMemcpyDeviceToHost);
-        calc_split_candidate<<<BlockPerGrid,ThreadPerBlock>>>(seg_split2 ,border,distance, mutex_2, nPixels, xdim, ydim); 
+        calc_split_candidate<<<BlockPerGrid,ThreadPerBlock>>>(seg_split2,seg,border,distance, mutex_2, nPixels, xdim, ydim); 
         distance++;
         cudaMemcpy(&done, mutex_2, sizeof(int), cudaMemcpyDeviceToHost);
     }
@@ -208,7 +206,7 @@ __global__  void calc_merge_candidate(int* seg, bool* border, int* split_merge_p
             {
                 if ((y>1) && (y< ydim-2))
                 {
-                    W = __ldg(&seg[idx+ydim]);  // left
+                    W = __ldg(&seg[idx+xdim]);  // left
                 }
             }
 
@@ -233,51 +231,43 @@ __global__  void calc_merge_candidate(int* seg, bool* border, int* split_merge_p
     return;        
 }
 
-__global__  void calc_split_candidate(int* seg, bool* border,int distance, int* mutex, const int nPixels, const int xdim, const int ydim){   
+__global__  void calc_split_candidate(int* dists, int* spix, bool* border,int distance, int* mutex, const int nPixels, const int xdim, const int ydim){   
     int idx = threadIdx.x + blockIdx.x * blockDim.x;  
     
     if (idx>=nPixels) return; 
-    if(border[idx]) return; 
+    // if(border[idx]) return; 
     int x = idx % xdim;
     int y = idx / xdim;
 
-    int C = seg[idx]; // center 
+    int C = dists[idx]; // center 
+    int spixC = spix[idx];
 
     if(C!=distance) return;
 
     if ((y>0)&&(idx-xdim>=0)){
-        if(!seg[idx-xdim])
-        {
-            seg[idx-xdim] = distance +1 ;
-            mutex[0] = 1;
-        }
+      if((!dists[idx-xdim]) and (spix[idx-xdim] == spixC)){
+        dists[idx-xdim] = distance +1 ;
+        mutex[0] = 1;
+      }
     }          
     if ((x>0)&&(idx-1>=0)){
-
-        if(!seg[idx-1])
-        {
-            seg[idx-1] = distance +1 ;
-            mutex[0] = 1;
-        }
+      if((!dists[idx-1]) and (spix[idx-1] == spixC)){
+        dists[idx-1] = distance +1 ;
+        mutex[0] = 1;
+      }
     }
     if ((y<ydim-1)&&(idx+xdim<nPixels)){
-
-        if(!seg[idx+xdim])
-        {
-            seg[idx+xdim] = distance +1 ;
-            mutex[0] = 1;
-        }
+      if((!dists[idx+xdim]) and (spix[idx+xdim] == spixC)){
+        dists[idx+xdim] = distance +1 ;
+        mutex[0] = 1;
+      }
     }   
     if ((x<xdim-1)&&(idx+1<nPixels)){
-        
-        if(!seg[idx+1])
-        {
-            seg[idx+1] = distance +1 ;
-            mutex[0] = 1;
-        }
-
-    }       
-
+      if((!dists[idx+1]) and (spix[idx+1] == spixC)){
+        dists[idx+1] = distance +1 ;
+        mutex[0] = 1;
+      }
+    }
     
     return;        
 }

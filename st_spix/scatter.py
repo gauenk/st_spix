@@ -6,7 +6,7 @@ def run(img,flow,swap_c=True):
     if swap_c:
         img = rearrange(img,'b c h w -> b h w c')
         flow = rearrange(flow,'b c h w -> b h w c')
-    eps = 1e-4
+    eps = 1e-10
     # flow[...,0] = -2.*flow[...,0]
     flow[...,1] = -flow[...,1]
     scatter,cnts = st_spix_cuda.scatter_img_forward(img.contiguous(),

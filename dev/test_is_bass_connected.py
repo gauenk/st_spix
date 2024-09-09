@@ -71,7 +71,6 @@ def main():
     print("Filename: ",root / "img0.png")
     tv_utils.save_image(vid[[0]],root / "img0.png")
 
-
     # # -- save --
     # marked = mark_spix_vid(vid,spix)
     # tv_utils.save_image(marked,root / "marked.png")
@@ -90,13 +89,16 @@ def main():
 
     # -- bass --
     img0 = img4bass(vid[None,0])
-    # bass_fwd = st_spix_cuda.bass_forward
-    bass_fwd = st_spix_original_cuda.bass_forward
-    # spix,means,cov,counts,ids = bass_fwd(img0,sp_size,i_std,alpha,beta)
-    # ids = ids.unsqueeze(1).expand(-1, means.size(-1)).long()[None,:]
-    spix = pd.read_csv("../BASS/result/img0.csv",header=None)
-    spix = th.tensor(spix.values)[None,:].int().to(vid.device)
+    bass_fwd = st_spix_cuda.bass_forward
+    # bass_fwd = st_spix_original_cuda.bass_forward
+    spix,means,cov,counts,ids = bass_fwd(img0,sp_size,i_std,alpha,beta)
+    ids = ids.unsqueeze(1).expand(-1, means.size(-1)).long()[None,:]
     nspix = int(spix.max())+1
+
+    # -- read from BASS using code directly from repo --
+    # spix = pd.read_csv("../BASS/result/img0.csv",header=None)
+    # spix = th.tensor(spix.values)[None,:].int().to(vid.device)
+    # nspix = int(spix.max())+1
 
     # --------------------------------------
     #     Split Disconnected Superpixels
@@ -120,7 +122,7 @@ def main():
     #     Vizualize Split Superpixels with Difference Colors
     # ----------------------------------------------------------
 
-    if children.shape[1] == 0: spix_id = [0]
+    if children.shape[1] == 0: spix_ids = [0]
     else: spix_ids = th.where(children[:,0]>0)[0]
     nsplit = len(spix_ids)
     viridis = mpl.colormaps['tab10']#.resampled(nsplit)

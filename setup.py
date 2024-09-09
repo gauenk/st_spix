@@ -46,6 +46,7 @@ setup(
             # -- shared utils --
             "st_spix/csrc/bass/relabel.cu",
             "st_spix/csrc/bass/sparams_io.cu",
+            "st_spix/csrc/spix_prop/split_disconnected.cu",
             # -- share --
             'st_spix/csrc/bass/share/gpu_utils.cu',
             "st_spix/csrc/bass/share/utils.cpp",

@@ -1,3 +1,3 @@
-# Space-Time BASS Superpixels
+# Streaming BASS Superpixels
 
 

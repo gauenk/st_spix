@@ -17,7 +17,12 @@ __global__ void calc_hasting_ratio2(const float* image_gpu_double,int* split_mer
 __global__  void merge_sp(int* seg, bool* border, int* split_merge_pairs, superpixel_params* sp_params, superpixel_GPU_helper_sm* sp_gpu_helper_sm, const int nPixels, const int nbatch, const int xdim, const int ydim);
 __global__ void init_sm(const float* image_gpu_double, const int* seg_gpu, superpixel_params* sp_params, superpixel_GPU_helper_sm* sp_gpu_helper_sm, const int nsuperpixel_buffer, const int nbatch, const int xdim, const int nftrs,int* split_merge_pairs);
 __global__ void remove_sp( int* split_merge_pairs, superpixel_params* sp_params, superpixel_GPU_helper_sm* sp_gpu_helper_sm, const int nsuperpixel_buffer);
-__global__  void calc_split_candidate(int* seg, bool* border,int distance, int* mutex, const int nPixels, const int nbatch, const int xdim, const int ydim);
+/* __global__ void fill_zeros_at_border(int* dist, bool* border, int* spix, */
+/*                                 const int nPixels, const int xdim, const int ydim); */
+__global__ void calc_split_candidate(int* dists, int* spix, bool* border,
+                                     int distance, int* mutex, const int nPixels,
+                                     const int nbatch, const int xdim, const int ydim);
+/* __global__  void calc_split_candidate(int* seg, bool* border,int distance, int* mutex, const int nPixels, const int nbatch, const int xdim, const int ydim); */
 __global__ void init_split(const bool* border, int* seg_gpu, superpixel_params* sp_params, superpixel_GPU_helper_sm* sp_gpu_helper_sm, const int nsuperpixel_buffer, const int nbatch, const int xdim,  const int ydim, const int offset, const int* seg, int* max_sp, int max_SP);
 __host__ int CudaCalcSplitCandidate(const float* image_gpu_double, int* split_merge_pairs, int* seg, bool* border,  superpixel_params* sp_params, superpixel_GPU_helper* sp_gpu_helper, superpixel_GPU_helper_sm* sp_gpu_helper_sm, const int nPixels, const int nbatch, const int xdim, const int ydim, const int nftrs, const int nSPs_buffer, int* seg_split1, int* seg_split2, int* split3, int max_SP, int count, float i_std, float alpha);
 __global__ void calc_seg_split(int* seg_split1, int* seg_split2,int* seg, int* seg_split3, const int nPixels, int nbatch, int max_SP);

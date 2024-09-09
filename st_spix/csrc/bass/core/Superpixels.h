@@ -20,6 +20,11 @@
 #include "update_seg.h"
 #include "s_m.h"
 
+#ifndef SPLIT_DISC
+#define SPLIT_DISC
+#include "../../spix_prop/split_disconnected.h"
+#endif
+
 // using namespace cv;
 using namespace std;
 

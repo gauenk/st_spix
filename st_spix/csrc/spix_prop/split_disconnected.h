@@ -2,10 +2,10 @@
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
-#ifndef MY_SP_SHARE_H
-#define MY_SP_SHARE_H
-#include "../bass/share/sp.h"
-#endif
+/* #ifndef MY_SP_SHARE_H */
+/* #define MY_SP_SHARE_H */
+/* #include "../bass/share/sp.h" */
+/* #endif */
 
 #ifndef MY_SP_STRUCT
 #define MY_SP_STRUCT

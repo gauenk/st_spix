@@ -15,6 +15,8 @@
 #include "Superpixels.h"
 #define THREADS_PER_BLOCK 128
 #include "../share/utils.h"
+#include <torch/torch.h>
+
 
 //#include <ppl.h>
 #include <iostream>
@@ -247,6 +249,23 @@ void Superpixels::run_update_param(){
 
 }
 
+void write_tensor_to_file(int* spix, int h ,int w, const std::string& filename){
+
+    // Create a tensor
+    torch::Device device(torch::kCUDA, 0);
+    auto options_i32 = torch::TensorOptions().dtype(torch::kInt32)
+      .layout(torch::kStrided).device(device);
+    // torch::Device device(torch::kCUDA, 0);
+    torch::Tensor tensor = torch::from_blob(spix,{h,w},options_i32);
+    std::vector<torch::Tensor> tensor_vec = {tensor};
+
+    // // Open the file in binary mode
+    // std::ofstream file(filename, std::ios::binary);
+
+    // Serialize and save the tensor
+    torch::save(tensor_vec, filename);
+}
+
 // update seg_gpu, sp_gpu_helper and sp_params
 void Superpixels::calc_seg() {
     //sp_gpu_helper_sm[0].max_sp = max_SP;
@@ -269,6 +288,15 @@ void Superpixels::calc_seg() {
     // gpuErrchk( cudaPeekAtLastError() );
     // gpuErrchk( cudaDeviceSynchronize() );
 
+    // -- debug segment disconnected --
+    // int* seg_gpu_dc;
+    // try{
+    //   throw_on_cuda_error(cudaMalloc((void**) &seg_gpu_dc, nPixels * sizeofint));
+    // }catch (thrust::system_error& e) {
+    //   std::cerr << "CUDA error after cudaMalloc: " << e.what() << std::endl;
+    //   cudaSetDevice(0);
+    // }
+
     for (int i = 0; i < sp_options.nEMIters*1; i++) {
     // printf("%d \n",i);
     // for (int i = 0; i < 3; i++) {
@@ -289,18 +317,31 @@ void Superpixels::calc_seg() {
             if(i>split_merge_start){
               if((i%4==0)&&(count<100)){
                 count+=1;
-
+                // // if not split, then all spix are connected.
                 max_SP = CudaCalcSplitCandidate(image_gpu_double, split_merge_pairs,
-                       seg_gpu, border_gpu, sp_params ,sp_gpu_helper,sp_gpu_helper_sm,
-                       nPixels,nbatch,dim_x,dim_y,nftrs,nSPs_buffer,seg_split1,seg_split2,
+                   seg_gpu, border_gpu, sp_params ,sp_gpu_helper,sp_gpu_helper_sm,
+                   nPixels,nbatch,dim_x,dim_y,nftrs,nSPs_buffer,seg_split1,seg_split2,
                        seg_split3,max_SP, count, i_std, alpha);
-                // gpuErrchk( cudaPeekAtLastError() );
-                // gpuErrchk( cudaDeviceSynchronize() );
+                // // gpuErrchk( cudaPeekAtLastError() );
+                // // gpuErrchk( cudaDeviceSynchronize() );
 
-
+                // // -- update --
                 update_param(image_gpu_double, seg_gpu, sp_params,
                              sp_gpu_helper, nPixels, nSPs, nSPs_buffer,
                              nbatch, dim_x, dim_y, nftrs, prior_sigma_s, prior_count);
+
+                //-------------------------------
+                // --     find disconnected    --
+                //-------------------------------
+                // cudaMemcpy(seg_gpu_dc, seg_gpu,nPixels*sizeof(int),
+                //            cudaMemcpyDeviceToDevice);
+                // auto [children,split_starts] = \
+                //   run_split_disconnected(seg_gpu_dc, 1, dim_y, dim_x,max_SP);
+                // char fname_ch[50];
+                // std::sprintf(fname_ch, "output/debug_disc/split_iter_%d.pth",i);
+                // std::string fname = fname_ch;
+                // std::cout << fname << std::endl;
+                // write_tensor_to_file(seg_gpu,dim_y,dim_x,fname);
 
                 // gpuErrchk( cudaPeekAtLastError() );
                 // gpuErrchk( cudaDeviceSynchronize() );
@@ -309,12 +350,12 @@ void Superpixels::calc_seg() {
               if((i%4==2)&&(count<100)){
 
                 for(int j=0; j<1; j++){
-                    CudaCalcMergeCandidate(image_gpu_double, split_merge_pairs, seg_gpu,
+                    CudaCalcMergeCandidate(image_gpu_double,split_merge_pairs,seg_gpu,
                            border_gpu, sp_params ,sp_gpu_helper,sp_gpu_helper_sm,
                            nPixels,nbatch,dim_x,dim_y,nftrs,
                            nSPs_buffer,count%2,i_std, alpha);
-                    // gpuErrchk( cudaPeekAtLastError() );
-                    // gpuErrchk( cudaDeviceSynchronize() );
+                    // // gpuErrchk( cudaPeekAtLastError() );
+                    // // gpuErrchk( cudaDeviceSynchronize() );
 
                     update_param(image_gpu_double, seg_gpu, sp_params,
                                  sp_gpu_helper, nPixels, nSPs, nSPs_buffer,
@@ -322,6 +363,19 @@ void Superpixels::calc_seg() {
 
                     // gpuErrchk( cudaPeekAtLastError() );
                     // gpuErrchk( cudaDeviceSynchronize() );
+
+                    //-------------------------------
+                    // --     find disconnected    --
+                    //-------------------------------
+                    // cudaMemcpy(seg_gpu_dc, seg_gpu,nPixels*sizeof(int),
+                    //            cudaMemcpyDeviceToDevice);
+                    // auto [children,split_starts] = \
+                    //   run_split_disconnected(seg_gpu_dc, 1,dim_y, dim_x,max_SP);
+                    // char fname_ch[50];
+                    // std::sprintf(fname_ch, "output/debug_disc/merge_iter_%d.pth",i);
+                    // std::string fname = fname_ch;
+                    // std::cout << fname << std::endl;
+                    // write_tensor_to_file(seg_gpu,dim_y,dim_x,fname);
 
                 }
               }
@@ -357,6 +411,7 @@ void Superpixels::calc_seg() {
     }
     CudaFindBorderPixels_end(seg_gpu, border_gpu, nPixels, nbatch, dim_x, dim_y, 1);
 
+    // cudaFree(seg_gpu_dc);
 }
 
 

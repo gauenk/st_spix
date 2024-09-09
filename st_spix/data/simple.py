@@ -9,12 +9,12 @@ from pathlib import Path
 # -- data --
 import data_hub
 
-def davis_example(nframes=5,isize=480,vid_names=None):
+def davis_example(nframes=5,isize=480,vid_names=None,data_set="train"):
 
     # -- data config --
     dcfg = edict()
     dcfg.dname = "davis"
-    dcfg.dset = "train"
+    dcfg.tr_set = data_set#"train"
     dcfg.sigma = 1.
     dcfg.nframes = nframes
     dcfg.isize = isize

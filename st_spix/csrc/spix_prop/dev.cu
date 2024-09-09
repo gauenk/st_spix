@@ -31,7 +31,11 @@
 #include "calc_prop_seg.h"
 #include "init_prop_seg.h"
 #include "init_prop_seg_space.h"
+#ifndef SPLIT_DISC
+#define SPLIT_DISC
 #include "split_disconnected.h"
+#endif
+
 
 
 // -- define --

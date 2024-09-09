@@ -5,6 +5,7 @@
 #include <sstream>
 #include <float.h>
 #include <math.h>
+#include <torch/torch.h> // dev; remove me.
 
 
 #ifndef OUT_OF_BOUNDS_LABEL
@@ -42,6 +43,33 @@
 #ifndef WIN32
 #include <unistd.h>
 #endif
+
+void write_tensor_to_file_bool(bool* spix, int h ,int w, const std::string& filename){
+    torch::Device device(torch::kCUDA, 0);
+    auto options_b = torch::TensorOptions().dtype(torch::kBool)
+      .layout(torch::kStrided).device(device);
+    torch::Tensor tensor = torch::from_blob(spix,{h,w},options_b);
+    std::vector<torch::Tensor> tensor_vec = {tensor};
+    torch::save(tensor_vec, filename);
+}
+
+void write_tensor_to_file_v2(int* spix, int h ,int w, const std::string& filename){
+
+    // Create a tensor
+    torch::Device device(torch::kCUDA, 0);
+    auto options_i32 = torch::TensorOptions().dtype(torch::kInt32)
+      .layout(torch::kStrided).device(device);
+    // torch::Device device(torch::kCUDA, 0);
+    torch::Tensor tensor = torch::from_blob(spix,{h,w},options_i32);
+    std::vector<torch::Tensor> tensor_vec = {tensor};
+
+    // // Open the file in binary mode
+    // std::ofstream file(filename, std::ios::binary);
+
+    // Serialize and save the tensor
+    torch::save(tensor_vec, filename);
+}
+
 
 int tresh = -2;
 __device__ volatile int sem = 0;
@@ -94,7 +122,15 @@ __host__ void CudaCalcMergeCandidate(const float* image_gpu_double,
     calc_hasting_ratio<<<BlockPerGrid2,ThreadPerBlock>>>(image_gpu_double,  split_merge_pairs, sp_params, sp_gpu_helper, sp_gpu_helper_sm, nPixels, nbatch, xdim, nftrs, nSPs_buffer, a0,  b0, alpha_hasting_ratio, mutex);
     calc_hasting_ratio2<<<BlockPerGrid2,ThreadPerBlock>>>(image_gpu_double,  split_merge_pairs, sp_params, sp_gpu_helper, sp_gpu_helper_sm, nPixels, nbatch, xdim, nftrs, nSPs_buffer, a0,  b0, alpha_hasting_ratio, mutex);
     remove_sp<<<BlockPerGrid2,ThreadPerBlock>>>(split_merge_pairs,sp_params,sp_gpu_helper_sm,nSPs_buffer);
+
+    // std::string fname_seg_pre = "seg_pre";
+    // write_tensor_to_file_v2(seg,ydim,xdim,fname_seg_pre);
+
     merge_sp<<<BlockPerGrid,ThreadPerBlock>>>(seg,border, split_merge_pairs, sp_params, sp_gpu_helper_sm, nPixels, nbatch, xdim, ydim);  
+
+    // std::string fname_seg_post = "seg_post";
+    // write_tensor_to_file_v2(seg,ydim,xdim,fname_seg_post);
+    // assert(1==0);
 
 }
 
@@ -134,28 +170,23 @@ __host__ int CudaCalcSplitCandidate(const float* image_gpu_double, int* split_me
                                                  max_sp, max_SP);
 
     // idk what "split_sp" is doing here; init_sm clears the merge fields and
-    // the function returns immediately...
+    // so the function returns immediately...
     split_sp<<<BlockPerGrid,ThreadPerBlock>>>(seg,seg_split1,split_merge_pairs,
                                               sp_params, sp_gpu_helper_sm, nPixels,
                                               nbatch, xdim, ydim, max_SP);
 
     // gpuErrchk( cudaPeekAtLastError() );
     // gpuErrchk( cudaDeviceSynchronize() );
-    
     while(done)
     {
-
-    
-		cudaMemset(mutex_2, 0, sizeof(int));
+        cudaMemset(mutex_2, 0, sizeof(int));
         cudaMemcpy(&done, mutex_2, sizeof(int), cudaMemcpyDeviceToHost);
-
         calc_split_candidate<<<BlockPerGrid,ThreadPerBlock>>>(\
-                   seg_split1,border,distance, mutex_2, nPixels, nbatch, xdim, ydim); 
+                 seg_split1,seg,border,distance, mutex_2, nPixels, nbatch, xdim, ydim); 
         distance++;
         cudaMemcpy(&done, mutex_2, sizeof(int), cudaMemcpyDeviceToHost);
         // gpuErrchk( cudaPeekAtLastError() );
         // gpuErrchk( cudaDeviceSynchronize() );
-
     }
     done =1;
     distance = 1;
@@ -164,20 +195,36 @@ __host__ int CudaCalcSplitCandidate(const float* image_gpu_double, int* split_me
 		cudaMemset(mutex_2, 0, sizeof(int));
         cudaMemcpy(&done, mutex_2, sizeof(int), cudaMemcpyDeviceToHost);//?
         calc_split_candidate<<<BlockPerGrid,ThreadPerBlock>>>(\
-                seg_split2 ,border,distance, mutex_2, nPixels, nbatch, xdim, ydim); 
+                seg_split2,seg,border,distance, mutex_2, nPixels, nbatch, xdim, ydim); 
         distance++;
         cudaMemcpy(&done, mutex_2, sizeof(int), cudaMemcpyDeviceToHost);
-
         // gpuErrchk( cudaPeekAtLastError() );
         // gpuErrchk( cudaDeviceSynchronize() );
-
     }
 
+    // -- fill the zeroed edges --
+    // fill_zeros_at_border<<<BlockPerGrid,ThreadPerBlock>>>(seg_split1, border, seg,
+    //                                                       nPixels, xdim,ydim);
+    // fill_zeros_at_border<<<BlockPerGrid,ThreadPerBlock>>>(seg_split2, border, seg,
+    //                                                       nPixels, xdim,ydim);
 
-    // updates the segmentation to the two new regions; split either left/right or up/down.
+
+    // std::string fname_seg = "seg";
+    // write_tensor_to_file_v2(seg,ydim,xdim,fname_seg);
+    // std::string fname_split1_pre = "split1_pre";
+    // write_tensor_to_file_v2(seg_split1,ydim,xdim,fname_split1_pre);
+    // std::string fname_split2_pre = "split2_pre";
+    // write_tensor_to_file_v2(seg_split2,ydim,xdim,fname_split2_pre);
+    // std::string fname_border = "border";
+    // write_tensor_to_file_bool(border,ydim,xdim,fname_border);
+
+    // updates the segmentation to the two regions; split either left/right or up/down.
     calc_seg_split<<<BlockPerGrid,ThreadPerBlock>>>(seg_split1,seg_split2,
                                                     seg, seg_split3, nPixels,
                                                     nbatch, max_SP);
+    // std::string fname_split1_post = "split1_post";
+    // write_tensor_to_file_v2(seg_split1,ydim,xdim,fname_split1_post);
+
     // computes summaries stats for each split
     sum_by_label_split<<<BlockPerGrid,ThreadPerBlock>>>(image_gpu_double,
                                                         seg_split1,sp_params,
@@ -216,9 +263,18 @@ __host__ int CudaCalcSplitCandidate(const float* image_gpu_double, int* split_me
     // gpuErrchk( cudaPeekAtLastError() );
     // gpuErrchk( cudaDeviceSynchronize() );
 
-    split_sp<<<BlockPerGrid,ThreadPerBlock>>>(seg,seg_split1, split_merge_pairs,
-                                              sp_params, sp_gpu_helper_sm, nPixels,
-                                              nbatch, xdim, ydim, max_SP);
+    // std::string fname_split = "split1";
+    // write_tensor_to_file_v2(seg_split1,ydim,xdim,fname_split);
+    // std::string fname_prev = "seg_prev";
+    // write_tensor_to_file_v2(seg,ydim,xdim,fname_prev);
+
+    // split_sp<<<BlockPerGrid,ThreadPerBlock>>>(seg,seg_split1, split_merge_pairs,
+    //                                           sp_params, sp_gpu_helper_sm, nPixels,
+    //                                           nbatch, xdim, ydim, max_SP);
+    // std::string fname_post = "seg_post";
+    // write_tensor_to_file_v2(seg,ydim,xdim,fname_post);
+
+    // assert(0==1);
 
     // gpuErrchk( cudaPeekAtLastError() );
     // gpuErrchk( cudaDeviceSynchronize() );
@@ -280,7 +336,7 @@ __global__  void calc_merge_candidate(int* seg, bool* border, int* split_merge_p
             {
                 if ((y>1) && (y< ydim-2))
                 {
-                    W = __ldg(&seg[idx+ydim]);  // left
+                    W = __ldg(&seg[idx+xdim]);  // down
                 }
             }
 
@@ -300,61 +356,95 @@ __global__  void calc_merge_candidate(int* seg, bool* border, int* split_merge_p
     
         }
 
-   
-
     return;        
 }
 
+// __global__
+// void fill_zeros_at_border(int* dist, bool* border, int* spix,
+//                           const int nPixels, const int xdim, const int ydim){   
+
+//     // todo: add batch -- no nftrs
+//     int idx = threadIdx.x + blockIdx.x * blockDim.x;  
+//     if (idx>=nPixels) return; 
+//     int x = idx % xdim;
+//     int y = idx / xdim;
+//     int C = dist[idx]; // center 
+//     int spixC = spix[idx];
+
+//     if (!border[idx]) return; 
+//     if (C>0) return;
+
+//     if ((y>0)&&(idx-xdim>=0)){
+//         if(spix[idx-xdim] == spixC)
+//         {
+//           dist[idx] = dist[idx-xdim];
+//           return;
+//         }
+//     }          
+//     if ((x>0)&&(idx-1>=0)){
+//         if(spix[idx-1] == spixC)
+//         {
+//           dist[idx] = dist[idx-1];
+//           return;
+//         }
+//     }
+//     if ((y<ydim-1)&&(idx+xdim<nPixels)){
+//         if(spix[idx+xdim] == spixC)
+//         {
+//           dist[idx] = dist[idx+xdim];
+//           return;
+//         }
+//     }   
+//     if ((x<xdim-1)&&(idx+1<nPixels)){
+//         if(spix[idx+1] == spixC)
+//         {
+//           dist[idx] = dist[idx+1];
+//           return;
+//         }
+//     }
+
+// }
+
 __global__
-void calc_split_candidate(int* seg, bool* border, int distance,
-                          int* mutex, const int nPixels,
+void calc_split_candidate(int* dists, int* spix, bool* border,
+                          int distance, int* mutex, const int nPixels,
                           const int nbatch, const int xdim, const int ydim){   
 
-  // todo: add batch -- no nftrs
+    // todo: add batch -- no nftrs
     int idx = threadIdx.x + blockIdx.x * blockDim.x;  
-    
     if (idx>=nPixels) return; 
-    if (border[idx]) return; 
     int x = idx % xdim;
     int y = idx / xdim;
-
-    int C = seg[idx]; // center 
+    int C = dists[idx]; // center 
+    int spixC = spix[idx];
+    // if (border[idx]) return; 
 
     if(C!=distance) return;
 
     if ((y>0)&&(idx-xdim>=0)){
-        if(!seg[idx-xdim])
-        {
-            seg[idx-xdim] = distance +1 ;
-            mutex[0] = 1;
-        }
+      if((!dists[idx-xdim]) and (spix[idx-xdim] == spixC)){
+        dists[idx-xdim] = distance +1 ;
+        mutex[0] = 1;
+      }
     }          
     if ((x>0)&&(idx-1>=0)){
-
-        if(!seg[idx-1])
-        {
-            seg[idx-1] = distance +1 ;
-            mutex[0] = 1;
-        }
+      if((!dists[idx-1]) and (spix[idx-1] == spixC)){
+        dists[idx-1] = distance +1 ;
+        mutex[0] = 1;
+      }
     }
     if ((y<ydim-1)&&(idx+xdim<nPixels)){
-
-        if(!seg[idx+xdim])
-        {
-            seg[idx+xdim] = distance +1 ;
-            mutex[0] = 1;
-        }
+      if((!dists[idx+xdim]) and (spix[idx+xdim] == spixC)){
+        dists[idx+xdim] = distance +1 ;
+        mutex[0] = 1;
+      }
     }   
     if ((x<xdim-1)&&(idx+1<nPixels)){
-        
-        if(!seg[idx+1])
-        {
-            seg[idx+1] = distance +1 ;
-            mutex[0] = 1;
-        }
-
-    }       
-
+      if((!dists[idx+1]) and (spix[idx+1] == spixC)){
+        dists[idx+1] = distance +1 ;
+        mutex[0] = 1;
+      }
+    }
     
     return;        
 }
@@ -384,13 +474,12 @@ __global__ void init_split(const bool* border, int* seg_gpu,
     {
         x = int(sp_params[k].mu_s.x);
         y = int(sp_params[k].mu_s.y)+offset;
-
     }
     
     int ind = y*xdim+x;
     if((ind<0)||(ind>xdim*ydim-1)) return;
     
-    if(border[ind]) return;
+    // if(border[ind]) return;
     if (seg[ind]!=k) return;
     seg_gpu[ind] = 1;
 
@@ -510,8 +599,6 @@ __global__ void calc_bn(int* seg, int* split_merge_pairs,
                                 ( (mu_f_x + mu_k_x ) * (mu_f_x + mu_k_x ) /
                                 (count_fk)));
 
-
-
     sp_gpu_helper_sm[k].b_n.y = b_0 + 0.5 * ((squares_k_y) -
                                 ( mu_k_y*mu_k_y/
                                 count_k));
@@ -519,7 +606,6 @@ __global__ void calc_bn(int* seg, int* split_merge_pairs,
     sp_gpu_helper_sm[k].b_n_f.y = b_0 + 0.5 *( (squares_k_y+squares_f_y) -
                                 ( (mu_f_y + mu_k_y ) * (mu_f_y + mu_k_y ) /
                                 (count_fk)));
-
 
     sp_gpu_helper_sm[k].b_n.z = b_0 + 0.5 * ((squares_k_z) -
                                 ( mu_k_z*mu_k_z/
@@ -529,7 +615,6 @@ __global__ void calc_bn(int* seg, int* split_merge_pairs,
                                 ( (mu_f_z + mu_k_z ) * (mu_f_z + mu_k_z ) /
                                 (count_fk)));
 
-
     if(  sp_gpu_helper_sm[k].b_n.x<0)   sp_gpu_helper_sm[k].b_n.x = 0.1;
     if(  sp_gpu_helper_sm[k].b_n.y<0)   sp_gpu_helper_sm[k].b_n.y = 0.1;
     if(  sp_gpu_helper_sm[k].b_n.z<0)   sp_gpu_helper_sm[k].b_n.z = 0.1;
@@ -538,10 +623,7 @@ __global__ void calc_bn(int* seg, int* split_merge_pairs,
     if(  sp_gpu_helper_sm[k].b_n_f.y<0)   sp_gpu_helper_sm[k].b_n_f.y = 0.1;
     if(  sp_gpu_helper_sm[k].b_n_f.z<0)   sp_gpu_helper_sm[k].b_n_f.z = 0.1;
 
-     
 }
-
-
 
 __global__ void calc_bn_split(int* seg, int* split_merge_pairs,
                               superpixel_params* sp_params,
@@ -563,7 +645,6 @@ __global__ void calc_bn_split(int* seg, int* split_merge_pairs,
     float count_k= __ldg(&sp_gpu_helper_sm[k].count);
     float count_s = __ldg(&sp_gpu_helper_sm[s].count);
     if((count_f<1)||( count_k<1)||(count_s<1)) return;
-
 
     float squares_s_x = __ldg(&sp_gpu_helper_sm[s].squares_i.x);
     float squares_s_y = __ldg(&sp_gpu_helper_sm[s].squares_i.y);
@@ -867,7 +948,8 @@ __global__ void calc_hasting_ratio2(const float* image_gpu_double,
                                     superpixel_GPU_helper_sm* sp_gpu_helper_sm,
                                     const int nPixels, const int nbatch, const int xdim,
                                     const int nftrs, const int nsuperpixel_buffer,
-                                    float a0, float b0, float alpha_hasting_ratio, int* mutex ) {
+                                    float a0, float b0, float alpha_hasting_ratio,
+                                    int* mutex ) {
   // todo -- add nbatch and sftrs
 	// getting the index of the pixel
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
@@ -881,21 +963,23 @@ __global__ void calc_hasting_ratio2(const float* image_gpu_double,
     if((sp_gpu_helper_sm[k].hasting ) > -2)
     {
             //printf("Want to merge k: %d, f: %d, splitmerge k %d, splitmerge  f %d, %d\n", k, f, split_merge_pairs[2*k], split_merge_pairs[2*f], split_merge_pairs[2*f+1] );
-            if( k > atomicMax(&split_merge_pairs[2*f],k))
-            {
-                //printf("Merge: %f \n",sp_gpu_helper_sm[k].hasting );
-
-                sp_gpu_helper_sm[k].merge = true;
-            }   
-
-        }
+      int curr_max = atomicMax(&split_merge_pairs[2*f],k);
+      if( curr_max == 0){
+        //printf("Merge: %f \n",sp_gpu_helper_sm[k].hasting );
+        sp_gpu_helper_sm[k].merge = true;
+      }else{
+        split_merge_pairs[2*f] = curr_max;
+      }
+    }
          
     return;
 
 }
 
+
 __global__
-void calc_hasting_ratio_split(const float* image_gpu_double, int* split_merge_pairs,
+void calc_hasting_ratio_split(const float* image_gpu_double,
+                              int* split_merge_pairs,
                               superpixel_params* sp_params,
                               superpixel_GPU_helper* sp_gpu_helper,
                               superpixel_GPU_helper_sm* sp_gpu_helper_sm,
@@ -953,7 +1037,7 @@ void calc_hasting_ratio_split(const float* image_gpu_double, int* split_merge_pa
     if((sp_gpu_helper_sm[k].merge)) // split step
       {
 
-        s = atomicAdd(max_sp,1) +1; // ? can't multiple splits happen at one time? shouldn't this be mutexed somehow for __reading__?
+        s = atomicAdd(max_sp,1) +1; // ? can't multiple splits happen at one time? yes :D
         split_merge_pairs[2*k] = s;
 
         //atomicMax(max_sp,s);
@@ -970,7 +1054,8 @@ __global__ void merge_sp(int* seg, bool* border,
                          int* split_merge_pairs,
                          superpixel_params* sp_params,
                          superpixel_GPU_helper_sm* sp_gpu_helper_sm,
-                         const int nPixels, const int nbatch, const int xdim, const int ydim){   
+                         const int nPixels, const int nbatch,
+                         const int xdim, const int ydim){   
   // todo -- nbatch
     int idx = threadIdx.x + blockIdx.x * blockDim.x;  
     if (idx>=nPixels) return; 
@@ -1021,17 +1106,17 @@ __global__ void remove_sp(int* split_merge_pairs, superpixel_params* sp_params,
     int f = split_merge_pairs[2*k+1];
     if ((sp_params[k].valid == 0)||(sp_params[f].valid == 0)) return;    
     if(f<=0) return;
-    if ((sp_gpu_helper_sm[k].merge == true) && (sp_gpu_helper_sm[f].merge == false) && (split_merge_pairs[2*f]==k) )
-    {
-
-    sp_gpu_helper_sm[k].remove=true;
-    sp_params[k].valid =0;
-    sp_params[f].prior_count =sp_params[k].prior_count+sp_params[f].prior_count;
-    }
+    // if ((sp_gpu_helper_sm[k].merge == true) && (sp_gpu_helper_sm[f].merge == false) && (split_merge_pairs[2*f]==k) )
+    if ((sp_gpu_helper_sm[k].merge == true) && (sp_gpu_helper_sm[f].merge == false))
+      {
+        sp_gpu_helper_sm[k].remove=true;
+        sp_params[k].valid =0;
+        sp_params[f].prior_count =sp_params[k].prior_count+sp_params[f].prior_count;
+      }
     else
-    {
+      {
         sp_gpu_helper_sm[k].remove=false;
-    }
+      }
     
     return;
     
