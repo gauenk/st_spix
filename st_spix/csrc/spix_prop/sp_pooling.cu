@@ -36,6 +36,22 @@
 
 
 ********************************************/
+// __global__
+// void run_sp_downcount(int* seg, float* downcount, const int npix){
+  
+//   // -- get pixel index --
+//   int pix_idx = threadIdx.x + blockIdx.x*blockDim.x;
+//   if (pix_idx>=npix) return;
+
+//   // -- get segmentation index --
+//   int seg_idx = seg[pix_idx];
+//   if (seg_idx < 0){ return; }
+
+//   // -- add to downsampled --
+//   float* dsC = downcount + seg_idx;
+//   atomicAdd(dsC,static_cast<float>(1));
+// }
+
 
 __global__
 void run_sp_downsample(float* img, int* seg,
@@ -58,7 +74,6 @@ void run_sp_downsample(float* img, int* seg,
     atomicAdd(dsF+fidx,*(imgF+fidx));
   }
   atomicAdd(dsC,static_cast<float>(1));
-
 }
 
 __global__
@@ -134,6 +149,53 @@ sp_pooling_fwd(const torch::Tensor img, const torch::Tensor seg, int nspix){
   return std::make_tuple(pooled,downsampled,counts);
 }
 
+
+/********************************************
+
+
+           Upscale Pooled Features
+
+
+********************************************/
+
+torch::Tensor
+downsampled_to_pooled(const torch::Tensor downsampled,
+                    const torch::Tensor seg, int nspix){
+
+  // -- check --
+  CHECK_INPUT(downsampled);
+  CHECK_INPUT(seg);
+  // assert(seg.max() <= nspix);
+
+  // -- unpack --
+  int nbatch = seg.size(0);
+  int height = seg.size(1);
+  int width = seg.size(2);
+  int nftrs = downsampled.size(2);
+  int npix = height*width;
+  assert(nbatch == 1);
+
+  // -- pointers --
+  float* downsampled_ptr = downsampled.data<float>();
+  int* seg_ptr = seg.data<int>();
+
+  // -- alloc options --
+  auto options_f32 = torch::TensorOptions().dtype(torch::kFloat32)
+    .layout(torch::kStrided).device(seg.device());
+
+  // -- init pooled --
+  torch::Tensor pooled = torch::zeros({nbatch, height, width, nftrs}, options_f32);
+  float* pooled_ptr = pooled.data<float>();
+
+  // -- launch pooling --
+  int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
+  dim3 BlockPerGrid(num_block);
+  dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
+  run_sp_pooling<<<BlockPerGrid,ThreadPerBlock>>>
+    (pooled_ptr, seg_ptr, downsampled_ptr, npix, nftrs);
+
+  return pooled;
+}
 
 /********************************************
 
@@ -220,6 +282,8 @@ sp_pooling_bwd(const torch::Tensor pooled_grad,
 
 void init_sp_pooling(py::module &m){
   m.def("sp_pooling_fwd", &sp_pooling_fwd,"superpixel pooling fwd");
+  m.def("downsampled_to_pooled", &downsampled_to_pooled,
+        "upscale from downsampled features");
   // m.def("sp_pooling_bwd", &sp_pooling_bwd,"superpixel pooling bwd");
 }
 

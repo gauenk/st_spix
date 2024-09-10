@@ -183,26 +183,28 @@ spix_prop_dev_cuda(const torch::Tensor imgs,
     // cudaDeviceSynchronize();
     // fprintf(stdout,"nSPs: %d\n",sp.nSPs);
 
-    if (prop_type == false){
-      init_prop_seg(sp.image_gpu_double, seg_gpu,
-                    missing_gpu, border_gpu, sp.sp_params, nPix, nMissing,
-                    nbatch, width, height, nftrs,sp.J_i,sp.logdet_Sigma_i,
-                    i_std,sp.sp_options.s_std,sp.sp_options.nInnerIters,
-                    sp.nSPs,sp.nSPs_buffer,sp.sp_options.beta_potts_term,
-                    debug_spix_gpu, debug_border_gpu, debug_fill);
-    }else{
-      init_prop_seg(sp.image_gpu_double, seg_gpu,
-                    missing_gpu, border_gpu, sp.sp_params, nPix, nMissing,
-                    nbatch, width, height, nftrs,sp.J_i,sp.logdet_Sigma_i,
-                    i_std,sp.sp_options.s_std,sp.sp_options.nInnerIters,
-                    sp.nSPs,sp.nSPs_buffer,sp.sp_options.beta_potts_term,
-                    debug_spix_gpu, debug_border_gpu, debug_fill);
-      // init_prop_seg_space(sp.image_gpu_double, seg_gpu,
-      //               missing_gpu, border_gpu, sp.sp_params, nPix, nMissing,
-      //               nbatch, width, height, nftrs,sp.J_i,sp.logdet_Sigma_i,
-      //               i_std,sp.sp_options.s_std,sp.sp_options.nInnerIters,
-      //               sp.nSPs,sp.nSPs_buffer,sp.sp_options.beta_potts_term,
-      //               debug_spix_gpu, debug_border_gpu, debug_fill);
+    if (nMissing>0){
+      if (prop_type == false){
+        init_prop_seg(sp.image_gpu_double, seg_gpu,
+                      missing_gpu, border_gpu, sp.sp_params, nPix, nMissing,
+                      nbatch, width, height, nftrs,sp.J_i,sp.logdet_Sigma_i,
+                      i_std,sp.sp_options.s_std,sp.sp_options.nInnerIters,
+                      sp.nSPs,sp.nSPs_buffer,sp.sp_options.beta_potts_term,
+                      debug_spix_gpu, debug_border_gpu, debug_fill);
+      }else{
+        init_prop_seg(sp.image_gpu_double, seg_gpu,
+                      missing_gpu, border_gpu, sp.sp_params, nPix, nMissing,
+                      nbatch, width, height, nftrs,sp.J_i,sp.logdet_Sigma_i,
+                      i_std,sp.sp_options.s_std,sp.sp_options.nInnerIters,
+                      sp.nSPs,sp.nSPs_buffer,sp.sp_options.beta_potts_term,
+                      debug_spix_gpu, debug_border_gpu, debug_fill);
+        // init_prop_seg_space(sp.image_gpu_double, seg_gpu,
+        //               missing_gpu, border_gpu, sp.sp_params, nPix, nMissing,
+        //               nbatch, width, height, nftrs,sp.J_i,sp.logdet_Sigma_i,
+        //               i_std,sp.sp_options.s_std,sp.sp_options.nInnerIters,
+        //               sp.nSPs,sp.nSPs_buffer,sp.sp_options.beta_potts_term,
+        //               debug_spix_gpu, debug_border_gpu, debug_fill);
+      }
     }
 
     // gpuErrchk( cudaPeekAtLastError() );

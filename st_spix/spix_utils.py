@@ -287,3 +287,13 @@ def mark_spix(img,spix):
         marked[2][args] = 1.
     return marked
 
+
+# def spix_to_params(vid,spix):
+#     from .flow_utils import index_grid
+#     T,F,H,W = vid.shape
+#     print("vid.shape: ",vid.shape)
+#     grid = index_grid(H,W,dtype=th.float,device="cuda",normalize=True)
+#     print("grid.shape: ",grid.shape)
+#     pooled,downsampled = pooling(grid,spix,nspix)
+
+

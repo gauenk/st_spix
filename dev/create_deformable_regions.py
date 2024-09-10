@@ -23,6 +23,7 @@ from torchvision.transforms.functional import resize
 
 import st_spix_cuda
 from st_spix import scatter
+from st_spix import deform
 from st_spix.sp_pooling import pooling,SuperpixelPooling
 
 import stnls
@@ -43,31 +44,6 @@ def run_stnls(nvid,acc_flows,ws):
                                          full_ws=full_ws,itype="float")
     _,flows = search_p.paired_vids(nvid,nvid,acc_flows,wt,skip_self=True)
     return flows
-
-def get_scattering_field(spix,R):
-
-    # -- unpack --
-    shape = spix.shape
-    B = spix.shape[0]
-    spix = spix.reshape(B,1,-1)
-    npix = spix.shape[-1]
-
-    # -- find matches --
-    ids = th.arange(spix.max()+1)[None,:,None].to(spix.device)
-    match = spix == ids
-
-    # -- increment along pixels to get index within superpixel --
-    csum = th.cumsum(match,-1)-1
-
-    # -- fill index with superpixel coordinate within superpixel --
-    inds = th.where(match)
-    sinds = -th.ones((B,npix),device=spix.device,dtype=th.long)
-    sinds[inds[0],inds[2]] = csum[inds[0],inds[1],inds[2]]
-    assert (th.max(sinds) == (R-1))
-
-    # -- offset sinds with superpixel label offset --
-    sinds = sinds + spix.reshape(B,-1)*R
-    return sinds
 
 def viz_sample(pixels,locations,masks,spix_id,root):
 
@@ -584,30 +560,31 @@ def main():
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
     # -- fill into contiguous tensor [very very silly] --
-    inds = get_scattering_field(spix,R)
-    print("[inds] is nan? ",th.any(th.isnan(inds)))
-    inds_e2 = inds[:,:,None].expand((-1,-1,2))
-    inds_e = inds[:,:,None].expand((-1,-1,3))
-    vid_r = rearrange(vid,'b f h w -> b (h w) f')
-    grid = futils.index_grid(H,W,normalize=True)
-    grid = repeat(grid,'1 f h w -> b (h w) f',b=B)
+    regions,locs,inds = deform.get_regions(vid,spix,R)
+    # inds = deform.get_scattering_field(spix,R)
+    # print("[inds] is nan? ",th.any(th.isnan(inds)))
+    # inds_e2 = inds[:,:,None].expand((-1,-1,2))
+    # inds_e = inds[:,:,None].expand((-1,-1,3))
+    # vid_r = rearrange(vid,'b f h w -> b (h w) f')
+    # grid = futils.index_grid(H,W,normalize=True)
+    # grid = repeat(grid,'1 f h w -> b (h w) f',b=B)
 
-    regions = th.zeros((B,nspix*R,F),device=spix.device)
-    regions = regions.scatter_(1,inds_e,vid_r)
-    regions = regions.reshape(B,nspix,R,F)
+    # regions = th.zeros((B,nspix*R,F),device=spix.device)
+    # regions = regions.scatter_(1,inds_e,vid_r)
+    # regions = regions.reshape(B,nspix,R,F)
 
-    locs = th.zeros((B,nspix*R,2),device=spix.device)
-    locs = locs.scatter_(1,inds_e2,grid)
-    locs = locs.reshape(B,nspix,R,2)
-    print("[locs] is nan? ",th.any(th.isnan(locs)))
+    # locs = th.zeros((B,nspix*R,2),device=spix.device)
+    # locs = locs.scatter_(1,inds_e2,grid)
+    # locs = locs.reshape(B,nspix,R,2)
+    # print("[locs] is nan? ",th.any(th.isnan(locs)))
 
     masks = th.zeros((B,nspix*R),device=spix.device)
     masks = masks.scatter_(1,inds,th.ones_like(vid_r[:,:,0]))
     masks = masks.reshape(B,nspix,R)
 
-    print("inds.shape: ",inds.shape)
-    print(regions.shape)
-    th.save(regions,"regions.pth")
+    # print("inds.shape: ",inds.shape)
+    # print(regions.shape)
+    # th.save(regions,"regions.pth")
 
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     #
@@ -616,8 +593,9 @@ def main():
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
     # -- gather --
-    npix = vid_r.shape[1]
-    vid_f = th.gather(regions.reshape(B,-1,F),1,inds_e,sparse_grad=True)
+    # npix = vid_r.shape[1]
+    # vid_f = th.gather(regions.reshape(B,-1,F),1,inds_e,sparse_grad=True)
+    vid_f = deform.regions_to_video(regions,inds,B,F)
     tv_utils.save_image(rearrange(vid_f,'b (h w) f -> b f h w',h=H),
                         root / "restored_img.png")
     print("Restore Video from Superpixels: ",th.mean( (vid_r - vid_f)**2 ).item())
