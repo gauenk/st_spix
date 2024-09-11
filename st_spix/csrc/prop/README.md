@@ -26,6 +26,8 @@ Helping Code Files:
 
 - "seg_utils.cu": Shared functions for update_[missing/prop]_seg.cu files.
 
+- "init_utils.cu": Shared functions for allocating memory and setting it up 
+
 Other Deps:
 -> refine_missing:
    - "../bass/core/update_seg.cu"

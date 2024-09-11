@@ -318,14 +318,7 @@ torch::Tensor run_fill_missing(const torch::Tensor spix,
     assert(nbatch==1);
 
     // -- allocate border --
-    bool* border;
-    try {
-      throw_on_cuda_error(cudaMalloc((void**)&border,nbatch*npix*sizeof(bool)));
-      // throw_on_cuda_error(malloc((void*)num_neg_cpu,sizeofint));
-    }
-    catch (thrust::system_error& e) {
-        std::cerr << "CUDA error after cudaMalloc: " << e.what() << std::endl;
-    }
+    bool* border = allocate_border(nbatch*npix);
 
     // -- run fill --
     float* centers_ptr = centers.data<float>();

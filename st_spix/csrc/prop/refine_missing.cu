@@ -25,6 +25,12 @@
 #include <cuda_runtime.h>
 #include <torch/extension.h>
 
+// -- "external" import --
+#ifndef MY_SP_STRUCT
+#define MY_SP_STRUCT
+#include "../share/my_sp_struct.h"
+#endif
+
 // -- local import --
 #include "refine_missing.h"
 #include "seg_utils.h"
@@ -46,21 +52,21 @@
 
 __host__ void refine_missing(float* img, int* seg,
                              superpixel_params* sp_params,
-                             superpixel_GPU_helper* sp_gpu_helper,
+                             superpixel_GPU_helper* sp_helper,
                              int* prev_means, int* prev_spix,
                              int* missing, bool* border,
                              int niters, int niters_seg,
                              float3 pix_cov,float logdet_pix_cov,float potts,
                              int nbatch, int width, int height, int nspix){
 
-  // "border" & "sp_gpu_helper" _maybe_ be allocated here.
+  // "border" & "sp_helper" _maybe_ be allocated here.
     
     // -- init --
     int nspix_buffer = nspix * 45;
     for (int i = 0; i < niters; i++) {
 
       // -- Update Parameters with Previous Frame --
-      update_prop_params(img, seg, sp_params, sp_gpu_helper,
+      update_prop_params(img, seg, sp_params, sp_helper,
                          prev_means, prev_spix, npix, nspix,
                          nspix_buffer, nbatch, dim_x, dim_y, nftrs);
 
@@ -88,7 +94,7 @@ torch::Tensor run_refine_missing(const torch::Tensor img,
                                  const torch::Tensor prev_spix,
                                  const torch::Tensor prev_means,
                                  int nspix, int niters, int niters_seg,
-                                 float pix_cov_i, float potts){
+                                 int sp_size, float pix_cov_i, float potts){
 
     // -- check --
     CHECK_INPUT(img);
@@ -103,28 +109,20 @@ torch::Tensor run_refine_missing(const torch::Tensor img,
     int width = spix.size(2);
     int nftrs = img.size(3);
     int npix = height*width;
-    int nmissing = missing.size(1);
+    int nmissing = missing.sum().item<int>();
 
     // -- allocate filled spix --
     auto options_i32 = torch::TensorOptions().dtype(torch::kInt32)
       .layout(torch::kStrided).device(imgs.device());
     torch::Tensor filled_spix = spix.clone();
-    int* filled_spix_ptr = filled_spix.data<int>();
     assert(nbatch==1);
 
-    // -- allocate border --
-    bool* border;
-    try {
-      throw_on_cuda_error(cudaMalloc((void**)&border,nbatch*npix*sizeof(bool)));
-      // throw_on_cuda_error(malloc((void*)num_neg_cpu,sizeofint));
-    }
-    catch (thrust::system_error& e) {
-        std::cerr << "CUDA error after cudaMalloc: " << e.what() << std::endl;
-    }
-
-    // -- init parameters --
-    superpixel_params* sp_params;
-    superpixel_GPU_helper* sp_gpu_helper,
+    // -- allocate memory --
+    int nspix_buffer = nspix*50;
+    bool* border = allocate_border(nbatch*npix);
+    superpixel_params* sp_params = allocate_sp_params(nspix_buffer);
+    superpixel_GPU_helper* sp_helper = allocate_sp_helper(nspix_buffer);
+    init_sp_params(sp_params,sp_size,nspix,nspix_buffer,npix);
 
     // -- compute pixel (inverse) covariance info --
     float pix_half = float(pix_cov_i/2) * float(pix_cov_i/2);
@@ -136,18 +134,24 @@ torch::Tensor run_refine_missing(const torch::Tensor img,
 
     // -- get pointers --
     float* img_ptr = img.data<float>();
+    int* filled_spix_ptr = filled_spix.data<int>();
     float* prev_means_ptr = prev_means.data<float>();
     int* prev_spix_ptr = prev_spix.data<float>();
     int* missing_ptr = missing.data<int>();
 
     // -- run fill --
     if (nmissing>0){
-      refine_missing(img_ptr,filled_spix_ptr,sp_params,sp_gpu_helper,
+      refine_missing(img_ptr,filled_spix_ptr,sp_params,sp_helper,
                      prev_means_ptr, prev_spix_ptr, missing_ptr, border,
                      niters, niters_seg, pix_cov, logdet_pix_cov, potts,
-                     nbatch, width, height, nspix){
+                     nbatch, width, height, nspix);
     }
+
+
+    // -- free --
     cudaFree(border);
+    cudaFree(sp_params);
+    cudaFree(sp_helper);
 
     return filled_spix;
 }

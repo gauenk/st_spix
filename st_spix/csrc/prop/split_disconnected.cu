@@ -1,7 +1,4 @@
 
-#define THREADS_PER_BLOCK 512
-
-
 // #include "init_prop_seg.h"
 // #ifndef MY_SP_SHARE_H
 // #define MY_SP_SHARE_H
@@ -9,10 +6,12 @@
 // #endif
 // #include "../bass/core/Superpixels.h"
 // // #include "../share/utils.h"
-// #include <thrust/system_error.h>
-// #include <thrust/system/cuda/error.h>
+
+#define THREADS_PER_BLOCK 512
 
 #include <assert.h>
+#include <thrust/system_error.h>
+#include <thrust/system/cuda/error.h>
 #include <torch/torch.h>
 
 #include "../bass/relabel.h"

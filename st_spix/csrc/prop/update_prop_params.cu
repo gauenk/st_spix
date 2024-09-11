@@ -13,7 +13,7 @@
 
 __host__ void update_prop_params(const float* img, const int* spix,
                                  superpixel_params* sp_params,
-                                 superpixel_GPU_helper* sp_gpu_helper,
+                                 superpixel_GPU_helper* sp_helper,
                                  int* prev_means, int* prev_spix,
                                  const int npixels, const int nspix,
                                  const int nspix_buffer, const int nbatch,
@@ -24,19 +24,19 @@ __host__ void update_prop_params(const float* img, const int* spix,
 	int num_block2 = ceil( double(nspix_buffer) / double(THREADS_PER_BLOCK) );
     dim3 BlockPerGrid1(num_block1,nbatch);
     dim3 BlockPerGrid2(num_block2,nbatch);
-    clear_fields<<<BlockPerGrid2,ThreadPerBlock>>>(sp_params,sp_gpu_helper,
+    clear_fields<<<BlockPerGrid2,ThreadPerBlock>>>(sp_params,sp_helper,
                                                    nspix,nspix_buffer,nftrs);
-	cudaMemset(sp_gpu_helper, 0, nspix_buffer*sizeof(superpixel_GPU_helper));
-    sum_by_label<<<BlockPerGrid1,ThreadPerBlock>>>(img,spix,sp_params,sp_gpu_helper,
+	cudaMemset(sp_helper, 0, nspix_buffer*sizeof(superpixel_GPU_helper));
+    sum_by_label<<<BlockPerGrid1,ThreadPerBlock>>>(img,spix,sp_params,sp_helper,
                                                    npixels,nbatch,xdim,nftrs);
 	calculate_mu_and_sigma<<<BlockPerGrid2,ThreadPerBlock>>>(\
-     sp_params, sp_gpu_helper, prev_means, prev_spix, nspix, nspix_buffer); 
+     sp_params, sp_helper, prev_means, prev_spix, nspix, nspix_buffer); 
 
 }
 
 __global__
 void clear_fields(superpixel_params* sp_params,
-                  superpixel_GPU_helper* sp_gpu_helper,
+                  superpixel_GPU_helper* sp_helper,
                   const int nsuperpixel,
                   const int nsuperpixel_buffer,
                   const int nftrs){
@@ -64,7 +64,7 @@ void clear_fields(superpixel_params* sp_params,
 __global__
 void sum_by_label(const float* img,
                   const int* spix, superpixel_params* sp_params,
-                  superpixel_GPU_helper* sp_gpu_helper,
+                  superpixel_GPU_helper* sp_helper,
                   const int npixels, const int nbatch,
                   const int xdim, const int nftrs) {
     // todo -- add nbatch and nftrs
@@ -77,9 +77,9 @@ void sum_by_label(const float* img,
     if (k == -1){ return; } // invalid label
 
 	atomicAdd(&sp_params[k].count, 1);
-	atomicAdd(&sp_gpu_helper[k].mu_i_sum.x, img[3*t]);
-	atomicAdd(&sp_gpu_helper[k].mu_i_sum.y, img[3*t+1]);
-	atomicAdd(&sp_gpu_helper[k].mu_i_sum.z, img[3*t+2]);
+	atomicAdd(&sp_helper[k].mu_i_sum.x, img[3*t]);
+	atomicAdd(&sp_helper[k].mu_i_sum.y, img[3*t+1]);
+	atomicAdd(&sp_helper[k].mu_i_sum.z, img[3*t+2]);
 
 
 	int x = t % xdim;
@@ -88,11 +88,11 @@ void sum_by_label(const float* img,
 	int xy = x * y;
 	int yy = y * y;
 
-	atomicAdd(&sp_gpu_helper[k].mu_s_sum.x, x);
-	atomicAdd(&sp_gpu_helper[k].mu_s_sum.y, y);
-    atomicAdd((unsigned long long *)&sp_gpu_helper[k].sigma_s_sum.x, xx);
-	atomicAdd((unsigned long long *)&sp_gpu_helper[k].sigma_s_sum.y, xy);
-	atomicAdd((unsigned long long *)&sp_gpu_helper[k].sigma_s_sum.z, yy);
+	atomicAdd(&sp_helper[k].mu_s_sum.x, x);
+	atomicAdd(&sp_helper[k].mu_s_sum.y, y);
+    atomicAdd((unsigned long long *)&sp_helper[k].sigma_s_sum.x, xx);
+	atomicAdd((unsigned long long *)&sp_helper[k].sigma_s_sum.y, xy);
+	atomicAdd((unsigned long long *)&sp_helper[k].sigma_s_sum.z, yy);
 	
 }
 
@@ -100,7 +100,7 @@ void sum_by_label(const float* img,
 
 __global__
 void calculate_mu_and_sigma(superpixel_params*  sp_params,
-                            superpixel_GPU_helper* sp_gpu_helper,
+                            superpixel_GPU_helper* sp_helper,
                             int* prev_means, int* prev_spix,
                             const int nsuperpixel, const int nsuperpixel_buffer) {
 
@@ -130,21 +130,21 @@ void calculate_mu_and_sigma(superpixel_params*  sp_params,
 	if (count_int>0){
 
 		sp_params[k].log_count = log(count);
-	    mu_x = sp_gpu_helper[k].mu_s_sum.x / count;
-	    mu_y = sp_gpu_helper[k].mu_s_sum.y / count;
+	    mu_x = sp_helper[k].mu_s_sum.x / count;
+	    mu_y = sp_helper[k].mu_s_sum.y / count;
 		sp_params[k].mu_s.x = mu_x;
 	    sp_params[k].mu_s.y = mu_y;
         
-	    sp_params[k].mu_i.x = sp_gpu_helper[k].mu_i_sum.x / count;
-		sp_params[k].mu_i.y = sp_gpu_helper[k].mu_i_sum.y / count;
-  		sp_params[k].mu_i.z = sp_gpu_helper[k].mu_i_sum.z / count;
+	    sp_params[k].mu_i.x = sp_helper[k].mu_i_sum.x / count;
+		sp_params[k].mu_i.y = sp_helper[k].mu_i_sum.y / count;
+  		sp_params[k].mu_i.z = sp_helper[k].mu_i_sum.z / count;
 
 	}
 
 	// -- calculate the covariance --
-	double C00 = sp_gpu_helper[k].sigma_s_sum.x;
-	double C01 = sp_gpu_helper[k].sigma_s_sum.y;
-	double C11 = sp_gpu_helper[k].sigma_s_sum.z; 
+	double C00 = sp_helper[k].sigma_s_sum.x;
+	double C01 = sp_helper[k].sigma_s_sum.y;
+	double C11 = sp_helper[k].sigma_s_sum.z; 
 	double total_count = (double) sp_params[k].count + a_prior;
 	if (count_int > 3){
 	    C00 = C00 - mu_x * mu_x * count;
