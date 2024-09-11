@@ -32,6 +32,7 @@
 #endif
 
 // -- local import --
+#include "rgb2lab.h"
 #include "init_utils.h"
 #include "seg_utils.h"
 #include "refine_missing.h"
@@ -55,31 +56,32 @@ __host__ void refine_missing(float* img, int* seg,
                              superpixel_params* sp_params,
                              superpixel_GPU_helper* sp_helper,
                              float* prev_means, int* prev_spix,
-                             int* missing, bool* border,
+                             bool* missing, bool* border,
                              int niters, int niters_seg,
                              float3 pix_cov,float logdet_pix_cov,float potts,
-                             int nbatch, int width, int height, int nspix){
+                             int nspix, int nbatch, int width, int height, int nftrs){
 
   // "border" & "sp_helper" _maybe_ be allocated here.
     
     // -- init --
+    int npix = height * width;
     int nspix_buffer = nspix * 45;
     for (int i = 0; i < niters; i++) {
 
       // -- Update Parameters with Previous Frame --
       update_prop_params(img, seg, sp_params, sp_helper,
                          prev_means, prev_spix, npix, nspix,
-                         nspix_buffer, nbatch, dim_x, dim_y, nftrs);
+                         nspix_buffer, nbatch, width, height, nftrs);
 
       // -- Update Segmentation ONLY within missing pix --
       update_missing_seg(img, seg, border, missing, sp_params,
                          niters_seg, pix_cov, logdet_pix_cov, potts,
-                         npix, nspix, nbatch, dim_x, dim_y, nfts);
+                         npix, nspix, nbatch, width, height, nftrs);
 
 
     }
 
-    CudaFindBorderPixels_end(seg, border, npix, nbatch, dim_x, dim_y, 1);
+    CudaFindBorderPixels_end(seg, border, npix, nbatch, width, height, 1);
 }
 
 
@@ -89,7 +91,7 @@ __host__ void refine_missing(float* img, int* seg,
 
 ***********************************************************/
 
-torch::Tensor run_refine_missing(const torch::Tensor img,
+torch::Tensor run_refine_missing(const torch::Tensor img_rgb,
                                  const torch::Tensor spix,
                                  const torch::Tensor missing,
                                  const torch::Tensor prev_means,
@@ -98,7 +100,7 @@ torch::Tensor run_refine_missing(const torch::Tensor img,
                                  int sp_size, float pix_cov_i, float potts){
 
     // -- check --
-    CHECK_INPUT(img);
+    CHECK_INPUT(img_rgb);
     CHECK_INPUT(spix);
     CHECK_INPUT(missing);
     CHECK_INPUT(prev_spix);
@@ -108,7 +110,7 @@ torch::Tensor run_refine_missing(const torch::Tensor img,
     int nbatch = spix.size(0);
     int height = spix.size(1);
     int width = spix.size(2);
-    int nftrs = img.size(3);
+    int nftrs = img_rgb.size(3);
     int npix = height*width;
     int nmissing = missing.sum().item<int>();
 
@@ -140,19 +142,23 @@ torch::Tensor run_refine_missing(const torch::Tensor img,
     pix_cov.z = 1.0/pix_half;
     float logdet_pix_cov = log(pix_half * pix_half * pix_half);
 
-    // -- get pointers --
-    float* img_ptr = img.data<float>();
+    // -- convert image color --
+    auto img_lab = img_rgb.clone();
+    rgb2lab(img_rgb.data<float>(),img_lab.data<float>(),npix,nbatch);
+
+    // -- Get pointers --
+    float* img_ptr = img_lab.data<float>();
     int* filled_spix_ptr = filled_spix.data<int>();
     float* prev_means_ptr = prev_means.data<float>();
-    int* prev_spix_ptr = prev_spix.data<float>();
-    int* missing_ptr = missing.data<int>();
+    int* prev_spix_ptr = prev_spix.data<int>();
+    bool* missing_ptr = missing.data<bool>();
 
     // -- run fill --
     if (nmissing>0){
       refine_missing(img_ptr,filled_spix_ptr,sp_params,sp_helper,
                      prev_means_ptr, prev_spix_ptr, missing_ptr, border,
                      niters, niters_seg, pix_cov, logdet_pix_cov, potts,
-                     nbatch, width, height, nspix);
+                     nspix, nbatch, width, height, nftrs);
     }
 
 

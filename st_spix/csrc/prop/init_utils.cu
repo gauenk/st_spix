@@ -9,7 +9,7 @@
 #include "init_utils.h"
 #include <thrust/system_error.h>
 #include <thrust/system/cuda/error.h>
-
+#define THREADS_PER_BLOCK 512
 
 /*************************************************
 

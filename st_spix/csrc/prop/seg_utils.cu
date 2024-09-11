@@ -5,7 +5,7 @@
 #define THREADS_PER_BLOCK 512
 
 #include <assert.h>
-#include "seg_utils.cu"
+#include "seg_utils.h"
 
 /**********************************************
 ***********************************************

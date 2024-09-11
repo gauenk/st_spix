@@ -40,6 +40,9 @@
 
 ***********************************************************/
 
+// // fill_missing(filled_spix_ptr, centers_ptr, missing_ptr, border,
+//              nbatch, width, height, nspix, nmissing, break_iter);
+
 __host__
 void fill_missing(int* seg,  float* centers, int* missing, bool* border,
                   int nbatch, int width, int height,
@@ -59,19 +62,9 @@ void fill_missing(int* seg,  float* centers, int* missing, bool* border,
     int iter = 0;
 
     // -- init num neg --
-    int num_neg_cpu;
-    int prev_neg;
-    // int* num_neg_gpu;
     int* num_neg_gpu = (int*)easy_allocate(1, sizeof(int));
-    // try {
-    //   throw_on_cuda_error(cudaMalloc((void**)&num_neg_gpu,sizeofint));
-    //   // throw_on_cuda_error(malloc((void*)num_neg_cpu,sizeofint));
-    // }
-    // catch (thrust::system_error& e) {
-    //     std::cerr << "CUDA error after cudaMalloc: " << e.what() << std::endl;
-    // }
-    num_neg_cpu = 1;
-    prev_neg = 1;
+    int prev_neg = 1;
+    int num_neg_cpu = 1;
 
     while (num_neg_cpu > 0){
 
@@ -81,7 +74,7 @@ void fill_missing(int* seg,  float* centers, int* missing, bool* border,
       //  -- find border pixels --
       cudaMemset(num_neg_gpu, 0, sizeof(int));
       cudaMemset(border, 0, nbatch*npix*sizeof(bool));
-      find_border_along_missing<<<BlockPerGrid,ThreadPerBlock>>>      \
+      find_border_along_missing<<<BlockPerGrid,ThreadPerBlock>>>\
         (seg, missing, border, nmissing, nbatch, width, height, num_neg_gpu);
       cudaMemcpy(&num_neg_cpu,num_neg_gpu,sizeof(int),cudaMemcpyDeviceToHost);
 
@@ -89,14 +82,15 @@ void fill_missing(int* seg,  float* centers, int* missing, bool* border,
       for (int xmod3 = 0 ; xmod3 < 2; xmod3++){
         for (int ymod3 = 0; ymod3 < 2; ymod3++){
           update_missing_seg_nn<<<BlockPerGridSub,ThreadPerBlock>>>(\
-                seg, centers, border, nbatch, width, height, npix, xmod3, ymod3);
+            seg, centers, border, nbatch, width, height, npix, xmod3, ymod3);
         }
       }
 
       // -- update previous --
       iter++;
       if ((iter>0) and (num_neg_cpu == prev_neg)){
-        fprintf(stdout,"An error of some type, the border won't shrink.\n");
+        auto msg = "An error of some type, the border won't shrink: %d\n";
+        fprintf(stdout,msg,num_neg_cpu);
         break;
       }
       prev_neg = num_neg_cpu;
@@ -130,12 +124,13 @@ void fill_missing(int* seg,  float* centers, int* missing, bool* border,
 ***********************************************************/
 
 __device__ inline
-void isotropic_space(float2 &res, int label, int x, int y, float* center_prop){
-  float dist = -__powf(x - 1.0*center_prop[0],2.) - __powf(y - 1.0*center_prop[0],2.);
+float2 isotropic_space(float2 res, int label, int x, int y, float* center_prop){
+  float dist = -__powf(x - 1.0*center_prop[0],2.) - __powf(y - 1.0*center_prop[1],2.);
   if (dist > res.x){
-    res.y = label;
     res.x = dist;
+    res.y = label;
   }
+  return res;
 }
 
 __global__
@@ -170,7 +165,7 @@ void update_missing_seg_nn(int* seg, float* centers, bool* border,
     // -- init --
     float2 res_max;
     res_max.x = -999999;
-    res_max.y = seg[seg_idx];
+    res_max.y = -2;//seg[seg_idx];
     // int C = res_max.y;
 
     // --> north, south, east, west <--
@@ -181,39 +176,39 @@ void update_missing_seg_nn(int* seg, float* centers, bool* border,
     if (y<(height-1)){ S = __ldg(&seg[idx+width]); } // below
 
     // --> diags [north (east, west), south (east, west)] <--
-    int NE = -1, NW = -1, SE = -1, SW = -1;
+    // int NE = -1, NW = -1, SE = -1, SW = -1;
 
-    // -- read labels of neighbors --
-    if ((y>0) and (x<(width-1))){ NE = __ldg(&seg[idx-width+1]); } // top-right
-    if ((y>0) and (x>0)){  NW = __ldg(&seg[idx-width-1]); } // top-left
-    if ((x<(width-1)) and (y<(height-1))){ SE = __ldg(&seg[idx+width+1]); } // btm-right
-    if ((x>0) and (y<(height-1))){ SW = __ldg(&seg[idx+width-1]); } // btm-left
+    // // -- read labels of neighbors --
+    // if ((y>0) and (x<(width-1))){ NE = __ldg(&seg[idx-width+1]); } // top-right
+    // if ((y>0) and (x>0)){  NW = __ldg(&seg[idx-width-1]); } // top-left
+    // if ((x<(width-1)) and (y<(height-1))){SE = __ldg(&seg[idx+width+1]); } // btm-right
+    // if ((x>0) and (y<(height-1))){ SW = __ldg(&seg[idx+width-1]); } // btm-left
 
     // -- read neighor labels for potts term --
     // check 8 nbrs and save result if valid to change to the last place of array
     // return how many nbrs different for potts term calculation
 
     //N :
-    set_nbrs(NW, N, NE, W, E, SW, S, SE,N, nbrs);
-    count_diff_nbrs_N = ischangbale_by_nbrs(nbrs);
-    // isNvalid = nbrs[8] or (res_max.y == -1);
-    // if(!isNvalid) return;
+    // set_nbrs(NW, N, NE, W, E, SW, S, SE,N, nbrs);
+    // count_diff_nbrs_N = ischangbale_by_nbrs(nbrs);
+    // // isNvalid = nbrs[8] or (res_max.y == -1);
+    // // if(!isNvalid) return;
     
-    //E:
-    set_nbrs(NW, N, NE, W, E, SW, S, SE,E, nbrs);
-    count_diff_nbrs_E = ischangbale_by_nbrs(nbrs);
-    // isEvalid = nbrs[8] or (res_max.y == -1);
-    // if(!isEvalid) return;
+    // //E:
+    // set_nbrs(NW, N, NE, W, E, SW, S, SE,E, nbrs);
+    // count_diff_nbrs_E = ischangbale_by_nbrs(nbrs);
+    // // isEvalid = nbrs[8] or (res_max.y == -1);
+    // // if(!isEvalid) return;
 
-    //S :
-    set_nbrs(NW, N, NE, W, E, SW, S, SE,S, nbrs);
-    count_diff_nbrs_S = ischangbale_by_nbrs(nbrs);
-    // isSvalid = nbrs[8] or (res_max.y == -1);
-    // if(!isSvalid) return;
+    // //S :
+    // set_nbrs(NW, N, NE, W, E, SW, S, SE,S, nbrs);
+    // count_diff_nbrs_S = ischangbale_by_nbrs(nbrs);
+    // // isSvalid = nbrs[8] or (res_max.y == -1);
+    // // if(!isSvalid) return;
 
     //W :
-    set_nbrs(NW, N, NE, W, E, SW, S, SE,W, nbrs);
-    count_diff_nbrs_W = ischangbale_by_nbrs(nbrs);
+    // set_nbrs(NW, N, NE, W, E, SW, S, SE,W, nbrs);
+    // count_diff_nbrs_W = ischangbale_by_nbrs(nbrs);
     // isWvalid = nbrs[8] or (res_max.y == -1);
     // if(!isWvalid) return;
 
@@ -221,25 +216,25 @@ void update_missing_seg_nn(int* seg, float* centers, bool* border,
     bool valid = N >= 0;
     label_check = N;
     if (valid){
-      isotropic_space(res_max, label_check, x, y, centers+label_check*2);
+      res_max = isotropic_space(res_max, label_check, x, y, centers+label_check*2);
     }
 
     valid = S>=0;
     label_check = S;
     if(valid && (label_check!=N)){
-      isotropic_space(res_max, label_check, x, y, centers+label_check*2);
+      res_max = isotropic_space(res_max, label_check, x, y, centers+label_check*2);
     }
 
     valid = W >= 0;
     label_check = W;
     if(valid && (label_check!=S)&&(label_check!=N)) {
-      isotropic_space(res_max, label_check, x, y, centers+label_check*2);
+      res_max = isotropic_space(res_max, label_check, x, y, centers+label_check*2);
     }
     
     valid = E >= 0;
     label_check = E;
     if(valid && (label_check!=W)&&(label_check!=S)&&(label_check!=N)){
-      isotropic_space(res_max, label_check, x, y, centers+label_check*2);
+      res_max = isotropic_space(res_max, label_check, x, y, centers+label_check*2);
     }
 
     seg[seg_idx] = res_max.y;
@@ -259,22 +254,15 @@ void find_border_along_missing(const int* seg, const int* missing,
     if (_idx>=nmissing) return; 
 
     // --> space coordinates <--
-    // bool is_filled = filled[_idx];
     int idx = missing[_idx];
     int x = idx % width;
     int y = idx / width;
 
-    // -- dont fill twice --
-    // if (is_filled){
-    //   border[idx] = 0;
-    //   return;
-    // }
-
     // --> north, south, east, west <--
     int N = -1, S = -1, E = -1, W = -1, C = -1;
 
-    // -- check out of bounds --
-    C = seg[idx]; // self
+    // --> check out of bounds <--
+    C = __ldg(&seg[idx]); // self
     if (y>0){ N = __ldg(&seg[idx-width]); } // above
     if (x>0){ W = __ldg(&seg[idx-1]); } // left
     if (y<(height-1)){ S = __ldg(&seg[idx+width]); } // below
@@ -314,6 +302,8 @@ torch::Tensor run_fill_missing(const torch::Tensor spix,
     int npix = height*width;
     int nmissing = missing.size(1);
 
+    printf("nbatch,height,width,npix,nmissing: %d,%d,%d,%d,%d\n",nbatch,height,width,npix,nmissing);
+
     // -- allocate filled spix --
     auto options_i32 = torch::TensorOptions().dtype(torch::kInt32)
       .layout(torch::kStrided).device(spix.device());
@@ -322,7 +312,7 @@ torch::Tensor run_fill_missing(const torch::Tensor spix,
     assert(nbatch==1);
 
     // -- allocate border --
-    bool* border = (bool*) easy_allocate(nbatch*npix,sizeof(int));
+    bool* border = (bool*)easy_allocate(nbatch*npix,sizeof(int));
 
     // -- run fill --
     float* centers_ptr = centers.data<float>();

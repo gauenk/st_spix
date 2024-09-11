@@ -12,7 +12,7 @@
 
 #ifndef MY_SP_STRUCT
 #define MY_SP_STRUCT
-#include "../share/my_sp_struct.h"
+#include "../bass/share/my_sp_struct.h"
 #endif
 
 /*************************************************
