@@ -95,14 +95,14 @@ void update_missing_seg_subset(float* img, int* seg, bool* border, bool* missing
 
     
     // -- read if missing --
-    bool mNW =__ldg(&missing[pix_idx-xdim-1]);
-    bool mN = __ldg(&missing[pix_idx-xdim]);
-    bool mNE = __ldg(&missing[pix_idx-xdim+1]);
-    bool mW = __ldg(&missing[pix_idx-1]);
-    bool mE = __ldg(&missing[pix_idx+1]);
-    bool mSW = __ldg(&missing[pix_idx+xdim-1]);
-    bool mS = __ldg(&missing[pix_idx+xdim]);
-    bool mSE =__ldg(&missing[pix_idx+xdim+1]);  
+    bool mNW =missing[pix_idx-xdim-1];
+    bool mN = missing[pix_idx-xdim];
+    bool mNE = missing[pix_idx-xdim+1];
+    bool mW = missing[pix_idx-1];
+    bool mE = missing[pix_idx+1];
+    bool mSW = missing[pix_idx+xdim-1];
+    bool mS = missing[pix_idx+xdim];
+    bool mSE =missing[pix_idx+xdim+1];  
 
     //N :
     set_nbrs(NW, N, NE,  W, E, SW, S, SE, N, nbrs);
@@ -135,27 +135,27 @@ void update_missing_seg_subset(float* img, int* seg, bool* border, bool* missing
     label_check = N;
     assert(label_check >= 0);
     if (mN == 0)
-    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,
-                                pix_cov,logdet_pix_cov,
-                                count_diff_nbrs_N,beta,res_max);
+      res_max = cal_prop_posterior(imgC,seg,x,y,sp_params,label_check,
+                                   pix_cov,logdet_pix_cov,
+                                   count_diff_nbrs_N,beta,res_max);
     label_check = S;
     assert(label_check >= 0);
     if( (label_check!=N) &&(mS==0) )
-    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,
+    res_max = cal_prop_posterior(imgC,seg,x,y,sp_params,label_check,
                                 pix_cov,logdet_pix_cov,
                                 count_diff_nbrs_S,beta,res_max);
 
     label_check = W;
     assert(label_check >= 0);
     if ( (label_check!=S)&&(label_check!=N)&&(mW==0))   
-    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,
+    res_max = cal_prop_posterior(imgC,seg,x,y,sp_params,label_check,
                                 pix_cov,logdet_pix_cov,
                                 count_diff_nbrs_W,beta,res_max);
     
     label_check = E;
     assert(label_check >= 0);
     if((label_check!=W)&&(label_check!=S)&&(label_check!=N)&&(mE==0))      
-    res_max = cal_posterior_new(imgC,seg,x,y,sp_params,label_check,
+    res_max = cal_prop_posterior(imgC,seg,x,y,sp_params,label_check,
                                 pix_cov,logdet_pix_cov,
                                 count_diff_nbrs_E,beta,res_max);
     seg[pix_idx] = res_max.y;

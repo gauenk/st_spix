@@ -28,12 +28,13 @@
 // -- "external" import --
 #ifndef MY_SP_STRUCT
 #define MY_SP_STRUCT
-#include "../share/my_sp_struct.h"
+#include "../bass/share/my_sp_struct.h"
 #endif
 
 // -- local import --
-#include "refine_missing.h"
+#include "init_utils.h"
 #include "seg_utils.h"
+#include "refine_missing.h"
 #include "update_prop_params.h"
 #include "update_missing_seg.h"
 
@@ -53,7 +54,7 @@
 __host__ void refine_missing(float* img, int* seg,
                              superpixel_params* sp_params,
                              superpixel_GPU_helper* sp_helper,
-                             int* prev_means, int* prev_spix,
+                             float* prev_means, int* prev_spix,
                              int* missing, bool* border,
                              int niters, int niters_seg,
                              float3 pix_cov,float logdet_pix_cov,float potts,
@@ -91,8 +92,8 @@ __host__ void refine_missing(float* img, int* seg,
 torch::Tensor run_refine_missing(const torch::Tensor img,
                                  const torch::Tensor spix,
                                  const torch::Tensor missing,
-                                 const torch::Tensor prev_spix,
                                  const torch::Tensor prev_means,
+                                 const torch::Tensor prev_spix,
                                  int nspix, int niters, int niters_seg,
                                  int sp_size, float pix_cov_i, float potts){
 
@@ -113,16 +114,23 @@ torch::Tensor run_refine_missing(const torch::Tensor img,
 
     // -- allocate filled spix --
     auto options_i32 = torch::TensorOptions().dtype(torch::kInt32)
-      .layout(torch::kStrided).device(imgs.device());
+      .layout(torch::kStrided).device(spix.device());
     torch::Tensor filled_spix = spix.clone();
     assert(nbatch==1);
 
     // -- allocate memory --
     int nspix_buffer = nspix*50;
-    bool* border = allocate_border(nbatch*npix);
-    superpixel_params* sp_params = allocate_sp_params(nspix_buffer);
-    superpixel_GPU_helper* sp_helper = allocate_sp_helper(nspix_buffer);
+    const int sparam_size = sizeof(superpixel_params);
+    const int helper_size = sizeof(superpixel_GPU_helper);
+    bool* border = (bool*)easy_allocate(nbatch*npix,sizeof(bool));
+    superpixel_params* sp_params=(superpixel_params*)easy_allocate(nspix_buffer,sparam_size);
+    superpixel_GPU_helper* sp_helper = (superpixel_GPU_helper*)easy_allocate(nspix_buffer,helper_size);
     init_sp_params(sp_params,sp_size,nspix,nspix_buffer,npix);
+
+    // bool* border = allocate_border(nbatch*npix);
+    // superpixel_params* sp_params = allocate_sp_params(nspix_buffer);
+    // superpixel_GPU_helper* sp_helper = allocate_sp_helper(nspix_buffer);
+    // init_sp_params(sp_params,sp_size,nspix,nspix_buffer,npix);
 
     // -- compute pixel (inverse) covariance info --
     float pix_half = float(pix_cov_i/2) * float(pix_cov_i/2);

@@ -10,57 +10,75 @@
 #include <thrust/system_error.h>
 #include <thrust/system/cuda/error.h>
 
+
 /*************************************************
 
                Allocation
 
 **************************************************/
 
-bool* allocate_border(int size){
-    bool* border;
-    try {
-      throw_on_cuda_error(cudaMalloc((void**)&border,size*sizeof(bool)));
-      // throw_on_cuda_error(malloc((void*)num_neg_cpu,sizeofint));
-    }
-    catch (thrust::system_error& e) {
-        std::cerr << "CUDA error after cudaMalloc: " << e.what() << std::endl;
-    }
-    return border;
+void throw_on_cuda_error(cudaError_t code){
+  if(code != cudaSuccess){
+    throw thrust::system_error(code, thrust::cuda_category());
+  }
 }
 
-superpixel_params* allocate_sp_params(int size){
-    superpixel_params* sp_params;
-    try {
-      throw_on_cuda_error(cudaMalloc((void**)&sp_params,size*sizeof(superpixel_params)));
-    }
-    catch (thrust::system_error& e) {
-        std::cerr << "CUDA error after cudaMalloc: " << e.what() << std::endl;
-    }
-    return sp_params;
-}
-
-superpixel_GPU_helper* allocate_sp_helper(int size){
-  superpixel_GPU_helper* sp_helper;
+void* easy_allocate(int size, int esize){
+  void* mem;
   try {
-    throw_on_cuda_error(cudaMalloc((void**)&sp_helper,size*sizeof(superpixel_GPU_helper)));
+    throw_on_cuda_error(cudaMalloc((void**)&mem,size*esize));
   }
   catch (thrust::system_error& e) {
     std::cerr << "CUDA error after cudaMalloc: " << e.what() << std::endl;
   }
-  return sp_helper;
+  return mem;
 }
 
-superpixel_GPU_helper_sm* allocate_sm_helper(int size){
-  superpixel_GPU_helper_sm* sm_helper;
-  const int elem_size = sizeof(superpixel_GPU_helper_sm);
-  try {
-    throw_on_cuda_error(cudaMalloc((void**)&sm_helper,size*elem_size));
-  }
-  catch (thrust::system_error& e) {
-    std::cerr << "CUDA error after cudaMalloc: " << e.what() << std::endl;
-  }
-  return sm_helper;
-}
+// bool* allocate_border(int size){
+//     bool* border;
+//     try {
+//       throw_on_cuda_error(cudaMalloc((void**)&border,size*sizeof(bool)));
+//       // throw_on_cuda_error(malloc((void*)num_neg_cpu,sizeofint));
+//     }
+//     catch (thrust::system_error& e) {
+//         std::cerr << "CUDA error after cudaMalloc: " << e.what() << std::endl;
+//     }
+//     return border;
+// }
+
+// superpixel_params* allocate_sp_params(int size){
+//     superpixel_params* sp_params;
+//     try {
+//       throw_on_cuda_error(cudaMalloc((void**)&sp_params,size*sizeof(superpixel_params)));
+//     }
+//     catch (thrust::system_error& e) {
+//         std::cerr << "CUDA error after cudaMalloc: " << e.what() << std::endl;
+//     }
+//     return sp_params;
+// }
+
+// superpixel_GPU_helper* allocate_sp_helper(int size){
+//   superpixel_GPU_helper* sp_helper;
+//   try {
+//     throw_on_cuda_error(cudaMalloc((void**)&sp_helper,size*sizeof(superpixel_GPU_helper)));
+//   }
+//   catch (thrust::system_error& e) {
+//     std::cerr << "CUDA error after cudaMalloc: " << e.what() << std::endl;
+//   }
+//   return sp_helper;
+// }
+
+// superpixel_GPU_helper_sm* allocate_sm_helper(int size){
+//   superpixel_GPU_helper_sm* sm_helper;
+//   const int elem_size = sizeof(superpixel_GPU_helper_sm);
+//   try {
+//     throw_on_cuda_error(cudaMalloc((void**)&sm_helper,size*elem_size));
+//   }
+//   catch (thrust::system_error& e) {
+//     std::cerr << "CUDA error after cudaMalloc: " << e.what() << std::endl;
+//   }
+//   return sm_helper;
+// }
 
 
 /*************************************************

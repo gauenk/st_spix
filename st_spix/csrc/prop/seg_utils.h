@@ -4,18 +4,66 @@
 
 #ifndef MY_SP_STRUCT
 #define MY_SP_STRUCT
-#include "../share/my_sp_struct.h"
+#include "../bass/share/my_sp_struct.h"
 #endif
 
 #ifndef SEG_UTILS_H
 #define SEG_UTILS_H
 
+// bass table; decodes if a point is a "simple" based on neighbors
+__device__ const bool bass_lut[256] = {
+           0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0,
+	       1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1,
+	       0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0,
+	       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	       0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0,
+	       0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0,
+	       0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0,
+	       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0,
+	       0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 1, 0,
+	       0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0};
+
+__device__ inline int ischangbale_by_nbrs(bool* nbrs){
+  int num,count_diff = 0;
+#pragma unroll
+   for (int i=7; i>=0; i--)
+   {
+      num <<= 1;
+      if (nbrs[i]) num++;
+      else count_diff++;
+   }
+   // convert binary string "nbrs" into decimal "num"
+   nbrs[8] = bass_lut[num];
+   return count_diff;
+}
+
+
+
+/*
+* Set the elements in nbrs "array" to 1 if corresponding neighbor pixel has the same superpixel as "label"
+*/
+__device__ inline
+void set_nbrs(int NW,int N,int NE,int W,
+              int E,int SW,int S,int SE,
+              int label, bool* nbrs){
+  nbrs[0] = (label ==NW);
+  nbrs[1] = (label == N);
+  nbrs[2] = (label == NE);
+  nbrs[3] = (label == W);
+  nbrs[4] = (label == E);
+  nbrs[5] = (label == SW);
+  nbrs[6] = (label == S);
+  nbrs[7] = (label == SE);
+  return;
+}
+
 __device__ inline float2 cal_prop_posterior(
     float* imgC, int* seg, int x, int y,
-    superpixel_params* sp_params,
-    int seg_idx, float3 pix_cov,
-    float logdet_pix_cov, float i_std, int s_std,
-    float potts, float beta, float2 res_max){
+    superpixel_params* sp_params, int seg_idx,
+    float3 pix_cov, float logdet_pix_cov,
+    float neigh_neq, float beta, float2 res_max){
 
     // -- init res --
     float res = -1000; // some large negative number // why?
@@ -45,7 +93,7 @@ __device__ inline float2 cal_prop_posterior(
     res = res - logdet_sigma_s;
 
     // -- potts term --
-    res = res - beta*potts;
+    res = res - beta*neigh_neq;
 
     // -- update res --
     if( res>res_max.x)

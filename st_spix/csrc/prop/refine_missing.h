@@ -3,11 +3,16 @@
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
+#ifndef MY_SP_STRUCT
+#define MY_SP_STRUCT
+#include "../bass/share/my_sp_struct.h"
+#endif
+
 
 __host__ void refine_missing(float* img, int* seg,
                              superpixel_params* sp_params,
                              superpixel_GPU_helper* sp_gpu_helper,
-                             int* prev_means, int* prev_spix,
+                             float* prev_means, int* prev_spix,
                              int* missing, bool* border,
                              int niters, int niters_seg,
                              float3 pix_cov,float logdet_pix_cov,float potts,

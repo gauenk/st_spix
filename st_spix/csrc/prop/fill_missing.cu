@@ -14,6 +14,7 @@
 #include <cuda_runtime.h>
 // #include <cmath>
 
+
 #include <cuda/std/type_traits>
 #include <torch/types.h>
 #include <cuda.h>
@@ -22,6 +23,8 @@
 // #include <vector>
 
 // -- local import --
+#include "seg_utils.h"
+#include "init_utils.h"
 #include "fill_missing.h"
 
 // -- define --
@@ -43,6 +46,7 @@ void fill_missing(int* seg,  float* centers, int* missing, bool* border,
                   int nspix, int nmissing, int break_iter){
 
     // -- init launch info --
+    int npix = height*width;
     int num_block_sub = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
     dim3 BlockPerGridSub(num_block_sub,nbatch);
     int num_block = ceil( double(nmissing) / double(THREADS_PER_BLOCK) ); 
@@ -57,14 +61,15 @@ void fill_missing(int* seg,  float* centers, int* missing, bool* border,
     // -- init num neg --
     int num_neg_cpu;
     int prev_neg;
-    int* num_neg_gpu;
-    try {
-      throw_on_cuda_error(cudaMalloc((void**)&num_neg_gpu,sizeofint));
-      // throw_on_cuda_error(malloc((void*)num_neg_cpu,sizeofint));
-    }
-    catch (thrust::system_error& e) {
-        std::cerr << "CUDA error after cudaMalloc: " << e.what() << std::endl;
-    }
+    // int* num_neg_gpu;
+    int* num_neg_gpu = (int*)easy_allocate(1, sizeof(int));
+    // try {
+    //   throw_on_cuda_error(cudaMalloc((void**)&num_neg_gpu,sizeofint));
+    //   // throw_on_cuda_error(malloc((void*)num_neg_cpu,sizeofint));
+    // }
+    // catch (thrust::system_error& e) {
+    //     std::cerr << "CUDA error after cudaMalloc: " << e.what() << std::endl;
+    // }
     num_neg_cpu = 1;
     prev_neg = 1;
 
@@ -125,18 +130,18 @@ void fill_missing(int* seg,  float* centers, int* missing, bool* border,
 ***********************************************************/
 
 __device__ inline
-void isotropic_space(float2 &res, int x, int y, float* center_prop){
-  float dist = -(x - center_prop[0])**2 - (y - center_prop[0])**2;
+void isotropic_space(float2 &res, int label, int x, int y, float* center_prop){
+  float dist = -__powf(x - 1.0*center_prop[0],2.) - __powf(y - 1.0*center_prop[0],2.);
   if (dist > res.x){
-    res.y = N;
+    res.y = label;
     res.x = dist;
   }
 }
 
 __global__
-void update_missing_seg_nn(int* seg, float* centers, bool* border, 
-                        const int nbatch, const int width, const int height,
-                        const int npix, const int xmod3, const int ymod3){   
+void update_missing_seg_nn(int* seg, float* centers, bool* border,
+                           const int nbatch, const int width, const int height,
+                           const int npix, const int xmod3, const int ymod3){   
 
     // -- init --
     int label_check;
@@ -151,7 +156,6 @@ void update_missing_seg_nn(int* seg, float* centers, bool* border,
 
     // -- init neighbors --
     bool nbrs[9];
-    float beta = beta_potts_term;
     bool isNvalid = 0;
     bool isSvalid = 0;
     bool isEvalid = 0;
@@ -217,25 +221,25 @@ void update_missing_seg_nn(int* seg, float* centers, bool* border,
     bool valid = N >= 0;
     label_check = N;
     if (valid){
-      isotropic_space(res, x, y, centers+label_check*2);
+      isotropic_space(res_max, label_check, x, y, centers+label_check*2);
     }
 
     valid = S>=0;
     label_check = S;
     if(valid && (label_check!=N)){
-      isotropic_space(res, x, y, centers+label_check*2);
+      isotropic_space(res_max, label_check, x, y, centers+label_check*2);
     }
 
     valid = W >= 0;
     label_check = W;
     if(valid && (label_check!=S)&&(label_check!=N)) {
-      isotropic_space(res, x, y, centers+label_check*2);
+      isotropic_space(res_max, label_check, x, y, centers+label_check*2);
     }
     
     valid = E >= 0;
     label_check = E;
     if(valid && (label_check!=W)&&(label_check!=S)&&(label_check!=N)){
-      isotropic_space(res, x, y, centers+label_check*2);
+      isotropic_space(res_max, label_check, x, y, centers+label_check*2);
     }
 
     seg[seg_idx] = res_max.y;
@@ -312,13 +316,13 @@ torch::Tensor run_fill_missing(const torch::Tensor spix,
 
     // -- allocate filled spix --
     auto options_i32 = torch::TensorOptions().dtype(torch::kInt32)
-      .layout(torch::kStrided).device(imgs.device());
+      .layout(torch::kStrided).device(spix.device());
     torch::Tensor filled_spix = spix.clone();
     int* filled_spix_ptr = filled_spix.data<int>();
     assert(nbatch==1);
 
     // -- allocate border --
-    bool* border = allocate_border(nbatch*npix);
+    bool* border = (bool*) easy_allocate(nbatch*npix,sizeof(int));
 
     // -- run fill --
     float* centers_ptr = centers.data<float>();
