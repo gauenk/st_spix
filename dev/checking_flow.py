@@ -8,7 +8,6 @@ import st_spix
 from st_spix import flow_utils
 import st_spix_cuda
 import st_spix_prop_cuda
-import st_spix_original_cuda
 from st_spix import flow_utils as futils
 import torchvision.io as iio
 from einops import rearrange,repeat

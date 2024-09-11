@@ -229,7 +229,7 @@ __host__ void update_seg(float* img, int* seg, int* seg_potts_label ,bool* borde
             for (int ymod3 = 0; ymod3 <2; ymod3++){
                 //find the border pixels
                 update_seg_subset<<<BlockPerGrid,ThreadPerBlock>>>(img, seg, \
-                     seg_potts_label,border, sp_params, J_i, logdet_Sigma_i,\
+                     seg_potts_label, border, sp_params, J_i, logdet_Sigma_i,\
                      cal_cov, i_std, s_std, nPixels, nSPs, \
                      nbatch, xdim, ydim, nftrs, xmod3, \
                      ymod3, beta_potts_term);

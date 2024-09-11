@@ -12,7 +12,6 @@ from st_spix.spix_utils import img4bass,mark_spix
 from st_spix import flow_utils
 import st_spix_cuda
 import st_spix_prop_cuda
-import st_spix_original_cuda
 from st_spix import flow_utils as futils
 import torchvision.io as iio
 from einops import rearrange,repeat

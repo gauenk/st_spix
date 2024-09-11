@@ -8,7 +8,6 @@ import st_spix
 from st_spix import flow_utils
 import st_spix_cuda
 import st_spix_prop_cuda
-import st_spix_original_cuda
 from st_spix import flow_utils as futils
 import torchvision.io as iio
 from einops import rearrange,repeat
@@ -206,10 +205,10 @@ def run_exp(cfg):
     npix_in_side = 30
     # i_std,alpha,beta = 0.018,20.,100.
     i_std,alpha,beta = 0.1,0.001,100.
-    spix,means,cov,counts,ids = st_spix_original_cuda.bass_forward(img0,npix_in_side,
+    spix,means,cov,counts,ids = st_spix_cuda.bass_forward(img0,npix_in_side,
                                                                    i_std,alpha,beta)
     timer.sync_start("bass")
-    spix,means,cov,counts,ids = st_spix_original_cuda.bass_forward(img0,npix_in_side,
+    spix,means,cov,counts,ids = st_spix_cuda.bass_forward(img0,npix_in_side,
                                                                    i_std,alpha,beta)
     timer.sync_stop("bass")
     # spix = remap_spix(spix,ids,device="cuda")

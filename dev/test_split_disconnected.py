@@ -10,7 +10,6 @@ from st_spix import flow_utils
 from st_spix.spix_utils import img4bass,mark_spix
 import st_spix_cuda
 import st_spix_prop_cuda
-import st_spix_original_cuda
 from st_spix import flow_utils as futils
 import torchvision.io as iio
 from einops import rearrange,repeat
@@ -99,7 +98,6 @@ def main():
     # -- bass --
     img0 = img4bass(vid[None,0])
     bass_fwd = st_spix_cuda.bass_forward
-    # bass_fwd = st_spix_original_cuda.bass_forward
     spix,means,cov,counts,ids = bass_fwd(img0,sp_size,i_std,alpha,beta)
     ids = ids.unsqueeze(1).expand(-1, means.size(-1)).long()[None,:]
     # print(th.unique(spix.ravel()))

@@ -7,7 +7,6 @@ from pathlib import Path
 import st_spix
 from st_spix import flow_utils
 import st_spix_cuda
-import st_spix_original_cuda
 from st_spix import flow_utils as futils
 import torchvision.io as iio
 from einops import rearrange,repeat
@@ -105,7 +104,7 @@ def run_exp(cfg):
     # -- run img0 bass --
     npix_in_side = 40
     i_std,alpha,beta = 0.018,2.,2.
-    spix,means,cov,counts = st_spix_original_cuda.bass_forward(img0,npix_in_side,
+    spix,means,cov,counts = st_spix_cuda.bass_forward(img0,npix_in_side,
                                                                i_std,alpha,beta)
 
     # -- format for remaining code --

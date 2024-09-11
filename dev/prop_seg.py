@@ -9,7 +9,6 @@ from st_spix import flow_utils
 from st_spix.spix_utils import img4bass,mark_spix
 import st_spix_cuda
 import st_spix_prop_cuda
-import st_spix_original_cuda
 from st_spix import flow_utils as futils
 import torchvision.io as iio
 from einops import rearrange,repeat
@@ -388,7 +387,6 @@ def run_exp(cfg):
         # -- run --
         timer.sync_start("s_iter_%d"%ix)
         spix_curr_s,_,_,_,_ = bass_fwd(img_curr,npix_in_side,i_std,alpha,beta)
-        # spix0,means,cov,counts,ids = st_spix_original_cuda.bass_forward(
         # spix_curr_st,debug = prop_seg(img_curr,spix_st[-1],flow_curr,means,cov,counts,
         #                               niters,inner_niters,npix_in_side,i_std,alpha,beta)
         timer.sync_stop("s_iter_%d"%ix)
