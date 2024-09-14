@@ -10,7 +10,7 @@
 __host__ void update_prop_params(const float* img,const int* seg,
                                  superpixel_params* sp_params,
                                  superpixel_GPU_helper* sp_helper,
-                                 float* prev_means, int* prev_spix,
+                                 superpixel_params* prior_params, int * prior_map,
                                  const int npix, const int nspix,
                                  const int nspix_buffer, const int nbatch,
                                  const int xdim, const int ydim, const int nftrs);
@@ -28,8 +28,8 @@ __global__ void sum_by_label(const float* img, const int* seg,
 
 __global__ void calculate_mu_and_sigma(superpixel_params* sp_params,
                                        superpixel_GPU_helper* sp_helper,
-                                       float* prev_means, int* prev_spix,
-                                       const int nsuperpixel,
-                                       const int nsuperpixel_buffer);
+                                       superpixel_params* prior_params,
+                                       int* prior_map, const int nspix,
+                                       const int nspix_buffer);
 
 

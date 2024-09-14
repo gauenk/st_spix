@@ -38,36 +38,36 @@ setup(
         #     "st_spix/csrc/pybind_original.cpp",
         # ],extra_compile_args={'cxx': ['-g','-w'],'nvcc': ['-O1','-w']}),
         # -- keep me --
-        # CUDAExtension('bass_cuda', [
-        #     # -- pairwise distance --
-        #     'st_spix/csrc/pwd/pair_wise_distance_cuda_source.cu',
-        #     # -- apis --
-        #     # 'st_spix/csrc/bass/dev.cu',
-        #     'st_spix/csrc/bass/core_params.cu',
-        #     # -- shared utils --
-        #     "st_spix/csrc/bass/relabel.cu",
-        #     "st_spix/csrc/bass/sparams_io.cu",
-        #     "st_spix/csrc/spix_prop/split_disconnected.cu",
-        #     # -- share --
-        #     'st_spix/csrc/bass/share/gpu_utils.cu',
-        #     "st_spix/csrc/bass/share/utils.cpp",
-        #     # -- core --
-        #     'st_spix/csrc/bass/core/Superpixels.cpp',
-        #     "st_spix/csrc/bass/core/RgbLab.cu",
-        #     "st_spix/csrc/bass/core/init_seg.cu",
-        #     "st_spix/csrc/bass/core/sp_helper.cu",
-        #     "st_spix/csrc/bass/core/update_param.cu",
-        #     "st_spix/csrc/bass/core/update_seg.cu",
-        #     "st_spix/csrc/bass/core/s_m.cu",
-        #     "st_spix/csrc/bass/core/update_prop_param.cu",
-        #     # -- flow utils --
-        #     "st_spix/csrc/flow_utils/scatter_img.cu",
-        #     "st_spix/csrc/flow_utils/scatter_spix.cu",
-        #     # -- spix pooling --
-        #     "st_spix/csrc/spix_prop/sp_pooling.cu",
-        #     # -- pybind --
-        #     "st_spix/csrc/pybind.cpp",
-        # ],extra_compile_args={'cxx': ['-g','-w'],'nvcc': ['-w']}),
+        CUDAExtension('bass_cuda', [
+            # -- pairwise distance --
+            'st_spix/csrc/pwd/pair_wise_distance_cuda_source.cu',
+            # -- shared utils --
+            "st_spix/csrc/bass/relabel.cu",
+            "st_spix/csrc/prop/sparams_io.cu",
+            # -- apis --
+            # 'st_spix/csrc/bass/dev.cu',
+            'st_spix/csrc/bass/core_params.cu',
+            # "st_spix/csrc/spix_prop/split_disconnected.cu",
+            # -- share --
+            'st_spix/csrc/bass/share/gpu_utils.cu',
+            "st_spix/csrc/bass/share/utils.cpp",
+            # -- core --
+            'st_spix/csrc/bass/core/Superpixels.cpp',
+            "st_spix/csrc/bass/core/RgbLab.cu",
+            "st_spix/csrc/bass/core/init_seg.cu",
+            "st_spix/csrc/bass/core/sp_helper.cu",
+            "st_spix/csrc/bass/core/update_param.cu",
+            "st_spix/csrc/bass/core/update_seg.cu",
+            "st_spix/csrc/bass/core/s_m.cu",
+            "st_spix/csrc/bass/core/update_prop_param.cu",
+            # -- flow utils --
+            "st_spix/csrc/flow_utils/scatter_img.cu",
+            "st_spix/csrc/flow_utils/scatter_spix.cu",
+            # -- spix pooling --
+            "st_spix/csrc/spix_prop/sp_pooling.cu",
+            # -- pybind --
+            "st_spix/csrc/pybind.cpp",
+        ],extra_compile_args={'cxx': ['-g','-w',"-O0"],'nvcc': ['-w','-O0']}),
         # CUDAExtension('prop_cuda', [
         #     # -- share --
         #     'st_spix/csrc/bass/share/gpu_utils.cu',
@@ -99,10 +99,12 @@ setup(
         #     "st_spix/csrc/pybind_dev.cpp",
         # ],extra_compile_args={'cxx': ['-g','-w'],'nvcc': ['-w']})
         CUDAExtension('prop_cuda', [
+            # -- shared utils --
+            "st_spix/csrc/bass/relabel.cu",
+            "st_spix/csrc/prop/sparams_io.cu",
             # -- prop bass spix  --
             "st_spix/csrc/prop/fill_missing.cu",
             "st_spix/csrc/prop/split_disconnected.cu",
-            "st_spix/csrc/bass/relabel.cu",
             "st_spix/csrc/prop/refine_missing.cu",
             # "st_spix/csrc/prop/bass_iters.cu",
             "st_spix/csrc/prop/update_prop_params.cu",
@@ -113,7 +115,7 @@ setup(
             "st_spix/csrc/prop/rgb2lab.cu",
             # -- pybind --
             "st_spix/csrc/pybind_prop.cpp",
-        ],extra_compile_args={'cxx': ['-g','-w'],'nvcc': ['-w']})
+        ],extra_compile_args={'cxx': ['-g','-w',"-O0"],'nvcc': ['-w','-O0']})
     ],
     cmdclass={'build_ext': BuildExtension},
 )

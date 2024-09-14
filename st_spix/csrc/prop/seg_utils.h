@@ -1,3 +1,5 @@
+#include <stdio.h>
+#include <torch/types.h>
 #include "cuda.h"
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
@@ -9,6 +11,16 @@
 
 #ifndef SEG_UTILS_H
 #define SEG_UTILS_H
+
+/* struct superpixel_params_th{ */
+/*   torch::Tensor mu_i; */
+/*   torch::Tensor mu_s; */
+/*   torch::Tensor sigma_s; */
+/*   torch::Tensor logdet_Sigma_s; */
+/*   torch::Tensor counts; */
+/*   torch::Tensor prior_count; */
+/*   torch::Tensor parent_spix; */
+/* }; */
 
 // bass table; decodes if a point is a "simple" based on neighbors
 __device__ const bool bass_lut[256] = {
@@ -59,7 +71,7 @@ void set_nbrs(int NW,int N,int NE,int W,
   return;
 }
 
-__device__ inline float2 cal_prop_posterior(
+__device__ inline float2 cal_prop_likelihood(
     float* imgC, int* seg, int x, int y,
     superpixel_params* sp_params, int seg_idx,
     float3 pix_cov, float logdet_pix_cov,

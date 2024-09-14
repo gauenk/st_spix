@@ -14,7 +14,8 @@
 __host__ void update_prop_params(const float* img, const int* spix,
                                  superpixel_params* sp_params,
                                  superpixel_GPU_helper* sp_helper,
-                                 float* prev_means, int* prev_spix,
+                                 superpixel_params* prior_params,
+                                 int * prior_map,
                                  const int npixels, const int nspix,
                                  const int nspix_buffer, const int nbatch,
                                  const int xdim, const int ydim, const int nftrs){
@@ -30,7 +31,7 @@ __host__ void update_prop_params(const float* img, const int* spix,
     sum_by_label<<<BlockPerGrid1,ThreadPerBlock>>>(img,spix,sp_params,sp_helper,
                                                    npixels,nbatch,xdim,nftrs);
 	calculate_mu_and_sigma<<<BlockPerGrid2,ThreadPerBlock>>>(\
-     sp_params, sp_helper, prev_means, prev_spix, nspix, nspix_buffer); 
+     sp_params, sp_helper, prior_params, prior_map, nspix, nspix_buffer); 
 
 }
 
@@ -67,6 +68,7 @@ void sum_by_label(const float* img,
                   superpixel_GPU_helper* sp_helper,
                   const int npixels, const int nbatch,
                   const int xdim, const int nftrs) {
+
     // todo -- add nbatch and nftrs
     // getting the index of the pixel
     int t = threadIdx.x + blockIdx.x * blockDim.x;
@@ -97,11 +99,10 @@ void sum_by_label(const float* img,
 }
 
 
-
 __global__
 void calculate_mu_and_sigma(superpixel_params*  sp_params,
                             superpixel_GPU_helper* sp_helper,
-                            float* prev_means, int* prev_spix,
+                            superpixel_params*  prior, int* prior_map,
                             const int nsuperpixel, const int nsuperpixel_buffer) {
 
     // -- update thread --
@@ -110,7 +111,19 @@ void calculate_mu_and_sigma(superpixel_params*  sp_params,
 	if (sp_params[k].valid == 0) return;
     
     // -- read previou spix info --
-    int prev_k = prev_spix[k];
+    // int prev_spix = sp_params[
+	// int parent_spix = sp_params[k].parent_spix;
+    int prior_spix = prior_map[k];
+    // bool has_parent = parent_spix >= 0;
+
+    // if (has_parent){
+    //   prev_params[parent_spix].count;
+    // }
+    // int prev_k = prev_spix[k];
+    // if (prev_k != -1){
+    //   pass
+    // }
+  
     // int* means_prev_s = means_prev + prev_k*5;
     // int prev_mu_i_x = means_prev_s[0];
     // int prev_mu_i_y = means_prev_s[1];
@@ -135,9 +148,11 @@ void calculate_mu_and_sigma(superpixel_params*  sp_params,
 		sp_params[k].mu_s.x = mu_x;
 	    sp_params[k].mu_s.y = mu_y;
         
-	    sp_params[k].mu_i.x = sp_helper[k].mu_i_sum.x / count;
-		sp_params[k].mu_i.y = sp_helper[k].mu_i_sum.y / count;
-  		sp_params[k].mu_i.z = sp_helper[k].mu_i_sum.z / count;
+        float c0 = 1. / count;
+        float c1 = 1. / count;
+	    sp_params[k].mu_i.x = c0 * sp_helper[k].mu_i_sum.x;
+		sp_params[k].mu_i.y = c0 * sp_helper[k].mu_i_sum.y;
+  		sp_params[k].mu_i.z = c0 * sp_helper[k].mu_i_sum.z;
 
 	}
 

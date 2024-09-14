@@ -124,10 +124,14 @@ void fill_missing(int* seg,  float* centers, int* missing, bool* border,
 ***********************************************************/
 
 __device__ inline
-float2 isotropic_space(float2 res, int label, int x, int y, float* center_prop){
-  float dist = -__powf(x - 1.0*center_prop[0],2.) - __powf(y - 1.0*center_prop[1],2.);
-  if (dist > res.x){
-    res.x = dist;
+float2 isotropic_space(float2 res, int label, int x, int y,
+                       float* center_prop, int height, int width){
+  // float sim = -100;
+  float dx = (1.0f*x - center_prop[0])/(1.0f*width);
+  float dy = (1.0f*y - center_prop[1])/(1.0f*height);
+  float sim = -dx*dx - dy*dy;
+  if (sim > res.x){
+    res.x = sim;
     res.y = label;
   }
   return res;
@@ -165,8 +169,7 @@ void update_missing_seg_nn(int* seg, float* centers, bool* border,
     // -- init --
     float2 res_max;
     res_max.x = -999999;
-    res_max.y = -2;//seg[seg_idx];
-    // int C = res_max.y;
+    res_max.y = -1;
 
     // --> north, south, east, west <--
     int N = -1, S = -1, E = -1, W = -1;
@@ -216,25 +219,29 @@ void update_missing_seg_nn(int* seg, float* centers, bool* border,
     bool valid = N >= 0;
     label_check = N;
     if (valid){
-      res_max = isotropic_space(res_max, label_check, x, y, centers+label_check*2);
+      res_max = isotropic_space(res_max, label_check, x, y,
+                                centers+label_check*2, height, width);
     }
 
     valid = S>=0;
     label_check = S;
     if(valid && (label_check!=N)){
-      res_max = isotropic_space(res_max, label_check, x, y, centers+label_check*2);
+      res_max = isotropic_space(res_max, label_check, x, y,
+                                centers+label_check*2, height, width);
     }
 
     valid = W >= 0;
     label_check = W;
     if(valid && (label_check!=S)&&(label_check!=N)) {
-      res_max = isotropic_space(res_max, label_check, x, y, centers+label_check*2);
+      res_max = isotropic_space(res_max, label_check, x, y,
+                                centers+label_check*2, height, width);
     }
     
     valid = E >= 0;
     label_check = E;
     if(valid && (label_check!=W)&&(label_check!=S)&&(label_check!=N)){
-      res_max = isotropic_space(res_max, label_check, x, y, centers+label_check*2);
+      res_max = isotropic_space(res_max, label_check, x, y,
+                                centers+label_check*2, height,width);
     }
 
     seg[seg_idx] = res_max.y;
@@ -301,8 +308,6 @@ torch::Tensor run_fill_missing(const torch::Tensor spix,
     int width = spix.size(2);
     int npix = height*width;
     int nmissing = missing.size(1);
-
-    printf("nbatch,height,width,npix,nmissing: %d,%d,%d,%d,%d\n",nbatch,height,width,npix,nmissing);
 
     // -- allocate filled spix --
     auto options_i32 = torch::TensorOptions().dtype(torch::kInt32)

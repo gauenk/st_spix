@@ -11,7 +11,7 @@ def img4bass(img):
     img = rearrange(img,'... f h w -> ... h w f').flip(-1)
     img = img.contiguous()
     if img.ndim == 3: img = img[None,:]
-    if img.max() <= 1:
+    if img.max() <= 2:
         img = (255.*img).type(th.uint8)
     return img
 
@@ -43,15 +43,15 @@ def viz_spix(img_batch,spix_batch,nsp):
     # masks = masks / masks.max()
     return masks
 
-def pool_flow_and_shift_mean(flow,means,spix,ids,version="v1"):
+def pool_flow_and_shift_mean(flow,means,spix,version="v1"):
     if version == "v0":
-        return pool_flow_and_shift_mean_v0(flow,means,spix,ids)
+        return pool_flow_and_shift_mean_v0(flow,means,spix)
     elif version == "v1":
-        return pool_flow_and_shift_mean_v1(flow,means,spix,ids)
+        return pool_flow_and_shift_mean_v1(flow,means,spix)
     else:
         raise ValueError(f"Uknown version [{version}]")
 
-def pool_flow_and_shift_mean_v1(flow,means,spix,ids):
+def pool_flow_and_shift_mean_v1(flow,means,spix):
 
     # -- prepare --
     # flow = rearrange(flow,'b f h w -> b h w f')
@@ -98,7 +98,7 @@ def spix_pool_vid(vid,spix):
     return pooled,downsampled
 
 
-def pool_flow_and_shift_mean_v0(flow,means,spix,ids):
+def pool_flow_and_shift_mean_v0(flow,means,spix):
     # -- get labels --
     K = means.shape[1]
     sims = th_f.one_hot(spix.long(),num_classes=K)*1.

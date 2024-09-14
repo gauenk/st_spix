@@ -83,26 +83,22 @@ void update_missing_seg_subset(float* img, int* seg, bool* border, bool* missing
     res_max.x = -9999;
     res_max.y = __ldg(&seg[pix_idx]);
 
-    // -- read superpixel labels --
-    int NW =__ldg(&seg[pix_idx-xdim-1]);
-    int N = __ldg(&seg[pix_idx-xdim]);
-    int NE = __ldg(&seg[pix_idx-xdim+1]);
-    int W = __ldg(&seg[pix_idx-1]);
-    int E = __ldg(&seg[pix_idx+1]);
-    int SW = __ldg(&seg[pix_idx+xdim-1]);
-    int S = __ldg(&seg[pix_idx+xdim]);
-    int SE =__ldg(&seg[pix_idx+xdim+1]);  
-
-    
     // -- read if missing --
-    bool mNW =missing[pix_idx-xdim-1];
     bool mN = missing[pix_idx-xdim];
-    bool mNE = missing[pix_idx-xdim+1];
     bool mW = missing[pix_idx-1];
     bool mE = missing[pix_idx+1];
-    bool mSW = missing[pix_idx+xdim-1];
     bool mS = missing[pix_idx+xdim];
-    bool mSE =missing[pix_idx+xdim+1];  
+
+    // -- read superpixel labels --
+    int NW =__ldg(&seg[pix_idx-xdim-1]);
+    int N = (mN == 1) ? __ldg(&seg[pix_idx-xdim]) : -1;
+    int NE = __ldg(&seg[pix_idx-xdim+1]);
+    int W = (mW == 1) ? __ldg(&seg[pix_idx-1]) : -1;
+    int E = (mE == 1) ? __ldg(&seg[pix_idx+1]) : -1;
+    int SW = __ldg(&seg[pix_idx+xdim-1]);
+    int S = (mS == 1) ? __ldg(&seg[pix_idx+xdim]) : -1;
+    int SE =__ldg(&seg[pix_idx+xdim+1]);  
+
 
     //N :
     set_nbrs(NW, N, NE,  W, E, SW, S, SE, N, nbrs);
@@ -133,31 +129,31 @@ void update_missing_seg_subset(float* img, int* seg, bool* border, bool* missing
 
     // -- compute posterior --
     label_check = N;
-    assert(label_check >= 0);
-    if (mN == 0)
-      res_max = cal_prop_posterior(imgC,seg,x,y,sp_params,label_check,
+    // assert(label_check >= 0);
+    if (mN == 1)
+      res_max = cal_prop_likelihood(imgC,seg,x,y,sp_params,label_check,
                                    pix_cov,logdet_pix_cov,
                                    count_diff_nbrs_N,beta,res_max);
     label_check = S;
-    assert(label_check >= 0);
-    if( (label_check!=N) &&(mS==0) )
-    res_max = cal_prop_posterior(imgC,seg,x,y,sp_params,label_check,
+    // assert(label_check >= 0);
+    if( (label_check!=N) &&(mS==1) )
+    res_max = cal_prop_likelihood(imgC,seg,x,y,sp_params,label_check,
                                 pix_cov,logdet_pix_cov,
                                 count_diff_nbrs_S,beta,res_max);
 
     label_check = W;
-    assert(label_check >= 0);
-    if ( (label_check!=S)&&(label_check!=N)&&(mW==0))   
-    res_max = cal_prop_posterior(imgC,seg,x,y,sp_params,label_check,
-                                pix_cov,logdet_pix_cov,
-                                count_diff_nbrs_W,beta,res_max);
+    // assert(label_check >= 0);
+    if ( (label_check!=S)&&(label_check!=N)&&(mW==1))   
+      res_max = cal_prop_likelihood(imgC,seg,x,y,sp_params,label_check,
+                                   pix_cov,logdet_pix_cov,
+                                   count_diff_nbrs_W,beta,res_max);
     
     label_check = E;
-    assert(label_check >= 0);
-    if((label_check!=W)&&(label_check!=S)&&(label_check!=N)&&(mE==0))      
-    res_max = cal_prop_posterior(imgC,seg,x,y,sp_params,label_check,
-                                pix_cov,logdet_pix_cov,
-                                count_diff_nbrs_E,beta,res_max);
+    // assert(label_check >= 0);
+    if((label_check!=W)&&(label_check!=S)&&(label_check!=N)&&(mE==1))
+      res_max = cal_prop_likelihood(imgC,seg,x,y,sp_params,label_check,
+                                   pix_cov,logdet_pix_cov,
+                                   count_diff_nbrs_E,beta,res_max);
     seg[pix_idx] = res_max.y;
     return;
 }

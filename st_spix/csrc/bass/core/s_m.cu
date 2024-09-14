@@ -5,7 +5,7 @@
 #include <sstream>
 #include <float.h>
 #include <math.h>
-#include <torch/torch.h> // dev; remove me.
+// #include <torch/torch.h> // dev; remove me.
 
 
 #ifndef OUT_OF_BOUNDS_LABEL
@@ -44,31 +44,31 @@
 #include <unistd.h>
 #endif
 
-void write_tensor_to_file_bool(bool* spix, int h ,int w, const std::string& filename){
-    torch::Device device(torch::kCUDA, 0);
-    auto options_b = torch::TensorOptions().dtype(torch::kBool)
-      .layout(torch::kStrided).device(device);
-    torch::Tensor tensor = torch::from_blob(spix,{h,w},options_b);
-    std::vector<torch::Tensor> tensor_vec = {tensor};
-    torch::save(tensor_vec, filename);
-}
+// void write_tensor_to_file_bool(bool* spix, int h ,int w, const std::string& filename){
+//     torch::Device device(torch::kCUDA, 0);
+//     auto options_b = torch::TensorOptions().dtype(torch::kBool)
+//       .layout(torch::kStrided).device(device);
+//     torch::Tensor tensor = torch::from_blob(spix,{h,w},options_b);
+//     std::vector<torch::Tensor> tensor_vec = {tensor};
+//     torch::save(tensor_vec, filename);
+// }
 
-void write_tensor_to_file_v2(int* spix, int h ,int w, const std::string& filename){
+// void write_tensor_to_file_v2(int* spix, int h ,int w, const std::string& filename){
 
-    // Create a tensor
-    torch::Device device(torch::kCUDA, 0);
-    auto options_i32 = torch::TensorOptions().dtype(torch::kInt32)
-      .layout(torch::kStrided).device(device);
-    // torch::Device device(torch::kCUDA, 0);
-    torch::Tensor tensor = torch::from_blob(spix,{h,w},options_i32);
-    std::vector<torch::Tensor> tensor_vec = {tensor};
+//     // Create a tensor
+//     torch::Device device(torch::kCUDA, 0);
+//     auto options_i32 = torch::TensorOptions().dtype(torch::kInt32)
+//       .layout(torch::kStrided).device(device);
+//     // torch::Device device(torch::kCUDA, 0);
+//     torch::Tensor tensor = torch::from_blob(spix,{h,w},options_i32);
+//     std::vector<torch::Tensor> tensor_vec = {tensor};
 
-    // // Open the file in binary mode
-    // std::ofstream file(filename, std::ios::binary);
+//     // // Open the file in binary mode
+//     // std::ofstream file(filename, std::ios::binary);
 
-    // Serialize and save the tensor
-    torch::save(tensor_vec, filename);
-}
+//     // Serialize and save the tensor
+//     torch::save(tensor_vec, filename);
+// }
 
 
 int tresh = -2;

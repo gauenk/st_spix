@@ -118,29 +118,29 @@ void update_prop_seg_subset(float* img, int* seg, bool* border,
     // -- compute posterior --
     label_check = N;
     assert(label_check >= 0);
-    res_max = cal_prop_posterior(imgC,seg,x,y,sp_params,label_check,
-                                pix_cov,logdet_pix_cov,
-                                count_diff_nbrs_N,beta,res_max);
+    res_max = cal_prop_likelihood(imgC,seg,x,y,sp_params,label_check,
+                                  pix_cov,logdet_pix_cov,
+                                  count_diff_nbrs_N,beta,res_max);
     label_check = S;
     assert(label_check >= 0);
     if(label_check!=N)
-      res_max = cal_prop_posterior(imgC,seg,x,y,sp_params,label_check,
-                                  pix_cov,logdet_pix_cov,
-                                  count_diff_nbrs_S,beta,res_max);
+      res_max = cal_prop_likelihood(imgC,seg,x,y,sp_params,label_check,
+                                    pix_cov,logdet_pix_cov,
+                                    count_diff_nbrs_S,beta,res_max);
 
     label_check = W;
     assert(label_check >= 0);
     if ( (label_check!=S)&&(label_check!=N))
-      res_max = cal_prop_posterior(imgC,seg,x,y,sp_params,label_check,
-                                  pix_cov,logdet_pix_cov,
-                                  count_diff_nbrs_W,beta,res_max);
+      res_max = cal_prop_likelihood(imgC,seg,x,y,sp_params,label_check,
+                                    pix_cov,logdet_pix_cov,
+                                    count_diff_nbrs_W,beta,res_max);
     
     label_check = E;
     assert(label_check >= 0);
     if((label_check!=W)&&(label_check!=S)&&(label_check!=N))
-      res_max = cal_prop_posterior(imgC,seg,x,y,sp_params,label_check,
-                                pix_cov,logdet_pix_cov,
-                                count_diff_nbrs_E,beta,res_max);
+      res_max = cal_prop_likelihood(imgC,seg,x,y,sp_params,label_check,
+                                    pix_cov,logdet_pix_cov,
+                                    count_diff_nbrs_E,beta,res_max);
     seg[pix_idx] = res_max.y;
     return;
 }

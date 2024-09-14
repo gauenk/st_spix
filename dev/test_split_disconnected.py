@@ -58,12 +58,13 @@ def main():
     vid = st_spix.data.davis_example(nframes=15,vid_names=['baseball'],data_set="all")
     # vid = vid[0,3:6,:,:128,290-128:290]
     print(vid.shape,vid.min(),vid.max())
-    vid = resize(vid[0,[5,7],:,:480,:480],(128,128))
+    vid = resize(vid[0,[5,7],:,:480,:480],(256,256))
     print(vid.shape)
 
     # -- run flow [raft] --
     from st_spix.flow_utils import run_raft
-    fflow,bflow = run_raft(vid)
+    fflow,bflow = run_raft(th.clip(255.*vid,0.,255.).type(th.uint8))
+    # fflow,bflow = run_raft(vid)
     # tmp = fflow[:,0].clone()
     # fflow[:,0] = fflow[:,1]
     # fflow[:,1] = tmp
@@ -112,7 +113,7 @@ def main():
     fxn = st_spix_prop_cuda.split_disconnected
     nspix = spix.max().item()+1
     spix_split,children,split_starts = fxn(spix.clone(),nspix)
-    print(children.shape)
+    print("children.shape,nspix: ",children.shape,nspix)
     # print(children)
     # print(th.where(children[:,0]>0)[0])
     # print("nsplits: ",children.shape[1])
@@ -177,6 +178,26 @@ def main():
     spix_split = spix_s.clone()
     fxn = st_spix_prop_cuda.split_disconnected
     spix_split,children,split_starts = fxn(spix_split,nspix)
+    # print("children.shape,nspix: ",children.shape,nspix)
+    # # print(children)
+    # print(spix_split.min())
+    # print(spix_split.max().item()+1,spix.max().item()+1,nspix)
+    nspix_split = spix_split.max().item()+1
+
+    # -- get prior map --
+    # print("nspix: ",nspix,spix.min().item(),spix.max().item())
+    prior_map = th.arange(spix_split.max().item()+1).to(spix_s.device)
+    # print(prior_map.max(),len(prior_map),nspix_split)
+    prior_map[nspix+1:] = -1
+    for i in range(children.shape[1]):
+        if (children[:,i]<0).all(): break
+        old_locations = th.where(children[:,i]>=0)[0]
+        new_locations = children[:,i][old_locations].long()
+        print(new_locations,old_locations)
+        prior_map[new_locations] = old_locations
+    print(prior_map)
+    print("Must all be valid after the splitting disconnected regions: ",th.all(prior_map>=0).item())
+    # prior_map[split_spixel_index] = prior_spixel_index
 
     # ----------------------------------------------------------
     #        Spotcheck

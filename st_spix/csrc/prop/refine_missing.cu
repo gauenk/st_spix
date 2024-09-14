@@ -38,6 +38,7 @@
 #include "refine_missing.h"
 #include "update_prop_params.h"
 #include "update_missing_seg.h"
+#include "sparams_io.h"
 
 // -- define --
 #define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
@@ -55,9 +56,9 @@
 __host__ void refine_missing(float* img, int* seg,
                              superpixel_params* sp_params,
                              superpixel_GPU_helper* sp_helper,
-                             float* prev_means, int* prev_spix,
-                             bool* missing, bool* border,
-                             int niters, int niters_seg,
+                             superpixel_params* prior_params,
+                             int* prior_map, bool* missing,
+                             bool* border, int niters, int niters_seg,
                              float3 pix_cov,float logdet_pix_cov,float potts,
                              int nspix, int nbatch, int width, int height, int nftrs){
 
@@ -70,14 +71,13 @@ __host__ void refine_missing(float* img, int* seg,
 
       // -- Update Parameters with Previous Frame --
       update_prop_params(img, seg, sp_params, sp_helper,
-                         prev_means, prev_spix, npix, nspix,
+                         prior_params, prior_map, npix, nspix,
                          nspix_buffer, nbatch, width, height, nftrs);
 
       // -- Update Segmentation ONLY within missing pix --
       update_missing_seg(img, seg, border, missing, sp_params,
                          niters_seg, pix_cov, logdet_pix_cov, potts,
                          npix, nspix, nbatch, width, height, nftrs);
-
 
     }
 
@@ -91,20 +91,27 @@ __host__ void refine_missing(float* img, int* seg,
 
 ***********************************************************/
 
-torch::Tensor run_refine_missing(const torch::Tensor img_rgb,
-                                 const torch::Tensor spix,
-                                 const torch::Tensor missing,
-                                 const torch::Tensor prev_means,
-                                 const torch::Tensor prev_spix,
-                                 int nspix, int niters, int niters_seg,
-                                 int sp_size, float pix_cov_i, float potts){
+// torch::Tensor
+std::tuple<torch::Tensor,PySuperpixelParams>
+run_refine_missing(const torch::Tensor img_rgb,
+                   const torch::Tensor spix,
+                   const torch::Tensor missing,
+                   const PySuperpixelParams prior_params,
+                   const torch::Tensor prior_map,
+                   int nspix, int niters, int niters_seg,
+                   int sp_size, float pix_cov_i, float potts){
 
     // -- check --
     CHECK_INPUT(img_rgb);
     CHECK_INPUT(spix);
     CHECK_INPUT(missing);
-    CHECK_INPUT(prev_spix);
-    CHECK_INPUT(prev_means);
+    CHECK_INPUT(prior_params.mu_i);
+    CHECK_INPUT(prior_params.mu_s);
+    CHECK_INPUT(prior_params.sigma_s);
+    CHECK_INPUT(prior_params.logdet_Sigma_s);
+    CHECK_INPUT(prior_params.counts);
+    CHECK_INPUT(prior_params.prior_counts);
+    CHECK_INPUT(prior_map);
 
     // -- unpack --
     int nbatch = spix.size(0);
@@ -113,7 +120,8 @@ torch::Tensor run_refine_missing(const torch::Tensor img_rgb,
     int nftrs = img_rgb.size(3);
     int npix = height*width;
     int nmissing = missing.sum().item<int>();
-
+    int init_map_size = prior_map.size(0);
+    
     // -- allocate filled spix --
     auto options_i32 = torch::TensorOptions().dtype(torch::kInt32)
       .layout(torch::kStrided).device(spix.device());
@@ -125,6 +133,10 @@ torch::Tensor run_refine_missing(const torch::Tensor img_rgb,
     const int sparam_size = sizeof(superpixel_params);
     const int helper_size = sizeof(superpixel_GPU_helper);
     bool* border = (bool*)easy_allocate(nbatch*npix,sizeof(bool));
+    // superpixel_params* prior_sp_params;
+    // tensors_to_params(prior_params,prior_sp_params,num);
+    superpixel_params* prior_sp_params = get_tensors_as_params(prior_params_th,sp_size,
+                                                               npix,nspix,nspix_buffer);
     superpixel_params* sp_params=(superpixel_params*)easy_allocate(nspix_buffer,sparam_size);
     superpixel_GPU_helper* sp_helper = (superpixel_GPU_helper*)easy_allocate(nspix_buffer,helper_size);
     init_sp_params(sp_params,sp_size,nspix,nspix_buffer,npix);
@@ -149,25 +161,38 @@ torch::Tensor run_refine_missing(const torch::Tensor img_rgb,
     // -- Get pointers --
     float* img_ptr = img_lab.data<float>();
     int* filled_spix_ptr = filled_spix.data<int>();
-    float* prev_means_ptr = prev_means.data<float>();
-    int* prev_spix_ptr = prev_spix.data<int>();
+    // float* prev_means_ptr = prev_means.data<float>();
+    // int* prev_spix_ptr = prev_spix.data<int>();
     bool* missing_ptr = missing.data<bool>();
+    int* prior_map_r_ptr = prior_map.data<int>();
+
+    // -- allocate larger memory for prior map --
+    int* prior_map_ptr = (int*)easy_allocate(nspix_buffer,sizeof(int));
+    cudaMemset(prior_map_ptr, -1, nspix_buffer*sizeof(int));
+    cudaMemcpy(prior_map_ptr,prior_map_r_ptr,
+               init_map_size*sizeof(int),cudaMemcpyDeviceToDevice);
 
     // -- run fill --
     if (nmissing>0){
       refine_missing(img_ptr,filled_spix_ptr,sp_params,sp_helper,
-                     prev_means_ptr, prev_spix_ptr, missing_ptr, border,
+                     prior_sp_params, prior_map_ptr, missing_ptr, border,
                      niters, niters_seg, pix_cov, logdet_pix_cov, potts,
                      nspix, nbatch, width, height, nftrs);
     }
 
+
+    // -- get spixel parameters as tensors --
+    auto unique_ids = std::get<0>(at::_unique(filled_spix));
+    auto ids = unique_ids.data<int>();
+    int nspix_post = unique_ids.sizes()[0];
+    PySuperpixelParams params = get_params_as_tensors(sp_params,ids,nspix_post);
 
     // -- free --
     cudaFree(border);
     cudaFree(sp_params);
     cudaFree(sp_helper);
 
-    return filled_spix;
+    return std::make_tuple(filled_spix,params);
 }
 
 void init_refine_missing(py::module &m){

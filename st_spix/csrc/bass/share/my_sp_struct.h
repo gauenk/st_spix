@@ -2,7 +2,18 @@
 #include "cuda.h"
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
+#include <torch/types.h>
 
+
+struct PySuperpixelParams{
+  torch::Tensor mu_i;
+  torch::Tensor mu_s;
+  torch::Tensor sigma_s;
+  torch::Tensor logdet_Sigma_s;
+  torch::Tensor counts;
+  torch::Tensor prior_counts;
+  torch::Tensor ids;
+};
 
 struct alignas(16) superpixel_params{
     float3 mu_i;
@@ -13,7 +24,7 @@ struct alignas(16) superpixel_params{
     double log_count;
     int valid;
     float prior_count;
-    int parent_spix;
+    int prior_spix;
 };
 
 /* struct alignas(16) superpixel_GPU_helper_ptrs{ */

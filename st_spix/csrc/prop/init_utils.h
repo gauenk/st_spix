@@ -23,10 +23,6 @@
 
 void throw_on_cuda_error(cudaError_t code);
 void* easy_allocate(int size, int esize);
-/* bool* allocate_border(int size); */
-/* superpixel_params* allocate_sp_params(int size); */
-/* superpixel_GPU_helper* allocate_sp_helper(int size); */
-/* superpixel_GPU_helper_sm* allocate_sm_helper(int size); */
 
 
 /*************************************************

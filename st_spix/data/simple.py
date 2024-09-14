@@ -9,7 +9,7 @@ from pathlib import Path
 # -- data --
 import data_hub
 
-def davis_example(nframes=5,isize=480,vid_names=None,data_set="train"):
+def davis_example(nframes=5,isize=480,vid_names=None,data_set="all"):
 
     # -- data config --
     dcfg = edict()
