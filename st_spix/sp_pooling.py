@@ -2,7 +2,7 @@
 import torch
 from einops import rearrange
 import torch as th
-import st_spix_cuda
+import bass_cuda
 
 def pooling(tensor,spix,nspix=None):
 
@@ -44,7 +44,7 @@ class SuperpixelPooling(torch.autograd.Function):
     @staticmethod
     def forward(ctx, tensor, spix, nspix=None):
         if nspix is None: nspix = (spix.max()+1).item()
-        fwd = st_spix_cuda.sp_pooling_fwd
+        fwd = bass_cuda.sp_pooling_fwd
         tensor = rearrange(tensor,'b f h w -> b h w f').contiguous()
         pooled,downsampled,counts = fwd(tensor.contiguous(),spix.contiguous(),nspix)
         pooled = rearrange(pooled,'b h w f -> b f h w').contiguous()
@@ -109,7 +109,7 @@ class SuperpixelPooling(torch.autograd.Function):
         # exit()
         # # ds_grad = th.gather(ds_grad,spix[None,:].repeat(3,1,1))
 
-        # # bwd = st_spix_cuda.sp_pooling_bwd
+        # # bwd = bass_cuda.sp_pooling_bwd
         # # tensor_grad = bwd(pooled_grad,ds_grad,
         # #                   counts,spix,B,H,W,F,nspix)
         return tensor_grad, None, None

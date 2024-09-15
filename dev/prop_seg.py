@@ -7,7 +7,7 @@ from pathlib import Path
 import st_spix
 from st_spix import flow_utils
 from st_spix.spix_utils import img4bass,mark_spix
-import st_spix_cuda
+import bass_cuda
 import st_spix_prop_cuda
 from st_spix import flow_utils as futils
 import torchvision.io as iio
@@ -326,7 +326,7 @@ def run_exp(cfg):
 
     # -- bass --
     img0 = img4bass(vid[:,0])
-    bass_fwd = st_spix_cuda.bass_forward
+    bass_fwd = bass_cuda.bass_forward
     spix0,means,cov,counts,ids = bass_fwd(img0,npix_in_side,i_std,alpha,beta)
     # print(len(th.unique(spix0)))
     # print(spix0.min(),spix0.max())

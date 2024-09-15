@@ -84,20 +84,24 @@ void update_missing_seg_subset(float* img, int* seg, bool* border, bool* missing
     res_max.y = __ldg(&seg[pix_idx]);
 
     // -- read if missing --
+    bool mNW = missing[pix_idx-xdim-1];
     bool mN = missing[pix_idx-xdim];
+    bool mNE = missing[pix_idx-xdim+1];
     bool mW = missing[pix_idx-1];
     bool mE = missing[pix_idx+1];
+    bool mSW = missing[pix_idx+xdim-1];
     bool mS = missing[pix_idx+xdim];
+    bool mSE = missing[pix_idx+xdim+1];
 
     // -- read superpixel labels --
-    int NW =__ldg(&seg[pix_idx-xdim-1]);
+    int NW = (mNW==1) ? __ldg(&seg[pix_idx-xdim-1]) : -1;
     int N = (mN == 1) ? __ldg(&seg[pix_idx-xdim]) : -1;
-    int NE = __ldg(&seg[pix_idx-xdim+1]);
+    int NE =(mNE == 1) ? __ldg(&seg[pix_idx-xdim+1]) : -1;
     int W = (mW == 1) ? __ldg(&seg[pix_idx-1]) : -1;
     int E = (mE == 1) ? __ldg(&seg[pix_idx+1]) : -1;
-    int SW = __ldg(&seg[pix_idx+xdim-1]);
+    int SW =(mSW == 1)? __ldg(&seg[pix_idx+xdim-1]) : -1;
     int S = (mS == 1) ? __ldg(&seg[pix_idx+xdim]) : -1;
-    int SE =__ldg(&seg[pix_idx+xdim+1]);  
+    int SE =(mSE == 1)? __ldg(&seg[pix_idx+xdim+1]): -1;  
 
 
     //N :
@@ -132,8 +136,8 @@ void update_missing_seg_subset(float* img, int* seg, bool* border, bool* missing
     // assert(label_check >= 0);
     if (mN == 1)
       res_max = cal_prop_likelihood(imgC,seg,x,y,sp_params,label_check,
-                                   pix_cov,logdet_pix_cov,
-                                   count_diff_nbrs_N,beta,res_max);
+                                    pix_cov,logdet_pix_cov,
+                                    count_diff_nbrs_N,beta,res_max);
     label_check = S;
     // assert(label_check >= 0);
     if( (label_check!=N) &&(mS==1) )
@@ -179,12 +183,10 @@ __host__ void update_missing_seg(float* img, int* seg, bool* border, bool* missi
     int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
     dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
     dim3 BlockPerGrid(num_block,nbatch);
-    int single_border = 0;
     for (int iter = 0 ; iter < niters; iter++){
         cudaMemset(border, 0, npix*sizeof(bool));
         find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(seg, border, npix,
-                                                            nbatch, xdim, ydim,
-                                                            single_border);
+                                                            nbatch, xdim, ydim);
         for (int xmod3 = 0 ; xmod3 <2; xmod3++){
             for (int ymod3 = 0; ymod3 <2; ymod3++){
                 update_missing_seg_subset<<<BlockPerGrid,ThreadPerBlock>>>(img, seg, \
@@ -195,7 +197,7 @@ __host__ void update_missing_seg(float* img, int* seg, bool* border, bool* missi
     }
     cudaMemset(border, 0, npix*sizeof(bool));
     find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(\
-           seg, border, npix, nbatch, xdim, ydim, single_border);
+           seg, border, npix, nbatch, xdim, ydim);
 }
 
 

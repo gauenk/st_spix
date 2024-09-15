@@ -55,21 +55,19 @@
 
 __host__ void refine_missing(float* img, int* seg,
                              superpixel_params* sp_params,
-                             superpixel_GPU_helper* sp_helper,
                              superpixel_params* prior_params,
-                             int* prior_map, bool* missing,
-                             bool* border, int niters, int niters_seg,
+                             int* prior_map, bool* missing, bool* border,
+                             superpixel_GPU_helper* sp_helper,
+                             int niters, int niters_seg,
                              float3 pix_cov,float logdet_pix_cov,float potts,
                              int nspix, int nbatch, int width, int height, int nftrs){
 
-  // "border" & "sp_helper" _maybe_ be allocated here.
-    
     // -- init --
     int npix = height * width;
     int nspix_buffer = nspix * 45;
     for (int i = 0; i < niters; i++) {
 
-      // -- Update Parameters with Previous Frame --
+      // -- Update Parameters with Previous SuperpixelParams as Prior --
       update_prop_params(img, seg, sp_params, sp_helper,
                          prior_params, prior_map, npix, nspix,
                          nspix_buffer, nbatch, width, height, nftrs);
@@ -81,7 +79,7 @@ __host__ void refine_missing(float* img, int* seg,
 
     }
 
-    CudaFindBorderPixels_end(seg, border, npix, nbatch, width, height, 1);
+    CudaFindBorderPixels_end(seg, border, npix, nbatch, width, height);
 }
 
 
@@ -133,12 +131,12 @@ run_refine_missing(const torch::Tensor img_rgb,
     const int sparam_size = sizeof(superpixel_params);
     const int helper_size = sizeof(superpixel_GPU_helper);
     bool* border = (bool*)easy_allocate(nbatch*npix,sizeof(bool));
-    // superpixel_params* prior_sp_params;
-    // tensors_to_params(prior_params,prior_sp_params,num);
-    superpixel_params* prior_sp_params = get_tensors_as_params(prior_params_th,sp_size,
+    superpixel_params* prior_sp_params = get_tensors_as_params(prior_params,sp_size,
                                                                npix,nspix,nspix_buffer);
-    superpixel_params* sp_params=(superpixel_params*)easy_allocate(nspix_buffer,sparam_size);
-    superpixel_GPU_helper* sp_helper = (superpixel_GPU_helper*)easy_allocate(nspix_buffer,helper_size);
+    superpixel_params* sp_params=(superpixel_params*)easy_allocate(nspix_buffer,
+                                                                   sparam_size);
+    superpixel_GPU_helper* sp_helper=(superpixel_GPU_helper*)easy_allocate(nspix_buffer,
+                                                                           helper_size);
     init_sp_params(sp_params,sp_size,nspix,nspix_buffer,npix);
 
     // bool* border = allocate_border(nbatch*npix);
@@ -161,8 +159,6 @@ run_refine_missing(const torch::Tensor img_rgb,
     // -- Get pointers --
     float* img_ptr = img_lab.data<float>();
     int* filled_spix_ptr = filled_spix.data<int>();
-    // float* prev_means_ptr = prev_means.data<float>();
-    // int* prev_spix_ptr = prev_spix.data<int>();
     bool* missing_ptr = missing.data<bool>();
     int* prior_map_r_ptr = prior_map.data<int>();
 
@@ -174,10 +170,10 @@ run_refine_missing(const torch::Tensor img_rgb,
 
     // -- run fill --
     if (nmissing>0){
-      refine_missing(img_ptr,filled_spix_ptr,sp_params,sp_helper,
+      refine_missing(img_ptr,filled_spix_ptr,sp_params,
                      prior_sp_params, prior_map_ptr, missing_ptr, border,
-                     niters, niters_seg, pix_cov, logdet_pix_cov, potts,
-                     nspix, nbatch, width, height, nftrs);
+                     sp_helper, niters, niters_seg, pix_cov, logdet_pix_cov,
+                     potts, nspix, nbatch, width, height, nftrs);
     }
 
 

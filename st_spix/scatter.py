@@ -1,5 +1,6 @@
 import torch as th
-import st_spix_cuda
+# import st_spix_cuda
+import bass_cuda
 from einops import rearrange,repeat
 
 def run(img,flow,swap_c=True):
@@ -9,7 +10,7 @@ def run(img,flow,swap_c=True):
     eps = 1e-10
     # flow[...,0] = -2.*flow[...,0]
     flow[...,1] = -flow[...,1]
-    scatter,cnts = st_spix_cuda.scatter_img_forward(img.contiguous(),
+    scatter,cnts = bass_cuda.scatter_img_forward(img.contiguous(),
                                                     flow.contiguous(),eps)
     if swap_c:
         scatter = rearrange(scatter,'b h w c -> b c h w')

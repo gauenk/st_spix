@@ -25,7 +25,6 @@ from st_spix import flow_utils as futils
 
 from torchvision.transforms.functional import resize
 
-import st_spix_cuda
 from st_spix import scatter
 from st_spix import deform
 from st_spix.sp_pooling import pooling,SuperpixelPooling
@@ -33,12 +32,34 @@ from st_spix.sp_pooling import pooling,SuperpixelPooling
 import stnls
 from dev_basics import flow as flow_pkg
 
+import matplotlib as mpl
 import matplotlib.cm as cm
 from matplotlib import colormaps
 from matplotlib import patches, pyplot as plt
 # import matplotlib.pyplot as plt
 
 from st_spix.prop import stream_bass
+
+def draw_spix_vid(vid,spix):
+    viz_seg = []
+    nspix = spix.max().item()+1
+    for t in range(vid.shape[0]):
+        viz_seg.append(draw_spix(vid[t],spix[t],nspix))
+    viz_seg = th.stack(viz_seg)
+    return viz_seg/255.
+
+def draw_spix(img,spix,nspix):
+    masks = th.nn.functional.one_hot(spix.long(),num_classes=nspix).bool()
+    masks = masks.permute(2,0,1)
+    # nspix = spix.max().item()+1
+    viridis = mpl.colormaps['tab20'].resampled(nspix)
+    scolors = [list(255*a for a in viridis(ix/(1.*nspix))[:3]) for ix in range(nspix)]
+    print(img.min(),img.max())
+    img = th.clip(255*img,0.,255.).type(th.uint8)
+    # print(img.shape,masks.shape)
+    # print(masks[0])
+    marked = tv_utils.draw_segmentation_masks(img,masks,colors=scolors)
+    return marked
 
 def main():
 
@@ -47,10 +68,11 @@ def main():
     if not root.exists(): root.mkdir()
 
     # -- config --
-    niters = 30
+    niters = 20
     niters_seg = 4
-    sp_size = 10
+    sp_size = 12
     alpha,potts = 10.,10.
+    pix_cov = 0.1
 
     # -- read img/flow --
     # vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['tennis'])
@@ -68,8 +90,12 @@ def main():
         exit()
 
     # -- resize again --
-    vid = resize(vid,(64,64))
-    fflow = resize(fflow,(64,64))/2. # reduced scale by 2
+    # vid = resize(vid,(64,64))
+    # fflow = resize(fflow,(64,64))/2. # reduced scale by 2
+    size = 64
+    vid = resize(vid,(size,size))
+    fflow = resize(fflow,(size,size))/(128./size) # reduced scale by X
+
 
     # -- save --
     B,F,H,W = vid.shape
@@ -77,7 +103,7 @@ def main():
 
     # -- propogate --
     spix,children = stream_bass(vid,flow=fflow,niters=niters,niters_seg=niters_seg,
-                                sp_size=sp_size,alpha=alpha,potts=potts)
+                                sp_size=sp_size,pix_cov=pix_cov,alpha=alpha,potts=potts)
     # -- view --
     marked = mark_spix_vid(vid,spix)
     marked[1,0][th.where(spix[1]<0)] = 0.
@@ -86,8 +112,13 @@ def main():
     marked[1,0][th.where(spix[1]==60)] = 1.
     marked[1,1][th.where(spix[1]==60)] = 0.
     marked[1,2][th.where(spix[1]==60)] = 0.
+
+    # -- save --
+    print("saving images.")
+    viz_seg = draw_spix_vid(vid,spix)
     futils.viz_flow_quiver(root/"flow.png",fflow[[0]],step=2)
     tv_utils.save_image(marked,root / "marked_fill.png")
+    tv_utils.save_image(viz_seg,root / "viz_seg.png")
 
 
 if __name__ == "__main__":

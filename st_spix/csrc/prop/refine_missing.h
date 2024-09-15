@@ -11,9 +11,9 @@
 
 __host__ void refine_missing(float* img, int* seg,
                              superpixel_params* sp_params,
-                             superpixel_GPU_helper* sp_helper,
                              superpixel_params* prior_params,
                              int* prior_map, bool* missing, bool* border,
+                             superpixel_GPU_helper* sp_helper,
                              int niters, int niters_seg, float3 pix_cov,
                              float logdet_pix_cov, float potts,
                              int nspix, int nbatch, int width, int height, int nftrs);

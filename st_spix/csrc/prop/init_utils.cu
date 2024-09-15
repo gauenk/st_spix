@@ -17,7 +17,7 @@
 
 **************************************************/
 
-void throw_on_cuda_error(cudaError_t code){
+void throw_on_cuda_error_prop(cudaError_t code){ // new name since two .so objects (ugh)
   if(code != cudaSuccess){
     throw thrust::system_error(code, thrust::cuda_category());
   }
@@ -26,7 +26,7 @@ void throw_on_cuda_error(cudaError_t code){
 void* easy_allocate(int size, int esize){
   void* mem;
   try {
-    throw_on_cuda_error(cudaMalloc((void**)&mem,size*esize));
+    throw_on_cuda_error_prop(cudaMalloc((void**)&mem,size*esize));
   }
   catch (thrust::system_error& e) {
     std::cerr << "CUDA error after cudaMalloc: " << e.what() << std::endl;

@@ -108,8 +108,7 @@ __device__ inline float2 cal_prop_likelihood(
     res = res - beta*neigh_neq;
 
     // -- update res --
-    if( res>res_max.x)
-    {
+    if( res>res_max.x ){
       res_max.x = res;
       res_max.y = seg_idx;
     }
@@ -120,14 +119,12 @@ __device__ inline float2 cal_prop_likelihood(
 #endif
 
 
-__host__ void CudaFindBorderPixels( const int* seg, bool* border, const int nPixels, const int nbatch, const int xdim, const int ydim, const int single_border);
-__host__ void CudaFindBorderPixels_end( const int* seg, bool* border, const int nPixels, const int nbatch, const int xdim, const int ydim, const int single_border);
+__host__ void CudaFindBorderPixels( const int* seg, bool* border, const int nPixels, const int nbatch, const int xdim, const int ydim);
+__host__ void CudaFindBorderPixels_end( const int* seg, bool* border, const int nPixels, const int nbatch, const int xdim, const int ydim);
 
 __global__  void find_border_pixels( const int* seg, bool* border,
                                      const int nPixels, const int nbatch,
-                                     const int xdim, const int ydim,
-                                     const int single_border);
+                                     const int xdim, const int ydim);
 __global__  void find_border_pixels_end(const int* seg, bool* border,
                                         const int nPixels, const int nbatch,
-                                        const int xdim, const int ydim,
-                                        const int single_border);
+                                        const int xdim, const int ydim);

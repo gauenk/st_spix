@@ -140,10 +140,9 @@ __global__ void InitHexSeg(int* seg, double* centers, int K, int nPts,
 
 
 
-
-
 // for everypixel, assign it to a superptxel
-__global__ void  InitSquareSeg(int* seg, int nPts, int sz, int xdim, int ydim){
+__global__ void  InitSquareSeg(int* seg, int nPts, int sz,
+                               int nbatch, int xdim, int ydim){
 	int t = threadIdx.x + blockIdx.x * blockDim.x; 
 	if (t>=nPts) return;
 	

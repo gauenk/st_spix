@@ -1,10 +1,8 @@
 
 
-
-
-
 # -- basic --
 import os
+import copy
 import torch as th
 import numpy as np
 import pandas as pd
@@ -29,8 +27,10 @@ from dev_basics.utils.timer import ExpTimer,TimeIt
 from dev_basics.utils.metrics import compute_psnrs
 
 # -- c++ code --
-import st_spix_cuda
+# import st_spix_cuda
+import bass_cuda
 import prop_cuda
+from .param_utils import copy_spix_params
 
 
 def stream_bass(vid,flow=None,niters=30,niters_seg=5,
@@ -47,10 +47,25 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=5,
 
     # -- bass --
     img_t = img4bass(vid[None,0])
-    bass_fwd = st_spix_cuda.bass_forward
-    # spix_t,means_t,cov_t,counts_t,ids_t = bass_fwd(img_t,sp_size,pix_cov,alpha,potts)
-    spix_t,params_t,ids_t = bass_fwd(img_t,sp_size,pix_cov,alpha,potts)
+    # bass_fwd = st_spix_cuda.bass_forward
+    # # spix_t,means_t,cov_t,counts_t,ids_t = bass_fwd(img_t,sp_size,pix_cov,alpha,potts)
+    # spix_t,params_t,ids_t = bass_fwd(img_t,sp_size,pix_cov,alpha,potts)
 
+    # bass_forward_cuda(const torch::Tensor imgs,
+    #                   int nPixels_in_square_side, float i_std,
+    #                   float alpha, float beta){
+
+    # print(sp_size,pix_cov,alpha,potts)
+    # print(bass_cuda.__file__)
+    # print(dir(bass_cuda))
+    # print(bass_cuda.SuperpixelParams)
+
+    spix_t,params_t = bass_cuda.bass_forward(img_t,sp_size,pix_cov,alpha,potts)
+    # print(params_t)
+    # print(params_t.mu_i)
+    # params_copy = copy_spix_params(params_t)
+    # print(params_copy.mu_i)
+    # exit()
     print(flow[:,0].abs().min().item(),flow[:,0].abs().max().item(),
           flow[:,1].abs().min().item(),flow[:,1].abs().max().item())
 
@@ -69,28 +84,31 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=5,
         # -- run --
         outs = run_prop(img_t,flow_t,spix_tm1,params_tm1,
                         niters,niters_seg,sp_size,pix_cov,alpha,potts)
-        spix_t,means_t,cov_t,counts_t,children_t = outs
+        spix_t,params_t,children_t = outs
 
         # -- append --
         spix.append(spix_t)
+        params.append(params_t)
         children.append(children_t)
 
     spix = th.stack(spix)[:,0]
     return spix,children
 
+
 def run_prop(img,flow,spix_tm1,params_tm1,
              niters,niters_seg,sp_size,pix_cov,alpha,potts):
 
     # -- unpack --
-    nspix = spix_tm1.max().item()+1
+    nspix_tm1 = spix_tm1.max().item()+1
     eps = 1e-13
 
     # -- get superpixel flows and shift means --
+    params_tm1 = copy_spix_params(params_tm1)
+    means_tm1 = params_tm1.mu_s[None,:]
     fxn = st_spix.pool_flow_and_shift_mean
-    flow_sp,means_shift = fxn(flow,means_tm1.clone(),spix_tm1)
-    outs = shift_labels(spix_tm1,means_tm1[0],flow_sp)
+    flow_sp,means_shift = fxn(flow,params_tm1.mu_s[None,:],spix_tm1)
+    outs = shift_labels(spix_tm1,params_tm1.mu_s,flow_sp) #? mu_s [shifted]/[unshifted]?
     spix_prop,missing,missing_mask = outs
-
 
     # # -- edge case --
     # if missing.numel() == 0:
@@ -102,42 +120,48 @@ def run_prop(img,flow,spix_tm1,params_tm1,
     # print(flow_sp[0,60])
 
     # -- fill missing pixels --
-    centers = means_shift[...,-2:].contiguous()
+    # centers = means_shift[...,-2:].contiguous()
     # print(centers)
-    # print(spix_prop.shape,centers.shape,missing.shape,nspix)
-    spix_prop = prop_cuda.fill_missing(spix_prop,centers,missing,nspix,0)
+    # print(spix_prop.shape,centers.shape,missing.shape,nspix_tm1)
+    spix_prop = prop_cuda.fill_missing(spix_prop,params_tm1.mu_s,missing,nspix_tm1,0)
+    assert(spix_prop.min().item() >= 0)
     # print(spix_prop.min().item(),spix_prop.max().item())
     # exit()
 
-    spix = spix_prop
-    means = means_tm1
-    cov = cov_tm1
-    counts = counts_tm1
+    # spix = spix_prop
+    # means = means_tm1
+    # cov = cov_tm1
+    # counts = counts_tm1
 
     # -- split disconnected --
-    spix_prop,children,splits = prop_cuda.split_disconnected(spix_prop,nspix)
+    spix_prop,children_t,splits = prop_cuda.split_disconnected(spix_prop,nspix_tm1)
 
     # -- refine missing --
     # print(img.dtype,spix_prop.dtype,missing_mask.dtype,means_tm1.dtype,spix_tm1.dtype)
     # print(spix_prop.min(),spix_prop.max())
     # exit()
 
-    # missing_mask[...] = 1
+    missing_mask[...] = 1
+    init_border = prop_cuda.find_border(spix_prop)
+    # missing_mask = th.logical_or(missing_mask,init_border)
     # missing_mask = ~missing_mask
     # print("missing_mask.shape: ",missing_mask.shape)
     # exit()
-    prior_map = get_prior_map(spix_prop,children)
-    spix = prop_cuda.refine_missing(img,spix_prop,missing_mask,
-                                    params_tm1,prior_map,
-                                    nspix,niters,niters_seg,
-                                    sp_size,pix_cov,potts)
+    prior_map = get_prior_map(spix_prop,children_t,nspix_tm1).int()
+    nspix_t = spix_prop.max().item()+1
+    spix_t,params_t = prop_cuda.refine_missing(img,spix_prop,missing_mask,
+                                               params_tm1,prior_map,
+                                               nspix_t,niters,niters_seg,
+                                               sp_size,pix_cov,potts)
+
     # spix,means,cov,counts,ids = outs
-    # spix[th.where(missing_mask>0)]=-1
+    # spix_t[th.where(missing_mask>0)]=-1
 
     # -- then bass iters --
     # ...
 
-    return spix,means,cov,counts,children
+
+    return spix_t,params_t,children_t
 
 
 """
@@ -146,12 +170,12 @@ def run_prop(img,flow,spix_tm1,params_tm1,
 
 """
 
-def get_prior_map(spix_split,children):
+def get_prior_map(spix_split,children,nspix_before_split):
     # -- get prior map --
     # print("nspix: ",nspix,spix.min().item(),spix.max().item())
     prior_map = th.arange(spix_split.max().item()+1).to(spix_split.device)
     # print(prior_map.max(),len(prior_map),nspix_split)
-    prior_map[nspix+1:] = -1
+    prior_map[nspix_before_split+1:] = -1
     for i in range(children.shape[1]):
         if (children[:,i]<0).all(): break
         old_locations = th.where(children[:,i]>=0)[0]

@@ -7,6 +7,15 @@
 #include <assert.h>
 #include "seg_utils.h"
 
+
+// -- define --
+#include <torch/types.h>
+#include <torch/extension.h>
+#define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
+#define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
+#define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
+#define THREADS_PER_BLOCK 512
+
 /**********************************************
 ***********************************************
 
@@ -17,18 +26,16 @@
 ***********************************************
 **********************************************/
 
-__host__ void CudaFindBorderPixels(const int* seg, bool* border, const int nPixels, const int nbatch,const int xdim,const int ydim, const int single_border){
+__host__ void CudaFindBorderPixels(const int* seg, bool* border, const int nPixels, const int nbatch,const int xdim,const int ydim){
     int num_block = ceil( double(nPixels) / double(THREADS_PER_BLOCK) ); 
     dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
     dim3 BlockPerGrid(num_block,nbatch);
     find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(seg,border,nPixels,
-                                                        nbatch, xdim, ydim,
-                                                        single_border);
+                                                        nbatch, xdim, ydim);
 }
 
 __global__  void find_border_pixels(const int* seg, bool* border, const int nPixels,
-                                    const int nbatch, const int xdim, const int ydim,
-                                    const int single_border){   
+                                    const int nbatch, const int xdim, const int ydim){   
     int idx = threadIdx.x + blockIdx.x * blockDim.x;  
     if (idx>=nPixels) return; 
 
@@ -72,19 +79,18 @@ __global__  void find_border_pixels(const int* seg, bool* border, const int nPix
 **********************************************/
 
 
-__host__ void CudaFindBorderPixels_end(const int* seg, bool* border, const int nPixels, const int nbatch,const int xdim,const int ydim, const int single_border){   
+__host__ void CudaFindBorderPixels_end(const int* seg, bool* border, const int nPixels, const int nbatch,const int xdim,const int ydim){   
     int num_block = ceil( double(nPixels) / double(THREADS_PER_BLOCK) ); 
     dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
     dim3 BlockPerGrid(num_block,nbatch);
     find_border_pixels_end<<<BlockPerGrid,ThreadPerBlock>>>(seg,border,nPixels,
-                                                            nbatch, xdim, ydim,
-                                                            single_border);
+                                                            nbatch, xdim, ydim);
 }
 
 
-__global__  void find_border_pixels_end(const int* seg, bool* border, const int nPixels,
-                                        const int nbatch, const int xdim, const int ydim,
-                                        const int single_border){   
+__global__  void find_border_pixels_end(const int* seg, bool* border,
+                                        const int nPixels, const int nbatch,
+                                        const int xdim, const int ydim){   
     int idx = threadIdx.x + blockIdx.x * blockDim.x;  
     if (idx>=nPixels) return; 
 
@@ -122,4 +128,36 @@ __global__  void find_border_pixels_end(const int* seg, bool* border, const int 
 
     return;        
 }
+
+/**********************************************************
+
+             -=-=-=-=- Python API  -=-=-=-=-=-
+
+***********************************************************/
+
+
+torch::Tensor run_find_border(const torch::Tensor spix){
+
+  CHECK_INPUT(spix);
+  int nbatch = spix.size(0);
+  int height = spix.size(1);
+  int width = spix.size(2);
+  int npix = height*width;
+  assert(nbatch==1);
+
+  // -- allocate border --
+  auto options_b = torch::TensorOptions().dtype(torch::kBool)
+    .layout(torch::kStrided).device(spix.device());
+  torch::Tensor border = torch::zeros({height,width},options_b);
+  bool* border_ptr = border.data<bool>();
+  
+  CudaFindBorderPixels(spix.data<int>(), border_ptr, npix,nbatch,width,height);
+  return border;
+
+}
+
+void init_seg_utils(py::module &m){
+  m.def("find_border", &run_find_border,"run find border");
+}
+
 

@@ -166,12 +166,10 @@ __host__ void update_prop_seg(float* img, int* seg, bool* border,
     int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
     dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
     dim3 BlockPerGrid(num_block,nbatch);
-    int single_border = 0;
     for (int iter = 0 ; iter < niters; iter++){
         cudaMemset(border, 0, npix*sizeof(bool));
         find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(seg, border, npix,
-                                                            nbatch, xdim, ydim,
-                                                            single_border);
+                                                            nbatch, xdim, ydim);
         for (int xmod3 = 0 ; xmod3 <2; xmod3++){
             for (int ymod3 = 0; ymod3 <2; ymod3++){
                 update_prop_seg_subset<<<BlockPerGrid,ThreadPerBlock>>>(img, seg, \
@@ -182,7 +180,7 @@ __host__ void update_prop_seg(float* img, int* seg, bool* border,
     }
     cudaMemset(border, 0, npix*sizeof(bool));
     find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(\
-           seg, border, npix, nbatch, xdim, ydim, single_border);
+           seg, border, npix, nbatch, xdim, ydim);
 }
 
 

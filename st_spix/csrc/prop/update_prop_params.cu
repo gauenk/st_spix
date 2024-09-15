@@ -113,7 +113,7 @@ void calculate_mu_and_sigma(superpixel_params*  sp_params,
     // -- read previou spix info --
     // int prev_spix = sp_params[
 	// int parent_spix = sp_params[k].parent_spix;
-    int prior_spix = prior_map[k];
+    int prior_k = prior_map[k];
     // bool has_parent = parent_spix >= 0;
 
     // if (has_parent){
@@ -138,21 +138,55 @@ void calculate_mu_and_sigma(superpixel_params*  sp_params,
 	double count = count_int * 1.0;
 	double mu_x = 0.0;
 	double mu_y = 0.0;
+    // double2 mu_s_prior = 0;
 
 	// -- calculate the mean --
 	if (count_int>0){
 
 		sp_params[k].log_count = log(count);
-	    mu_x = sp_helper[k].mu_s_sum.x / count;
-	    mu_y = sp_helper[k].mu_s_sum.y / count;
+	    mu_x = sp_helper[k].mu_s_sum.x;// / count;
+	    mu_y = sp_helper[k].mu_s_sum.y;// / count;
+        mu_x = mu_x / count;
+        mu_y = mu_y / count;
+
+        // // -- modifiy with prior --
+        // if (prior_k>=0){
+        //   double2 prior_mu_s = prior[prior_k].mu_s;
+        //   // float prior_count = 1.0*prior[prior_k].count;
+        //   mu_x = 0.5*(mu_x  + prior_mu_s.x);
+        //   mu_y = 0.5*(mu_y  + prior_mu_s.y);
+        // }
+
 		sp_params[k].mu_s.x = mu_x;
 	    sp_params[k].mu_s.y = mu_y;
         
         float c0 = 1. / count;
         float c1 = 1. / count;
-	    sp_params[k].mu_i.x = c0 * sp_helper[k].mu_i_sum.x;
-		sp_params[k].mu_i.y = c0 * sp_helper[k].mu_i_sum.y;
-  		sp_params[k].mu_i.z = c0 * sp_helper[k].mu_i_sum.z;
+
+        // // -- modifiy with prior --
+        // if (prior_k>=0){
+        //   // double2 prior_mu_s = prior[prior_k].mu_s;
+        //   // float prior_count = 1.0*prior[prior_k].count;
+        //   // mu_x = 0.5*(mu_x  + prior_mu_s.x);
+        //   // mu_y = 0.5*(mu_y  + prior_mu_s.y);
+        //   // sp_params[k].mu_i.x=0.5*(c0 * sp_helper[k].mu_i_sum.x + prior[prior_k].mu_i.x);
+        //   // sp_params[k].mu_i.y=0.5*(c0 * sp_helper[k].mu_i_sum.y + prior[prior_k].mu_i.y);
+        //   // sp_params[k].mu_i.z=0.5*(c0 * sp_helper[k].mu_i_sum.z + prior[prior_k].mu_i.z);
+        //   sp_params[k].mu_i.x=prior[prior_k].mu_i.x;
+        //   sp_params[k].mu_i.y=prior[prior_k].mu_i.y;
+        //   sp_params[k].mu_i.z=prior[prior_k].mu_i.z;
+
+
+        // }else{
+
+        //   sp_params[k].mu_i.x = c0 * sp_helper[k].mu_i_sum.x;
+        //   sp_params[k].mu_i.y = c0 * sp_helper[k].mu_i_sum.y;
+        //   sp_params[k].mu_i.z = c0 * sp_helper[k].mu_i_sum.z;
+        // }
+
+        sp_params[k].mu_i.x = c0 * sp_helper[k].mu_i_sum.x;
+        sp_params[k].mu_i.y = c0 * sp_helper[k].mu_i_sum.y;
+        sp_params[k].mu_i.z = c0 * sp_helper[k].mu_i_sum.z;
 
 	}
 

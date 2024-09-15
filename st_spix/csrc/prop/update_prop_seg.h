@@ -13,7 +13,7 @@ void update_prop_seg_subset(float* img, int* seg, bool* border,
                                const int xmod3, const int ymod3);
 
 __host__
-void update_propa_seg(float* img, int* seg, bool* border,
+void update_prop_seg(float* img, int* seg, bool* border,
                       superpixel_params* sp_params, const int niters,
                       const float3 pix_cov, const float logdet_pix_cov,
                       const float potts, const int npix, const int nspix,

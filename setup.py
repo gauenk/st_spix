@@ -44,6 +44,7 @@ setup(
             # -- shared utils --
             "st_spix/csrc/bass/relabel.cu",
             "st_spix/csrc/prop/sparams_io.cu",
+            "st_spix/csrc/prop/init_utils.cu",
             # -- apis --
             # 'st_spix/csrc/bass/dev.cu',
             'st_spix/csrc/bass/core_params.cu',
@@ -67,7 +68,7 @@ setup(
             "st_spix/csrc/spix_prop/sp_pooling.cu",
             # -- pybind --
             "st_spix/csrc/pybind.cpp",
-        ],extra_compile_args={'cxx': ['-g','-w',"-O0"],'nvcc': ['-w','-O0']}),
+        ],extra_compile_args={'cxx': ['-g','-w'],'nvcc': ['-w']}),
         # CUDAExtension('prop_cuda', [
         #     # -- share --
         #     'st_spix/csrc/bass/share/gpu_utils.cu',
@@ -106,7 +107,7 @@ setup(
             "st_spix/csrc/prop/fill_missing.cu",
             "st_spix/csrc/prop/split_disconnected.cu",
             "st_spix/csrc/prop/refine_missing.cu",
-            # "st_spix/csrc/prop/bass_iters.cu",
+            # "st_spix/csrc/prop/prop_bass.cu",
             "st_spix/csrc/prop/update_prop_params.cu",
             "st_spix/csrc/prop/update_missing_seg.cu",
             "st_spix/csrc/prop/update_prop_seg.cu",
