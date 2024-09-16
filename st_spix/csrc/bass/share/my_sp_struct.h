@@ -69,6 +69,24 @@ struct alignas(16) superpixel_GPU_helper_sm {
     int max_sp;
 };
 
+struct alignas(16) sm_GPU_helper {
+    float3 squares_i;
+    int count_f;
+    float3 b_n;
+    float3 b_n_f;
+    float3 numerator;
+    float3 denominator;
+    float3 numerator_f;
+    float3 denominator_f;
+    float hasting;
+    bool merge; // a bool
+    bool remove;
+    bool stop_bfs;
+    float3 mu_i_sum;
+    int count;
+    int max_sp;
+};
+
 struct alignas(16) post_changes_helper{
     int changes[4];
     float post[5];

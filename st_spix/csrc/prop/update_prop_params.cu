@@ -15,10 +15,9 @@ __host__ void update_prop_params(const float* img, const int* spix,
                                  superpixel_params* sp_params,
                                  superpixel_GPU_helper* sp_helper,
                                  superpixel_params* prior_params,
-                                 int * prior_map,
-                                 const int npixels, const int nspix,
+                                 int * prior_map, const int npixels,
                                  const int nspix_buffer, const int nbatch,
-                                 const int xdim, const int ydim, const int nftrs){
+                                 const int width, const int nftrs){
 
   	dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
     int num_block1 = ceil( double(npixels) / double(THREADS_PER_BLOCK) ); 
@@ -26,19 +25,18 @@ __host__ void update_prop_params(const float* img, const int* spix,
     dim3 BlockPerGrid1(num_block1,nbatch);
     dim3 BlockPerGrid2(num_block2,nbatch);
     clear_fields<<<BlockPerGrid2,ThreadPerBlock>>>(sp_params,sp_helper,
-                                                   nspix,nspix_buffer,nftrs);
+                                                   nspix_buffer,nftrs);
 	cudaMemset(sp_helper, 0, nspix_buffer*sizeof(superpixel_GPU_helper));
     sum_by_label<<<BlockPerGrid1,ThreadPerBlock>>>(img,spix,sp_params,sp_helper,
-                                                   npixels,nbatch,xdim,nftrs);
+                                                   npixels,nbatch,width,nftrs);
 	calculate_mu_and_sigma<<<BlockPerGrid2,ThreadPerBlock>>>(\
-     sp_params, sp_helper, prior_params, prior_map, nspix, nspix_buffer); 
+     sp_params, sp_helper, prior_params, prior_map, nspix_buffer); 
 
 }
 
 __global__
 void clear_fields(superpixel_params* sp_params,
                   superpixel_GPU_helper* sp_helper,
-                  const int nsuperpixel,
                   const int nsuperpixel_buffer,
                   const int nftrs){
 
@@ -67,7 +65,7 @@ void sum_by_label(const float* img,
                   const int* spix, superpixel_params* sp_params,
                   superpixel_GPU_helper* sp_helper,
                   const int npixels, const int nbatch,
-                  const int xdim, const int nftrs) {
+                  const int width, const int nftrs) {
 
     // todo -- add nbatch and nftrs
     // getting the index of the pixel
@@ -84,8 +82,8 @@ void sum_by_label(const float* img,
 	atomicAdd(&sp_helper[k].mu_i_sum.z, img[3*t+2]);
 
 
-	int x = t % xdim;
-	int y = t / xdim; 
+	int x = t % width;
+	int y = t / width; 
 	int xx = x * x;
 	int xy = x * y;
 	int yy = y * y;
@@ -103,7 +101,7 @@ __global__
 void calculate_mu_and_sigma(superpixel_params*  sp_params,
                             superpixel_GPU_helper* sp_helper,
                             superpixel_params*  prior, int* prior_map,
-                            const int nsuperpixel, const int nsuperpixel_buffer) {
+                            const int nsuperpixel_buffer) {
 
     // -- update thread --
 	int k = threadIdx.x + blockIdx.x * blockDim.x; // the label

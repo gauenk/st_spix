@@ -103,17 +103,19 @@ setup(
             # -- shared utils --
             "st_spix/csrc/bass/relabel.cu",
             "st_spix/csrc/prop/sparams_io.cu",
-            # -- prop bass spix  --
-            "st_spix/csrc/prop/fill_missing.cu",
-            "st_spix/csrc/prop/split_disconnected.cu",
-            "st_spix/csrc/prop/refine_missing.cu",
-            # "st_spix/csrc/prop/prop_bass.cu",
-            "st_spix/csrc/prop/update_prop_params.cu",
-            "st_spix/csrc/prop/update_missing_seg.cu",
-            "st_spix/csrc/prop/update_prop_seg.cu",
+            # -- prop utils
             "st_spix/csrc/prop/seg_utils.cu",
             "st_spix/csrc/prop/init_utils.cu",
             "st_spix/csrc/prop/rgb2lab.cu",
+            "st_spix/csrc/prop/split_disconnected.cu",
+            # -- prop bass spix  --
+            "st_spix/csrc/prop/fill_missing.cu",
+            "st_spix/csrc/prop/refine_missing.cu",
+            "st_spix/csrc/prop/prop_bass.cu",
+            "st_spix/csrc/prop/split_merge.cu",
+            "st_spix/csrc/prop/update_prop_params.cu",
+            "st_spix/csrc/prop/update_missing_seg.cu",
+            "st_spix/csrc/prop/update_prop_seg.cu",
             # -- pybind --
             "st_spix/csrc/pybind_prop.cpp",
         ],extra_compile_args={'cxx': ['-g','-w',"-O0"],'nvcc': ['-w','-O0']})

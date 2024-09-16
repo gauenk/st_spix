@@ -31,14 +31,16 @@
 #include "../bass/share/my_sp_struct.h"
 #endif
 
-// -- local import --
+// -- utils --
 #include "rgb2lab.h"
 #include "init_utils.h"
 #include "seg_utils.h"
+#include "sparams_io.h"
+
+// -- primary functions --
 #include "refine_missing.h"
 #include "update_prop_params.h"
 #include "update_missing_seg.h"
-#include "sparams_io.h"
 
 // -- define --
 #define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
@@ -69,13 +71,13 @@ __host__ void refine_missing(float* img, int* seg,
 
       // -- Update Parameters with Previous SuperpixelParams as Prior --
       update_prop_params(img, seg, sp_params, sp_helper,
-                         prior_params, prior_map, npix, nspix,
-                         nspix_buffer, nbatch, width, height, nftrs);
+                         prior_params, prior_map, npix,
+                         nspix_buffer, nbatch, width, nftrs);
 
       // -- Update Segmentation ONLY within missing pix --
       update_missing_seg(img, seg, border, missing, sp_params,
                          niters_seg, pix_cov, logdet_pix_cov, potts,
-                         npix, nspix, nbatch, width, height, nftrs);
+                         npix, nbatch, width, height, nftrs);
 
     }
 

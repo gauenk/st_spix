@@ -60,6 +60,7 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=5,
     # print(dir(bass_cuda))
     # print(bass_cuda.SuperpixelParams)
 
+    # pix_cov = 0.
     spix_t,params_t = bass_cuda.bass_forward(img_t,sp_size,pix_cov,alpha,potts)
     # print(params_t)
     # print(params_t.mu_i)
@@ -159,6 +160,11 @@ def run_prop(img,flow,spix_tm1,params_tm1,
 
     # -- then bass iters --
     # ...
+    spix_t,params_t = prop_cuda.prop_bass(img,spix_prop,missing_mask,
+                                          params_tm1,prior_map,
+                                          nspix_t,niters,niters_seg,
+                                          sp_size,pix_cov,potts,pix_cov)
+
 
 
     return spix_t,params_t,children_t

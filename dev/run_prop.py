@@ -68,22 +68,24 @@ def main():
     if not root.exists(): root.mkdir()
 
     # -- config --
-    niters = 20
+    niters = 40
     niters_seg = 4
     sp_size = 12
     alpha,potts = 10.,10.
     pix_cov = 0.1
 
     # -- read img/flow --
-    # vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['tennis'])
-    vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['baseball'])
+    vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['tennis'])
+    # vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['baseball'])
     size = 256
-    vid = vid[0,5:7,:,50:50+size,300:300+size]
+    # vid = vid[0,5:7,:,50:50+size,300:300+size]
+    vid = vid[0,2:4,:,50:50+size,200:200+size]
     vid = resize(vid,(128,128))
 
     # -- run flow [raft] --
     from st_spix.flow_utils import run_raft
     fflow,bflow = run_raft(th.clip(255.*vid,0.,255.).type(th.uint8))
+    # print(vid.shape,fflow.shape)
     # fflow,bflow = run_raft(vid)
     if fflow.shape[-1] != vid.shape[-1]:
         print("RAFT wants image size to be a multiple of 8.")
@@ -92,7 +94,7 @@ def main():
     # -- resize again --
     # vid = resize(vid,(64,64))
     # fflow = resize(fflow,(64,64))/2. # reduced scale by 2
-    size = 64
+    size = 128
     vid = resize(vid,(size,size))
     fflow = resize(fflow,(size,size))/(128./size) # reduced scale by X
 

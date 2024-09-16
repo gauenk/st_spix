@@ -148,8 +148,8 @@
 // std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor>
 std::tuple<torch::Tensor,PySuperpixelParams>
 bass_forward_cuda(const torch::Tensor imgs,
-                  int nPixels_in_square_side, float i_std,
-                  float alpha, float beta){
+                  int nPixels_in_square_side,
+                  float pix_cov, float alpha, float beta){
     // -- init timer --
     // float elapsed = 0;
     // cudaEvent_t start;
@@ -174,11 +174,11 @@ bass_forward_cuda(const torch::Tensor imgs,
 
 
     // -- init superpixel --
-    // float i_std = 0.018;
+    // float pix_cov = 0.018;
     // float beta = 0.5;
     // float alpha = 0.5;
     superpixel_options spoptions = get_sp_options(nPixels_in_square_side,
-                                                  i_std, beta, alpha);
+                                                  pix_cov, beta, alpha);
     Superpixels sp = Superpixels(nbatch, width, height, nftrs, spoptions);
 
     // -- load single image --
@@ -279,7 +279,7 @@ bass_forward_cuda(const torch::Tensor imgs,
 //                          const torch::Tensor in_means,
 //                          const torch::Tensor in_cov,
 //                          const torch::Tensor in_counts,
-//                          int nPixels_in_square_side, float i_std,
+//                          int nPixels_in_square_side, float pix_cov,
 //                          float alpha, float beta, int niters,
 //                          int nspix, int max_SP){
 
@@ -303,11 +303,11 @@ bass_forward_cuda(const torch::Tensor imgs,
 //       .layout(torch::kStrided).device(imgs.device());
 
 //     // -- init superpixel --
-//     // float i_std = 0.018;
+//     // float pix_cov = 0.018;
 //     // float beta = 0.5;
 //     // float alpha = 0.5;
 //     superpixel_options spoptions = get_sp_options(nPixels_in_square_side,
-//                                                   i_std, beta, alpha);
+//                                                   pix_cov, beta, alpha);
 //     // std::cout << "niter: " << niters << std::endl;
 //     if (niters >= 0){
 //       spoptions.nEMIters = niters;

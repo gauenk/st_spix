@@ -30,7 +30,7 @@ __global__
 void update_prop_seg_subset(float* img, int* seg, bool* border,
                             superpixel_params* sp_params, const float3 pix_cov,
                             const float logdet_pix_cov,  const float potts,
-                            const int npix, const int nspix, const int nbatch,
+                            const int npix, const int nbatch,
                             const int xdim, const int ydim, const int nftrs,
                             const int xmod3, const int ymod3){
 
@@ -160,7 +160,7 @@ void update_prop_seg_subset(float* img, int* seg, bool* border,
 __host__ void update_prop_seg(float* img, int* seg, bool* border,
                               superpixel_params* sp_params, const int niters,
                               const float3 pix_cov, const float logdet_pix_cov,
-                              const float potts, const int npix, const int nspix,
+                              const float potts, const int npix,
                               int nbatch, int xdim, int ydim, int nftrs){
     
     int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
@@ -174,7 +174,7 @@ __host__ void update_prop_seg(float* img, int* seg, bool* border,
             for (int ymod3 = 0; ymod3 <2; ymod3++){
                 update_prop_seg_subset<<<BlockPerGrid,ThreadPerBlock>>>(img, seg, \
                      border, sp_params, pix_cov, logdet_pix_cov, potts,\
-                     npix, nspix, nbatch, xdim, ydim, nftrs, xmod3, ymod3);
+                     npix, nbatch, xdim, ydim, nftrs, xmod3, ymod3);
             }
         }
     }
