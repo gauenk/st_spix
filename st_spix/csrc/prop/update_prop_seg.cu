@@ -65,8 +65,7 @@ void update_prop_seg_subset(float* img, int* seg, bool* border,
     bool isSvalid = 0;
     bool isEvalid = 0;
     bool isWvalid = 0; 
-    float beta = potts;
-    //printf("Beta: %f", beta);
+    //printf("Potts: %f", potts);
 
     // -- count neighbors --
     int count_diff_nbrs_N=0;
@@ -120,27 +119,27 @@ void update_prop_seg_subset(float* img, int* seg, bool* border,
     assert(label_check >= 0);
     res_max = cal_prop_likelihood(imgC,seg,x,y,sp_params,label_check,
                                   pix_cov,logdet_pix_cov,
-                                  count_diff_nbrs_N,beta,res_max);
+                                  count_diff_nbrs_N,potts,res_max);
     label_check = S;
     assert(label_check >= 0);
     if(label_check!=N)
       res_max = cal_prop_likelihood(imgC,seg,x,y,sp_params,label_check,
                                     pix_cov,logdet_pix_cov,
-                                    count_diff_nbrs_S,beta,res_max);
+                                    count_diff_nbrs_S,potts,res_max);
 
     label_check = W;
     assert(label_check >= 0);
     if ( (label_check!=S)&&(label_check!=N))
       res_max = cal_prop_likelihood(imgC,seg,x,y,sp_params,label_check,
                                     pix_cov,logdet_pix_cov,
-                                    count_diff_nbrs_W,beta,res_max);
+                                    count_diff_nbrs_W,potts,res_max);
     
     label_check = E;
     assert(label_check >= 0);
     if((label_check!=W)&&(label_check!=S)&&(label_check!=N))
       res_max = cal_prop_likelihood(imgC,seg,x,y,sp_params,label_check,
                                     pix_cov,logdet_pix_cov,
-                                    count_diff_nbrs_E,beta,res_max);
+                                    count_diff_nbrs_E,potts,res_max);
     seg[pix_idx] = res_max.y;
     return;
 }
@@ -168,8 +167,7 @@ __host__ void update_prop_seg(float* img, int* seg, bool* border,
     dim3 BlockPerGrid(num_block,nbatch);
     for (int iter = 0 ; iter < niters; iter++){
         cudaMemset(border, 0, npix*sizeof(bool));
-        find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(seg, border, npix,
-                                                            nbatch, xdim, ydim);
+        find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(seg,border,npix,xdim,ydim);
         for (int xmod3 = 0 ; xmod3 <2; xmod3++){
             for (int ymod3 = 0; ymod3 <2; ymod3++){
                 update_prop_seg_subset<<<BlockPerGrid,ThreadPerBlock>>>(img, seg, \
@@ -180,7 +178,7 @@ __host__ void update_prop_seg(float* img, int* seg, bool* border,
     }
     cudaMemset(border, 0, npix*sizeof(bool));
     find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(\
-           seg, border, npix, nbatch, xdim, ydim);
+           seg, border, npix, xdim, ydim);
 }
 
 

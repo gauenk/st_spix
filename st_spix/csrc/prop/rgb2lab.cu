@@ -1,37 +1,47 @@
-using namespace std;
 
-#define BLCK_SIZE 6
-#define MAX_BLOCK_SIZE 256
-#define THREADS_PER_BLOCK 512
-
+// -- imports --
 #include "rgb2lab.h"
 #include <stdio.h>
 #include <math.h>
+#include <torch/types.h>
+#include <torch/extension.h>
+
+// -- define --
+using namespace std;
+#define THREADS_PER_BLOCK 512
+#define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
+#define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
+#define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
 __host__ void rgb2lab(float* img_rgb, float* img_lab, int npix, int nbatch){
 	int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
 	dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
 	dim3 BlockPerGrid(num_block,nbatch);
-	rgb_to_lab<<<BlockPerGrid,ThreadPerBlock>>>(img_rgb,img_lab,npix,nbatch);
+	rgb_to_lab<<<BlockPerGrid,ThreadPerBlock>>>(img_rgb,img_lab,npix);
 }
 
 __host__ void lab2rgb(float* img_rgb, float* img_lab, int npix, int nbatch){
 	int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
 	dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
 	dim3 BlockPerGrid(num_block,nbatch);
-	lab_to_rgb<<<BlockPerGrid,ThreadPerBlock>>>(img_rgb,img_lab,npix,nbatch);
+	lab_to_rgb<<<BlockPerGrid,ThreadPerBlock>>>(img_rgb,img_lab,npix);
 }
 
-__global__ void rgb_to_lab(float* img_rgb, float* img_lab, int npix, int nbatch) {
-  // todo; add batch dim
+__global__ void rgb_to_lab(float* img_rgb, float* img_lab, int npix) {
+
+    // -- get pixel index --
 	int t = threadIdx.x + blockIdx.x * blockDim.x;  
 	if (t>=npix) return;
+    t = t + npix*blockIdx.y; // offset via batch
 
-	double sB = (double)img_rgb[3*t];
+	// double sB = (double)img_rgb[3*t];
+	// double sG = (double)img_rgb[3*t+1];
+	// double sR = (double)img_rgb[3*t+2];
+	double sR = (double)img_rgb[3*t];
 	double sG = (double)img_rgb[3*t+1];
-	double sR = (double)img_rgb[3*t+2];
+	double sB = (double)img_rgb[3*t+2];
 
-	if (sR!=sR || sG!=sG || sB!=sB) return;
+	if (sR!=sR || sG!=sG || sB!=sB) return; // ??
 
 	//RGB (D65 illuninant assumption) to XYZ conversion
 	double R = sR;
@@ -82,10 +92,12 @@ __global__ void rgb_to_lab(float* img_rgb, float* img_lab, int npix, int nbatch)
 	img_lab[3*t+2] = bval/100;
 }
 
-__global__ void lab_to_rgb(float* img_rgb, float* img_lab, int npix, int nbatch) {
+__global__ void lab_to_rgb(float* img_rgb, float* img_lab, int npix) {
 
+    // -- get pixel index --
 	int t = threadIdx.x + blockIdx.x * blockDim.x;  
 	if (t>=npix) return;
+    t = t + npix*blockIdx.y; // offset via batch
 
     double L = img_lab[3*t] *(-100);//* 100;
 	double La = img_lab[3*t+1]*100;//* 100;
@@ -135,8 +147,62 @@ __global__ void lab_to_rgb(float* img_rgb, float* img_lab, int npix, int nbatch)
     p.y =  max(0.0, double(p.y));
     p.z =  max(0.0, double(p.z));
 
-    // -- save image --
-    img_rgb[3*t] = p.x;
+    // -- save image [RGB(z,y,x) not BGR(x,y,z)]  --
+    img_rgb[3*t] = p.z;
     img_rgb[3*t+1] = p.y;
-    img_rgb[3*t+2] = p.z;
+    img_rgb[3*t+2] = p.x;
 }
+
+
+
+
+/**********************************************************
+
+             -=-=-=-=- Python API  -=-=-=-=-=-
+
+***********************************************************/
+
+torch::Tensor run_rgb_to_lab(torch::Tensor img_rgb){
+
+    // -- check --
+    CHECK_INPUT(img_rgb);
+
+    // -- unpack --
+    int nbatch = img_rgb.size(0);
+    int height = img_rgb.size(1);
+    int width = img_rgb.size(2);
+    int nftrs = img_rgb.size(3);
+    int npix = height*width;
+    auto img_lab = img_rgb.clone();
+
+    // -- run rgb to lab --
+    rgb2lab(img_rgb.data<float>(), img_lab.data<float>(), npix, nbatch);
+
+    return img_lab;
+}
+
+torch::Tensor run_lab_to_rgb(torch::Tensor img_lab){
+
+    // -- check --
+    CHECK_INPUT(img_lab);
+
+    // -- unpack --
+    int nbatch = img_lab.size(0);
+    int height = img_lab.size(1);
+    int width = img_lab.size(2);
+    int nftrs = img_lab.size(3);
+    int npix = height*width;
+    auto img_rgb = img_lab.clone();
+
+    // -- run rgb to lab --
+    lab2rgb(img_rgb.data<float>(), img_lab.data<float>(), npix, nbatch);
+
+    return img_rgb;
+}
+
+
+void init_rgb2lab(py::module &m){
+  m.def("rgb_to_lab", &run_rgb_to_lab,"change colors");
+  m.def("lab_to_rgb", &run_lab_to_rgb,"change colors");
+}
+

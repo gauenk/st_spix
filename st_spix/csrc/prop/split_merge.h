@@ -29,7 +29,7 @@ __host__ void CudaCalcMergeCandidate(const float* img, int* seg,
                                      int* sm_pairs, const int npix, const int nbatch,
                                      const int width, const int height,
                                      const int nftrs, const int nspix_buffer,
-                                     const int direction, float alpha, float sm_std);
+                                     const int direction, float alpha, float pix_var);
 
 __host__ int CudaCalcSplitCandidate(const float* img, int* seg, bool* border,
                                     superpixel_params* sp_params,
@@ -39,7 +39,7 @@ __host__ int CudaCalcSplitCandidate(const float* img, int* seg, bool* border,
                                     const int npix, const int nbatch, const int width,
                                     const int height, const int nftrs,
                                     const int nspix_buffer, int max_nspix,
-                                    int direction,float alpha, float sm_std);
+                                    int direction,float alpha, float pix_var);
 
 /* __host__ int CudaCalcSplitCandidate(const float* img, int* seg, */
 /*                                     bool* border,  superpixel_params* sp_params, */

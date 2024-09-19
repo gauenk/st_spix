@@ -8,6 +8,16 @@ import numpy as np
 from einops import rearrange,repeat
 from skimage import io, color
 from easydict import EasyDict as edict
+import prop_cuda
+
+def vid_rgb2lab(vid,normz=True):
+    vid_lab = rearrange(vid,'b f h w -> b h w f')
+    vid_lab = prop_cuda.rgb_to_lab(vid_lab.contiguous())
+    vid_lab = rearrange(vid_lab,'b h w f -> b f h w')
+    if normz:
+        vid_lab = vid_lab - vid_lab.min()
+        vid_lab = vid_lab / vid_lab.max()
+    return vid_lab
 
 def seed_everything(seed: int):
     import random, os

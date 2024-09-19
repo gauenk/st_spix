@@ -28,7 +28,7 @@ __host__ void CudaCalcMergeCandidate(const float* img, int* seg, bool* border,
                                      const int npix, const int nbatch,
                                      const int width, const int height,
                                      const int nftrs, const int nspix_buffer,
-                                     const int direction, float alpha, float sm_std){
+                                     const int direction, float alpha, float pix_var){
 
     int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
     int num_block2 = ceil( double(nspix_buffer) / double(THREADS_PER_BLOCK) );
@@ -37,7 +37,7 @@ __host__ void CudaCalcMergeCandidate(const float* img, int* seg, bool* border,
     dim3 BlockPerGrid(num_block,nbatch);
     float alpha_hasting_ratio = alpha;
     float a_0 = 10000;
-    float b_0 = sm_std * (a_0) ;
+    float b_0 = pix_var * (a_0) ;
 
     init_sm<<<BlockPerGrid2,ThreadPerBlock>>>(img,seg,sp_params,sm_helper,
                                               nspix_buffer, nbatch, width,
@@ -84,7 +84,7 @@ __host__ int CudaCalcSplitCandidate(const float* img, int* seg, bool* border,
                                     const int npix, const int nbatch, const int width,
                                     const int height, const int nftrs,
                                     const int nspix_buffer, int max_nspix,
-                                    int direction, float alpha, float sm_std){
+                                    int direction, float alpha, float pix_var){
 
     int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
     int num_block2 = ceil( double(nspix_buffer) / double(THREADS_PER_BLOCK) );
@@ -93,7 +93,7 @@ __host__ int CudaCalcSplitCandidate(const float* img, int* seg, bool* border,
     dim3 BlockPerGrid(num_block,1);
     float alpha_hasting_ratio =  alpha;
     float a_0 = 10000;
-    float b_0 = sm_std * (a_0) ;
+    float b_0 = pix_var * (a_0) ;
     // float b_0;
     int* done_gpu;
     int done = 1;
@@ -283,25 +283,25 @@ void calc_split_candidate(int* dists, int* spix, bool* border,
 
     if ((y>0)&&(idx-width>=0)){
       if((!dists[idx-width]) and (spix[idx-width] == spixC)){
-        dists[idx-width] = distance +1 ;
+        dists[idx-width] = distance+1;
         mutex[0] = 1;
       }
     }          
     if ((x>0)&&(idx-1>=0)){
       if((!dists[idx-1]) and (spix[idx-1] == spixC)){
-        dists[idx-1] = distance +1 ;
+        dists[idx-1] = distance+1;
         mutex[0] = 1;
       }
     }
     if ((y<height-1)&&(idx+width<npix)){
       if((!dists[idx+width]) and (spix[idx+width] == spixC)){
-        dists[idx+width] = distance +1 ;
+        dists[idx+width] = distance+1;
         mutex[0] = 1;
       }
     }   
     if ((x<width-1)&&(idx+1<npix)){
       if((!dists[idx+1]) and (spix[idx+1] == spixC)){
-        dists[idx+1] = distance +1 ;
+        dists[idx+1] = distance+1;
         mutex[0] = 1;
       }
     }
@@ -318,7 +318,7 @@ __global__ void init_split(const bool* border, int* seg_gpu,
                            const int height, const int direction,
                            const int* seg, int* max_sp, int max_nspix) {
 
-  // todo: add batch -- no nftrs
+    // todo: add batch -- no nftrs
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
     *max_sp = max_nspix+1;
 	if (k>=nspix_buffer) return;

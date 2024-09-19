@@ -64,37 +64,41 @@ __host__ int CudaInitSeg(int* seg_cpu, int* seg_gpu, int* split_merge_pairs, int
 
             int num_block_sp =  ceil(double(max_nSPs) /double(THREADS_PER_BLOCK));
             dim3 BlockPerGrid_sp(num_block_sp,nbatch);
-
             double* centers;
             cudaMalloc((void**) &centers, 2*max_nSPs*sizeof(double));
             InitHexCenter<<<BlockPerGrid_sp,ThreadPerBlock>>>(centers, \
                               H, w, max_nSPs, max_num_sp_x, nbatch, xdim, ydim); 
-            cudaDeviceSynchronize();
-
             InitHexSeg<<<BlockPerGrid_pixel,ThreadPerBlock>>>(seg_gpu, \
                                             centers, max_nSPs, nPts, nbatch, xdim);
-            cudaDeviceSynchronize();
-
-            //write the seg_cpu to file     
+            cudaFree(centers);
             cudaMemcpy(seg_cpu, seg_gpu, nPts*sizeof(int), cudaMemcpyDeviceToHost);
             // saveArray(seg_cpu, nPts, file_path);
-            // cudaFree(centers);
+
+
+            // // -- Remove Small Edges --
+            // RemoveSmallEdges<<<BlockPerGrid_pixel,ThreadPerBlock>>>(seg_gpu, \
+            //                                 centers, max_nSPs, nPts, nbatch, xdim);
+
 
         }
         
 	}
+
     int nSPs = get_max(seg_cpu, nPts)+1;
 	return nSPs;
 }
 
 
 
+// __global__ void RemoveSmallEdges(double* centers, double H, double w, int max_nPts,
+//                                  int max_num_sp_x, int nbatch, int xdim, int ydim){
+
+// }
+
 
 __global__ void InitHexCenter(double* centers, double H, double w, int max_nPts,
                               int max_num_sp_x, int nbatch, int xdim, int ydim){
   // todo; add batch
-	//int offsetBlock = blockIdx.x * blockDim.x + blockIdx.y * blockDim.y * num_sp_x;
-	//int idx = offsetBlock + threadIdx.x + threadIdx.y * num_sp_x;
 	int idx = threadIdx.x + blockIdx.x * blockDim.x; 
 	if (idx >= max_nPts) return;
 
@@ -117,7 +121,7 @@ __global__ void InitHexCenter(double* centers, double H, double w, int max_nPts,
 
 __global__ void InitHexSeg(int* seg, double* centers, int K, int nPts,
                            int nbatch, int xdim){
-  // todo ;add nbatch
+  // todo ;add nbatch [just copy this rather than add nbatch...]
 	int idx = threadIdx.x + blockIdx.x * blockDim.x; 	
 	if (idx >= nPts) return;
 

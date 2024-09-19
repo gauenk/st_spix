@@ -3,10 +3,8 @@
 #define OUT_OF_BOUNDS_LABEL -1
 #endif
 #define THREADS_PER_BLOCK 512
-
 #include <assert.h>
 #include "seg_utils.h"
-
 
 // -- define --
 #include <torch/types.h>
@@ -26,23 +24,23 @@
 ***********************************************
 **********************************************/
 
-__host__ void CudaFindBorderPixels(const int* seg, bool* border, const int nPixels, const int nbatch,const int xdim,const int ydim){
-    int num_block = ceil( double(nPixels) / double(THREADS_PER_BLOCK) ); 
+__host__ void CudaFindBorderPixels(const int* seg, bool* border, const int npix,
+                                   const int nbatch,const int xdim,const int ydim){
+    int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
     dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
     dim3 BlockPerGrid(num_block,nbatch);
-    find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(seg,border,nPixels,
-                                                        nbatch, xdim, ydim);
+    find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(seg,border,npix,xdim,ydim);
 }
 
-__global__  void find_border_pixels(const int* seg, bool* border, const int nPixels,
-                                    const int nbatch, const int xdim, const int ydim){   
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;  
-    if (idx>=nPixels) return; 
+__global__  void find_border_pixels(const int* seg, bool* border, const int npix,
+                                    const int xdim, const int ydim){   
+    int pix_idx = threadIdx.x + blockIdx.x * blockDim.x;  
+    if (pix_idx>=npix) return; 
+    int idx = pix_idx + npix*blockIdx.y; // offset via batch
 
     border[idx]=0;  // init        
-    // todo; add batch info here
-    int x = idx % xdim;
-    int y = idx / xdim;
+    int x = pix_idx % xdim;
+    int y = pix_idx / xdim;
 
     int C =  __ldg(&seg[idx]); // center 
     int N,S,E,W; // north, south, east,west            
@@ -79,20 +77,20 @@ __global__  void find_border_pixels(const int* seg, bool* border, const int nPix
 **********************************************/
 
 
-__host__ void CudaFindBorderPixels_end(const int* seg, bool* border, const int nPixels, const int nbatch,const int xdim,const int ydim){   
-    int num_block = ceil( double(nPixels) / double(THREADS_PER_BLOCK) ); 
+__host__ void CudaFindBorderPixels_end(const int* seg, bool* border, const int npix,
+                                       const int nbatch,const int xdim,const int ydim){   
+    int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
     dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
     dim3 BlockPerGrid(num_block,nbatch);
-    find_border_pixels_end<<<BlockPerGrid,ThreadPerBlock>>>(seg,border,nPixels,
-                                                            nbatch, xdim, ydim);
+    find_border_pixels_end<<<BlockPerGrid,ThreadPerBlock>>>(seg,border,npix,xdim,ydim);
 }
 
 
-__global__  void find_border_pixels_end(const int* seg, bool* border,
-                                        const int nPixels, const int nbatch,
+__global__  void find_border_pixels_end(const int* seg, bool* border, const int npix,
                                         const int xdim, const int ydim){   
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;  
-    if (idx>=nPixels) return; 
+    int pix_idx = threadIdx.x + blockIdx.x * blockDim.x;  
+    if (pix_idx>=npix) return; 
+    int idx = pix_idx + npix*blockIdx.y; // offset via batch
 
     border[idx]=0;  // init        
     
@@ -138,17 +136,17 @@ __global__  void find_border_pixels_end(const int* seg, bool* border,
 
 torch::Tensor run_find_border(const torch::Tensor spix){
 
+  // -- unpack --
   CHECK_INPUT(spix);
   int nbatch = spix.size(0);
   int height = spix.size(1);
   int width = spix.size(2);
   int npix = height*width;
-  assert(nbatch==1);
 
   // -- allocate border --
   auto options_b = torch::TensorOptions().dtype(torch::kBool)
     .layout(torch::kStrided).device(spix.device());
-  torch::Tensor border = torch::zeros({height,width},options_b);
+  torch::Tensor border = torch::zeros({nbatch,height,width},options_b);
   bool* border_ptr = border.data<bool>();
   
   CudaFindBorderPixels(spix.data<int>(), border_ptr, npix,nbatch,width,height);

@@ -411,6 +411,11 @@ void Superpixels::calc_seg() {
     }
     CudaFindBorderPixels_end(seg_gpu, border_gpu, nPixels, nbatch, dim_x, dim_y, 1);
 
+    // -- one more update before return --
+    update_param(image_gpu_double, seg_gpu, sp_params,
+                 sp_gpu_helper, nPixels, nSPs, nSPs_buffer,
+                 nbatch, dim_x, dim_y, nftrs, prior_sigma_s, prior_count);
+
     // cudaFree(seg_gpu_dc);
 }
 

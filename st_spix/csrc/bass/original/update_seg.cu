@@ -153,6 +153,7 @@ __global__  void find_border_pixels_end(const int* seg, bool* border, const int 
    
     // If the nbr is different from the central pixel and is not out-of-bounds,
     // then it is a border pixel.
+    // the inequality makes the border only 1 pixel wide, rather than 2 pixels
     if ( (N>=0 && C!=N) || (S>=0 && C!=S) || (E>=0 && C!=E) || (W>=0 && C!=W) ){
             if (N>=0 && C>N) border[idx]=1; 
             if (S>=0 && C>S) border[idx]=1;

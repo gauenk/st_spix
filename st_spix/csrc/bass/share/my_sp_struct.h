@@ -34,7 +34,8 @@ struct alignas(16) superpixel_params{
 /* }; */
 
 struct alignas(16) superpixel_GPU_helper{
-    float3 mu_i_sum;  // with respect to nSps
+    /* float3 mu_i_sum;  // with respect to nSps */
+    double3 mu_i_sum;  // with respect to nSps
     int2 mu_s_sum;
     longlong3 sigma_s_sum;
 };

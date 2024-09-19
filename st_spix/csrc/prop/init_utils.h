@@ -36,3 +36,7 @@ __host__ void init_sp_params(superpixel_params* sp_params, const int sp_size,
 __global__ void init_sp_params_kernel(superpixel_params* sp_params, const int sp_size,
                                       const int nspix, int nspix_buffer, int npix);
 
+__host__ void init_prior_counts(superpixel_params* sp_params,
+                                int* prior_counts, int* prior_map, int nprior);
+__global__ void init_prior_counts_kernel(superpixel_params* sp_params,
+                                         int* prior_counts, int* prior_map, int nprior);

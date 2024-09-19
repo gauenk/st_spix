@@ -181,10 +181,12 @@ __global__ void sum_by_label(const float* image_gpu_double,
     if (k == -1){ return; } // invalid label
 
 	atomicAdd(&sp_params[k].count, 1);
+	//atomicAdd(&sp_gpu_helper[k].mu_i_sum.x,static_cast<double>(image_gpu_double[3*t]));
+   //atomicAdd(&sp_gpu_helper[k].mu_i_sum.y,static_cast<double>(image_gpu_double[3*t+1]));
+   //atomicAdd(&sp_gpu_helper[k].mu_i_sum.z,static_cast<double>(image_gpu_double[3*t+2]));
 	atomicAdd(&sp_gpu_helper[k].mu_i_sum.x, image_gpu_double[3*t]);
 	atomicAdd(&sp_gpu_helper[k].mu_i_sum.y, image_gpu_double[3*t+1]);
 	atomicAdd(&sp_gpu_helper[k].mu_i_sum.z, image_gpu_double[3*t+2]);
-
 
 	int x = t % xdim;
 	int y = t / xdim; 
@@ -262,6 +264,11 @@ void calculate_mu_and_sigma(superpixel_params*  sp_params,
 		sp_params[k].mu_s.x = mu_x; 
 	    sp_params[k].mu_s.y = mu_y;
 
+        // -- a bit silly; let's see if precision matters. it is 200+ elems --
+	    // sp_params[k].mu_i.x = static_cast<float>(sp_gpu_helper[k].mu_i_sum.x / count);
+		// sp_params[k].mu_i.y = static_cast<float>(sp_gpu_helper[k].mu_i_sum.y / count);
+  		// sp_params[k].mu_i.z = static_cast<float>(sp_gpu_helper[k].mu_i_sum.z / count);
+
 	    sp_params[k].mu_i.x = sp_gpu_helper[k].mu_i_sum.x / count;
 		sp_params[k].mu_i.y = sp_gpu_helper[k].mu_i_sum.y / count;
   		sp_params[k].mu_i.z = sp_gpu_helper[k].mu_i_sum.z / count;
@@ -273,8 +280,7 @@ void calculate_mu_and_sigma(superpixel_params*  sp_params,
 		//printf(" k is %d , %f,  %f, %f\n",k,sp_gpu_helper[k].mu_i_sum.x, sp_gpu_helper[k].mu_i_sum.y,sp_gpu_helper[k].mu_i_sum.z);
 	}
 
-	//calculate the covariance
-	
+	// -- calculate the covariance --
 	double C00 = sp_gpu_helper[k].sigma_s_sum.x;
 	double C01 = sp_gpu_helper[k].sigma_s_sum.y;
 	double C11 = sp_gpu_helper[k].sigma_s_sum.z; 
@@ -282,7 +288,7 @@ void calculate_mu_and_sigma(superpixel_params*  sp_params,
 	// double total_count = (double) sp_params[k].count + a_prior*50;
 
 	// double total_count = (double) sp_params[k].count + a_prior*50;
-	double total_count = (double) sp_params[k].count + a_prior;
+	double total_count = (double) count_int + a_prior;
 	if (count_int > 3){	    
 	    //update cumulative count and covariance
 	    C00 = C00 - mu_x * mu_x * count;

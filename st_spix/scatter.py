@@ -7,9 +7,9 @@ def run(img,flow,swap_c=True):
     if swap_c:
         img = rearrange(img,'b c h w -> b h w c')
         flow = rearrange(flow,'b c h w -> b h w c')
-    eps = 1e-10
+    eps = 1e-8
     # flow[...,0] = -2.*flow[...,0]
-    flow[...,1] = -flow[...,1]
+    # flow[...,1] = -flow[...,1]
     scatter,cnts = bass_cuda.scatter_img_forward(img.contiguous(),
                                                     flow.contiguous(),eps)
     if swap_c:
@@ -23,6 +23,10 @@ def run_v1(img,flow):
     B,F,H,W = img.shape
     scatter = flow_warp(img, flow, "nearest","zeros")
     ones = th.ones_like(img[:,:1])
-    cnts = flow_warp(ones, flow, "nearest","zeros")
+    cnts = flow_warp(ones, flow, "bilinear","zeros")
 
-    return scatter,ones
+    # print("scatter.shape: ",scatter.shape)
+    # print("cnt.shape: ",cnts.shape)
+    # exit()
+
+    return scatter,cnts[:,0]

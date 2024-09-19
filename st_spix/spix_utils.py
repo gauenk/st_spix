@@ -287,6 +287,14 @@ def mark_spix(img,spix):
         marked[2][args] = 1.
     return marked
 
+def mark_border(vid,border,color_index=0):
+    vid = vid.clone()
+    print("vid.shape: ",vid.shape)
+    print("border.shape: ",border.shape)
+    inds = th.where(border>0)
+    for c in range(3):
+        vid[:,c][inds] = c==color_index
+    return vid
 
 # def spix_to_params(vid,spix):
 #     from .flow_utils import index_grid

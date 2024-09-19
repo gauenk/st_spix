@@ -56,7 +56,7 @@ __host__ void prop_bass(float* img, int* seg,
                         superpixel_GPU_helper_sm* sm_helper,
                         int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
                         int niters, int niters_seg, int sm_start,
-                        float3 pix_cov,float logdet_pix_cov,
+                        float3 pix_ivar,float logdet_pix_var,
                         float potts, float alpha_hastings,
                         int nspix, int nbatch, int width, int height, int nftrs){
 
@@ -65,7 +65,7 @@ __host__ void prop_bass(float* img, int* seg,
     int npix = height * width;
     int nspix_buffer = nspix * 45;
     int max_spix = nspix;
-    float pix_var = std::sqrt(1./(4*pix_cov.x));
+    float pix_var = std::sqrt(1./(4*pix_ivar.x));
 
     for (int idx = 0; idx < niters; idx++) {
 
@@ -75,7 +75,8 @@ __host__ void prop_bass(float* img, int* seg,
                          nspix_buffer, nbatch, width, nftrs);
 
       // -- Run Split/Merge --
-      if (idx > sm_start){
+      if ((sm_start <=0) or (idx > sm_start)){
+        // printf("split merge.\n");
         max_spix = run_split_merge(img, seg, border, sp_params,
                                    prior_params, prior_map,
                                    sp_helper, sm_helper, sm_seg1, sm_seg2, sm_pairs,
@@ -88,7 +89,7 @@ __host__ void prop_bass(float* img, int* seg,
 
       // -- Update Segmentation --
       update_prop_seg(img, seg, border, sp_params,
-                      niters_seg, pix_cov, logdet_pix_cov, potts,
+                      niters_seg, pix_ivar, logdet_pix_var, potts,
                       npix, nbatch, width, height, nftrs);
 
     }
@@ -158,7 +159,7 @@ run_prop_bass(const torch::Tensor img_rgb,
               const PySuperpixelParams prior_params,
               const torch::Tensor prior_map, int nspix,
               int niters, int niters_seg, int sm_start,
-              int sp_size, float pix_cov_i, float potts, float alpha_hastings){
+              int sp_size, float pix_var_i, float potts, float alpha_hastings){
 
     // -- check --
     CHECK_INPUT(img_rgb);
@@ -199,12 +200,12 @@ run_prop_bass(const torch::Tensor img_rgb,
     init_sp_params(sp_params,sp_size,nspix,nspix_buffer,npix);
 
     // -- compute pixel (inverse) covariance info --
-    float pix_half = float(pix_cov_i/2) * float(pix_cov_i/2);
-    float3 pix_cov;
-    pix_cov.x = 1.0/pix_half;
-    pix_cov.y = 1.0/pix_half;
-    pix_cov.z = 1.0/pix_half;
-    float logdet_pix_cov = log(pix_half * pix_half * pix_half);
+    float pix_half = float(pix_var_i/2) * float(pix_var_i/2);
+    float3 pix_var;
+    pix_var.x = 1.0/pix_half;
+    pix_var.y = 1.0/pix_half;
+    pix_var.z = 1.0/pix_half;
+    float logdet_pix_var = log(pix_half * pix_half * pix_half);
 
     // -- convert image color --
     auto img_lab = img_rgb.clone();
@@ -236,7 +237,7 @@ run_prop_bass(const torch::Tensor img_rgb,
 
     prop_bass(img_ptr,filled_spix_ptr,sp_params, prior_sp_params, prior_map_ptr,
               border, sp_helper, sm_helper, sm_seg1, sm_seg2, sm_pairs,
-              niters, niters_seg, sm_start, pix_cov, logdet_pix_cov,
+              niters, niters_seg, sm_start, pix_var, logdet_pix_var,
               potts, alpha_hastings, nspix, nbatch, width, height, nftrs);
 
     // -- get spixel parameters as tensors --
