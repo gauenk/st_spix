@@ -23,7 +23,7 @@ __host__ int CudaInitSeg(int* seg_cpu, int* seg_gpu, int* split_merge_pairs, int
     dim3 BlockPerGrid_pixel(num_block_pixel,nbatch);
 	if (!use_hex){
       InitSquareSeg<<<BlockPerGrid_pixel,ThreadPerBlock>>>(seg_gpu,nPts,sz,
-                                                           nbatch, xdim, ydim);
+                                                           xdim, ydim);
         cudaMemcpy(seg_cpu, seg_gpu, nPts*sizeof(int), cudaMemcpyDeviceToHost);
 
 	}else{
@@ -67,9 +67,9 @@ __host__ int CudaInitSeg(int* seg_cpu, int* seg_gpu, int* split_merge_pairs, int
             double* centers;
             cudaMalloc((void**) &centers, 2*max_nSPs*sizeof(double));
             InitHexCenter<<<BlockPerGrid_sp,ThreadPerBlock>>>(centers, \
-                              H, w, max_nSPs, max_num_sp_x, nbatch, xdim, ydim); 
+                              H, w, max_nSPs, max_num_sp_x, xdim, ydim); 
             InitHexSeg<<<BlockPerGrid_pixel,ThreadPerBlock>>>(seg_gpu, \
-                                            centers, max_nSPs, nPts, nbatch, xdim);
+                                            centers, max_nSPs, nPts, xdim);
             cudaFree(centers);
             cudaMemcpy(seg_cpu, seg_gpu, nPts*sizeof(int), cudaMemcpyDeviceToHost);
             // saveArray(seg_cpu, nPts, file_path);
@@ -97,7 +97,7 @@ __host__ int CudaInitSeg(int* seg_cpu, int* seg_gpu, int* split_merge_pairs, int
 
 
 __global__ void InitHexCenter(double* centers, double H, double w, int max_nPts,
-                              int max_num_sp_x, int nbatch, int xdim, int ydim){
+                              int max_num_sp_x, int xdim, int ydim){
   // todo; add batch
 	int idx = threadIdx.x + blockIdx.x * blockDim.x; 
 	if (idx >= max_nPts) return;
@@ -119,8 +119,7 @@ __global__ void InitHexCenter(double* centers, double H, double w, int max_nPts,
 
 
 
-__global__ void InitHexSeg(int* seg, double* centers, int K, int nPts,
-                           int nbatch, int xdim){
+__global__ void InitHexSeg(int* seg, double* centers, int K, int nPts, int xdim){
   // todo ;add nbatch [just copy this rather than add nbatch...]
 	int idx = threadIdx.x + blockIdx.x * blockDim.x; 	
 	if (idx >= nPts) return;
@@ -146,7 +145,7 @@ __global__ void InitHexSeg(int* seg, double* centers, int K, int nPts,
 
 // for everypixel, assign it to a superptxel
 __global__ void  InitSquareSeg(int* seg, int nPts, int sz,
-                               int nbatch, int xdim, int ydim){
+                               int xdim, int ydim){
 	int t = threadIdx.x + blockIdx.x * blockDim.x; 
 	if (t>=nPts) return;
 	

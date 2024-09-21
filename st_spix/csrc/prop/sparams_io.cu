@@ -1,15 +1,16 @@
 
-#include <stdio.h>
-#include <math.h>
-#include <cuda.h>
-#include <cuda_runtime.h>
-#include <cmath>
+// #include <stdio.h>
+// #include <math.h>
+// #include <cuda.h>
+// #include <cuda_runtime.h>
+// #include <cmath>
 
 #ifndef MY_SP_STRUCT
 #define MY_SP_STRUCT
 #include "../bass/share/my_sp_struct.h"
 #endif
 #define THREADS_PER_BLOCK 512
+#include "pch.h"
 #include "sparams_io.h"
 #include "init_utils.h"
 
@@ -171,6 +172,7 @@ void write_params(float* mu_i, float* mu_s, float* cov, float* logdet_Sigma_s,
     float* mu_i_ix = mu_i + ix * 3;
     float* mu_s_ix = mu_s + ix * 2;
     float* cov_ix = cov + ix * 3;
+    // float* cov_ix = cov + ix;
     float* logsigma_ix = logdet_Sigma_s + ix;
     int* counts_ix = counts + ix;
     int* prior_counts_ix = prior_counts + ix;
@@ -231,7 +233,7 @@ void copy_spix_to_params_parents(float* means, float* cov,
     float* means_ix = means + ix * 5;
     float* cov_ix = cov + ix * 4;
     int* counts_ix = counts + ix;
-    int* spix_ix = spix_parents + ix;
+    // int* spix_ix = spix_parents + ix;
 
     // -- read spix --
     int sp_index = ids[ix];

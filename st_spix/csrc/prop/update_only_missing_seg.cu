@@ -10,11 +10,11 @@
 #include <stdio.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include <cuda/std/type_traits>
-#include <torch/types.h>
-#include <cuda.h>
-#include <cuda_runtime.h>
-#include <torch/extension.h>
+// #include <cuda/std/type_traits>
+// #include <torch/types.h>
+// #include <cuda.h>
+// #include <cuda_runtime.h>
+// #include <torch/extension.h>
 
 
 // update_only_missing_seg(img, seg, seg_potts_label, border, sp_params,

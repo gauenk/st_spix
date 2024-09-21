@@ -19,11 +19,12 @@
 #include <stdio.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include <cuda/std/type_traits>
-#include <torch/types.h>
-#include <cuda.h>
-#include <cuda_runtime.h>
-#include <torch/extension.h>
+// #include <cuda/std/type_traits>
+// #include <torch/types.h>
+// #include <cuda.h>
+// #include <cuda_runtime.h>
+// #include <torch/extension.h>
+#include "pch.h"
 
 // -- "external" import --
 #ifndef MY_SP_STRUCT

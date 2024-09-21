@@ -8,13 +8,14 @@
 
 // -- cpp imports --
 #include <stdio.h>
-#include <cuda.h>
-#include <cuda_runtime.h>
-#include <cuda/std/type_traits>
-#include <torch/types.h>
-#include <cuda.h>
-#include <cuda_runtime.h>
-#include <torch/extension.h>
+// #include <cuda.h>
+// #include <cuda_runtime.h>
+// #include <cuda/std/type_traits>
+// #include <torch/types.h>
+// #include <cuda.h>
+// #include <cuda_runtime.h>
+// #include <torch/extension.h>
+#include "pch.h"
 
 // -- "external" import --
 #ifndef MY_SP_STRUCT
@@ -96,54 +97,6 @@ __host__ void prop_bass(float* img, int* seg,
 
     CudaFindBorderPixels_end(seg, border, npix, nbatch, width, height);
 
-}
-
-// run_split_merge(img, seg, border, sp_params,
-//                 prior_params, prior_map,
-//                 sp_helper, sm_helper, sm_seg1,  sm_seg2, sm_pairs,
-//                 alpha, max_SP, count%2, idx, max_spix,
-//                 npix,nbatch,width,dim_y,nftrs,nspix_buffer):
-
-
-// // max_spix = run_split_merge(img, seg, border, sp_params,
-//                          prior_params, prior_map,
-//                          sp_helper, sm_helper, sm_seg1, sm_seg2, sm_pairs,
-//                          alpha_hastings, count, idx, max_spix,
-//                          npix,nbatch,width,height,nftrs,nspix_buffer):
-
-__host__
-int run_split_merge(const float* img, int* seg,
-                    bool* border, superpixel_params* sp_params,
-                    superpixel_params* prior_params, int* prior_map,
-                    superpixel_GPU_helper* sp_helper,
-                    superpixel_GPU_helper_sm* sm_helper,
-                    int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
-                    float alpha_hastings, float pix_var,
-                    int& count, int idx, int max_nspix,
-                    const int npix, const int nbatch,
-                    const int width, const int height,
-                    const int nftrs, const int nspix_buffer){
-
-  if(idx%4 == 0){
-    count += 1;
-    int direction = count%2+1;
-    // -- run split --
-    max_nspix = CudaCalcSplitCandidate(img, seg, border,
-                                       sp_params, sp_helper, sm_helper,
-                                       sm_seg1, sm_seg2, sm_pairs,
-                                       npix,nbatch,width,height,nftrs,
-                                       nspix_buffer, max_nspix,
-                                       direction, alpha_hastings, pix_var);
-  }else if( idx%4 == 2){
-    int direction = count%2;
-    // -- run merge --
-    CudaCalcMergeCandidate(img, seg, border,
-                           sp_params, sp_helper, sm_helper, sm_pairs,
-                           npix,nbatch,width,height,nftrs,
-                           nspix_buffer,direction, alpha_hastings, pix_var);
-
-  }
-  return max_nspix;
 }
 
 
@@ -247,6 +200,7 @@ run_prop_bass(const torch::Tensor img_rgb,
     PySuperpixelParams params = get_params_as_tensors(sp_params,ids,nspix_post);
 
     // -- free --
+    cudaFree(prior_map_ptr);
     cudaFree(border);
     cudaFree(sp_params);
     cudaFree(sp_helper);

@@ -14,20 +14,20 @@ __host__ void update_prop_params(const float* img,const int* seg,
                                  const int npix, const int nspix_buffer,
                                  const int nbatch, const int width, const int nftrs);
 
-__global__ void clear_fields(superpixel_params* sp_params,
+__global__ void prop_clear_fields(superpixel_params* sp_params,
                              superpixel_GPU_helper* sp_helper,
                              const int nsuperpixel_buffer,
                              const int nftrs);
 
-__global__ void sum_by_label(const float* img, const int* seg,
+__global__ void prop_sum_by_label(const float* img, const int* seg,
                              superpixel_params* sp_params,
                              superpixel_GPU_helper* sp_helper,
                              const int npix, const int nbatch,
                              const int width, const int nftrs);
 
-__global__ void calculate_mu_and_sigma(superpixel_params* sp_params,
-                                       superpixel_GPU_helper* sp_helper,
-                                       superpixel_params* prior_params,
-                                       int* prior_map, const int nspix_buffer);
+__global__ void prop_calculate_mu_and_sigma(superpixel_params* sp_params,
+                                            superpixel_GPU_helper* sp_helper,
+                                            superpixel_params* prior_params,
+                                            int* prior_map, const int nspix_buffer);
 
 

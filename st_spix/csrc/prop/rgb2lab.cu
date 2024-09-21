@@ -3,8 +3,10 @@
 #include "rgb2lab.h"
 #include <stdio.h>
 #include <math.h>
-#include <torch/types.h>
-#include <torch/extension.h>
+#include "pch.h"
+
+// #include <torch/types.h>
+// #include <torch/extension.h>
 
 // -- define --
 using namespace std;

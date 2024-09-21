@@ -10,9 +10,10 @@
 #define THREADS_PER_BLOCK 512
 
 #include <assert.h>
-#include <thrust/system_error.h>
-#include <thrust/system/cuda/error.h>
-#include <torch/torch.h>
+// #include <thrust/system_error.h>
+// #include <thrust/system/cuda/error.h>
+// #include <torch/torch.h>
+#include "pch.h"
 
 #include "../bass/relabel.h"
 #ifndef SPLIT_DISC

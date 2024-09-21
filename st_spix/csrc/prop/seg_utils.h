@@ -1,8 +1,10 @@
 #include <stdio.h>
-#include <torch/types.h>
+/* #include <torch/types.h> */
 #include "cuda.h"
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
+#include "pch.h"
+/* #include "base.h" */
 
 #ifndef MY_SP_STRUCT
 #define MY_SP_STRUCT
@@ -97,12 +99,61 @@ __device__ inline float2 cal_prop_likelihood(
     const float logdet_sigma_s = __ldg(&sp_params[seg_idx].logdet_Sigma_s);
 
     // -- color component --
-    res = res - (x0*x0*pix_var_x + x1*x1*pix_var_y + x2*x2*pix_var_z);
+    res = res - x0*x0*pix_var_x - x1*x1*pix_var_y - x2*x2*pix_var_z;
     res = res - logdet_pix_var; // okay; log p(x,y) = -log detSigma
 
     // -- space component --
     res = res - d0*d0*sigma_s_x - d1*d1*sigma_s_z - 2*d0*d1*sigma_s_y; // sign(s_y) = -1
     res = res - logdet_sigma_s;
+
+    // -- potts term --
+    res = res - beta*neigh_neq;
+
+    // -- update res --
+    if( res>res_max.x ){
+      res_max.x = res;
+      res_max.y = seg_idx;
+    }
+
+    return res_max;
+}
+
+__device__ inline float2 cal_joint(
+    float* imgC, int* seg, int width_index, int height_index,
+    spix_params* sp_params, int seg_idx,
+    float3 pix_var, float logdet_pix_var,
+    float neigh_neq, float beta, float2 res_max){
+
+    // -- init res --
+    float res = -1000; // some large negative number // why?
+
+    // -- compute color/spatial differences --
+    const float x0 = __ldg(&imgC[0])-__ldg(&sp_params[seg_idx].mu_i.x);
+    const float x1 = __ldg(&imgC[1])-__ldg(&sp_params[seg_idx].mu_i.y);
+    const float x2 = __ldg(&imgC[2])-__ldg(&sp_params[seg_idx].mu_i.z);
+    const int d0 = width_index - __ldg(&sp_params[seg_idx].mu_s.x);
+    const int d1 = height_index - __ldg(&sp_params[seg_idx].mu_s.y);
+
+    // -- color component --
+    const float pix_var_x = pix_var.x;
+    const float pix_var_y = pix_var.y;
+    const float pix_var_z = pix_var.z;
+    const float sigma_s_x = __ldg(&sp_params[seg_idx].sigma_s.x);
+    const float sigma_s_y = __ldg(&sp_params[seg_idx].sigma_s.y);
+    const float sigma_s_z = __ldg(&sp_params[seg_idx].sigma_s.z);
+    const float logdet_sigma_s = __ldg(&sp_params[seg_idx].logdet_sigma_s);
+
+    // -- color component --
+    res = res - x0*x0*pix_var_x - x1*x1*pix_var_y - x2*x2*pix_var_z;
+    res = res - logdet_pix_var; // okay; log p(x,y) = -log detSigma
+
+    // -- space component --
+    res = res - d0*d0*sigma_s_x - d1*d1*sigma_s_z - 2*d0*d1*sigma_s_y; // sign(s_y) = -1
+    res = res - logdet_sigma_s;
+
+    // -- prior space component --
+    res = res - sp_params[seg_idx].prior_sigma_s_lprob;
+    res = res - sp_params[seg_idx].prior_sigma_i_lprob;
 
     // -- potts term --
     res = res - beta*neigh_neq;

@@ -25,7 +25,8 @@
 
 
 
-__host__ void update_prop_param(const float* image_gpu_double, const int* seg_gpu,
+__host__ void update_prop_param(const float* image_gpu_double,
+                                const int* seg_gpu,
                                 superpixel_params* sp_params,
                                 // superpixel_params* prev_sp_params,
                                 superpixel_GPU_helper* sp_gpu_helper,
@@ -44,7 +45,6 @@ __host__ void update_prop_param(const float* image_gpu_double, const int* seg_gp
     dim3 BlockPerGrid2(num_block2,nbatch);
     // fprintf(stdout,"nPixels,nSps_buffer,num_block1,num_block2: %d,%d,%d,%d\n",
     //         nPixels,nSps_buffer,num_block1,num_block2);
-	
     clear_fields<<<BlockPerGrid2,ThreadPerBlock>>>(sp_params,sp_gpu_helper,
                                                    nSps,nSps_buffer,nftrs);
     // gpuErrchk( cudaPeekAtLastError() );
@@ -187,8 +187,8 @@ __global__ void calculate_prop_mu_and_sigma(superpixel_params*  sp_params, super
 
 	//calculate the covariance
 	
-	double C00 = sp_gpu_helper[k].sigma_s_sum.x ;
-	double C01 =  sp_gpu_helper[k].sigma_s_sum.y ;
+	double C00 = sp_gpu_helper[k].sigma_s_sum.x;
+	double C01 = sp_gpu_helper[k].sigma_s_sum.y;
 	double C11 = sp_gpu_helper[k].sigma_s_sum.z; 
 	//double total_count = (double) sp_params[k].count + prior_count; 
 	// double total_count = (double) sp_params[k].count + a_prior*50;

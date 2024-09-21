@@ -6,6 +6,7 @@
 #include <float.h>
 #include <math.h>
 
+
 #ifndef OUT_OF_BOUNDS_LABEL
 #define OUT_OF_BOUNDS_LABEL -1
 #endif
@@ -18,6 +19,41 @@
 #ifndef WIN32
 #include <unistd.h>
 #endif
+
+__host__
+int run_split_merge(const float* img, int* seg,
+                    bool* border, superpixel_params* sp_params,
+                    superpixel_params* prior_params, int* prior_map,
+                    superpixel_GPU_helper* sp_helper,
+                    superpixel_GPU_helper_sm* sm_helper,
+                    int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
+                    float alpha_hastings, float pix_var,
+                    int& count, int idx, int max_nspix,
+                    const int npix, const int nbatch,
+                    const int width, const int height,
+                    const int nftrs, const int nspix_buffer){
+
+  if(idx%4 == 0){
+    count += 1;
+    int direction = count%2+1;
+    // -- run split --
+    max_nspix = CudaCalcSplitCandidate(img, seg, border,
+                                       sp_params, sp_helper, sm_helper,
+                                       sm_seg1, sm_seg2, sm_pairs,
+                                       npix,nbatch,width,height,nftrs,
+                                       nspix_buffer, max_nspix,
+                                       direction, alpha_hastings, pix_var);
+  }else if( idx%4 == 2){
+    int direction = count%2;
+    // -- run merge --
+    CudaCalcMergeCandidate(img, seg, border,
+                           sp_params, sp_helper, sm_helper, sm_pairs,
+                           npix,nbatch,width,height,nftrs,
+                           nspix_buffer,direction, alpha_hastings, pix_var);
+
+  }
+  return max_nspix;
+}
 
 
 __host__ void CudaCalcMergeCandidate(const float* img, int* seg, bool* border,

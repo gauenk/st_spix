@@ -2,7 +2,8 @@
 #include "cuda.h"
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
-#include <torch/types.h>
+/* #include <torch/types.h> */
+#include "../../prop/pch.h"
 
 
 struct PySuperpixelParams{
@@ -27,11 +28,6 @@ struct alignas(16) superpixel_params{
     int prior_spix;
 };
 
-/* struct alignas(16) superpixel_GPU_helper_ptrs{ */
-/*     float* mu_i_sum; */
-/*     int* mu_s_sum; */
-/*     longlong* sigma_s_sum; */
-/* }; */
 
 struct alignas(16) superpixel_GPU_helper{
     /* float3 mu_i_sum;  // with respect to nSps */
@@ -39,18 +35,6 @@ struct alignas(16) superpixel_GPU_helper{
     int2 mu_s_sum;
     longlong3 sigma_s_sum;
 };
-
-
-/* struct alignas(16) superpixel_GPU_helper_sm_ptrs { */
-/*   float* squares_i; */
-/*   float* b_n; */
-/*   float* b_n_f; */
-/*   float* numerator; */
-/*   float* denominator; */
-/*   float* numerator_f; */
-/*   float* denominator_f; */
-/*   float* mu_i_sum; */
-/* } */
 
 struct alignas(16) superpixel_GPU_helper_sm {
     float3 squares_i;
@@ -69,6 +53,96 @@ struct alignas(16) superpixel_GPU_helper_sm {
     int count;
     int max_sp;
 };
+
+// --- struct with prior info --
+
+struct alignas(16) spix_params{
+    // -- appearance --
+    float3 mu_i;
+    float3 prior_mu_i;
+    float3 sigma_i;
+    float3 prior_sigma_i;
+    // -- shape --
+    double2 mu_s;
+    double2 prior_mu_s;
+    double3 sigma_s;
+    double3 prior_sigma_s;
+    // -- helpers --
+    double logdet_sigma_s;
+    double logdet_prior_sigma_s;
+    // -- priors --
+    double prior_mu_i_lprob;
+    double prior_sigma_i_lprob;
+    double prior_mu_s_lprob;
+    double prior_sigma_s_lprob;
+    // -- helpers --
+    int count;
+    float prior_count; // df and lam for shape and appearance
+    int valid;
+};
+
+struct alignas(16) spix_helper{
+    double3 mu_i_sum;
+    double3 sigma_i_sum;
+    int2 mu_s_sum;
+    longlong3 sigma_s_sum;
+};
+
+struct alignas(16) spix_helper_sm {
+    float3 squares_i;
+    int count_f;
+    float3 b_n;
+    float3 b_n_f;
+    float3 numerator;
+    float3 denominator;
+    float3 numerator_f;
+    float3 denominator_f;
+    float hasting;
+    bool merge; // a bool
+    bool remove;
+    bool stop_bfs;
+    float3 mu_i_sum;
+    int count;
+    int max_sp;
+};
+
+
+/* struct alignas(16) superpixel_GPU_helper_ptrs{ */
+/*     float* mu_i_sum; */
+/*     int* mu_s_sum; */
+/*     longlong* sigma_s_sum; */
+/* }; */
+
+
+
+/* struct alignas(16) superpixel_GPU_helper_sm_ptrs { */
+/*   float* squares_i; */
+/*   float* b_n; */
+/*   float* b_n_f; */
+/*   float* numerator; */
+/*   float* denominator; */
+/*   float* numerator_f; */
+/*   float* denominator_f; */
+/*   float* mu_i_sum; */
+/* } */
+
+/* struct alignas(16) superpixel_GPU_helper_sm { */
+/*     float3 squares_i; */
+/*     int count_f; */
+/*     float3 b_n; */
+/*     float3 b_n_f; */
+/*     float3 numerator; */
+/*     float3 denominator; */
+/*     float3 numerator_f; */
+/*     float3 denominator_f; */
+/*     float hasting; */
+/*     bool merge; // a bool */
+/*     bool remove; */
+/*     bool stop_bfs; */
+/*     float3 mu_i_sum; */
+/*     int count; */
+/*     int max_sp; */
+/* }; */
 
 struct alignas(16) sm_GPU_helper {
     float3 squares_i;
