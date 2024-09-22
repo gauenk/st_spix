@@ -36,7 +36,7 @@
 #include "rgb2lab.h"
 #include "init_utils.h"
 #include "seg_utils.h"
-#include "sparams_io.h"
+#include "simple_sparams_io.h"
 
 // -- primary functions --
 #include "refine_missing.h"
@@ -115,10 +115,10 @@ run_refine_missing(const torch::Tensor img_rgb,
     CHECK_INPUT(img_rgb);
     CHECK_INPUT(spix);
     CHECK_INPUT(missing);
-    CHECK_INPUT(prior_params.mu_i);
-    CHECK_INPUT(prior_params.mu_s);
-    CHECK_INPUT(prior_params.sigma_s);
-    CHECK_INPUT(prior_params.logdet_Sigma_s);
+    CHECK_INPUT(prior_params.mu_app);
+    CHECK_INPUT(prior_params.mu_shape);
+    CHECK_INPUT(prior_params.sigma_shape);
+    CHECK_INPUT(prior_params.logdet_sigma_shape);
     CHECK_INPUT(prior_params.counts);
     CHECK_INPUT(prior_params.prior_counts);
     CHECK_INPUT(prior_map);
@@ -143,13 +143,13 @@ run_refine_missing(const torch::Tensor img_rgb,
     const int sparam_size = sizeof(superpixel_params);
     const int helper_size = sizeof(superpixel_GPU_helper);
     bool* border = (bool*)easy_allocate(nbatch*npix,sizeof(bool));
-    superpixel_params* prior_sp_params = get_tensors_as_params(prior_params,sp_size,
-                                                               npix,nspix,nspix_buffer);
+    superpixel_params* prior_sp_params = get_tensors_as_params_s(prior_params,sp_size,
+                                                                 npix,nspix,nspix_buffer);
     superpixel_params* sp_params=(superpixel_params*)easy_allocate(nspix_buffer,
                                                                    sparam_size);
     superpixel_GPU_helper* sp_helper=(superpixel_GPU_helper*)easy_allocate(nspix_buffer,
                                                                            helper_size);
-    init_sp_params(sp_params,sp_size,nspix,nspix_buffer,npix);
+    init_sp_params_s(sp_params,sp_size,nspix,nspix_buffer,npix);
     init_prior_counts(sp_params,prior_params.prior_counts.data<int>(),
                       prior_map.data<int>(),init_map_size);
     // superpixel_params* sp_params = get_tensors_as_params(prior_params,sp_size,
@@ -197,7 +197,7 @@ run_refine_missing(const torch::Tensor img_rgb,
     auto unique_ids = std::get<0>(at::_unique(filled_spix));
     auto ids = unique_ids.data<int>();
     int nspix_post = unique_ids.sizes()[0];
-    PySuperpixelParams params = get_params_as_tensors(sp_params,ids,nspix_post);
+    PySuperpixelParams params = get_params_as_tensors_s(sp_params,ids,nspix_post);
 
     // -- free --
     cudaFree(border);

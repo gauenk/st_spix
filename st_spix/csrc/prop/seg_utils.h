@@ -125,35 +125,36 @@ __device__ inline float2 cal_joint(
     float neigh_neq, float beta, float2 res_max){
 
     // -- init res --
-    float res = -1000; // some large negative number // why?
+    /* float res = -1000; // some large negative number // why? */
+    float res = 0.;
 
-    // -- compute color/spatial differences --
-    const float x0 = __ldg(&imgC[0])-__ldg(&sp_params[seg_idx].mu_i.x);
-    const float x1 = __ldg(&imgC[1])-__ldg(&sp_params[seg_idx].mu_i.y);
-    const float x2 = __ldg(&imgC[2])-__ldg(&sp_params[seg_idx].mu_i.z);
-    const int d0 = width_index - __ldg(&sp_params[seg_idx].mu_s.x);
-    const int d1 = height_index - __ldg(&sp_params[seg_idx].mu_s.y);
+    // -- appearance --
+    const float x0 = __ldg(&imgC[0])-__ldg(&sp_params[seg_idx].mu_app.x);
+    const float x1 = __ldg(&imgC[1])-__ldg(&sp_params[seg_idx].mu_app.y);
+    const float x2 = __ldg(&imgC[2])-__ldg(&sp_params[seg_idx].mu_app.z);
+    const float sigma_a_x = __ldg(&sp_params[seg_idx].sigma_app.x);
+    const float sigma_a_y = __ldg(&sp_params[seg_idx].sigma_app.y);
+    const float sigma_a_z = __ldg(&sp_params[seg_idx].sigma_app.z);
+    const float logdet_sigma_app = __ldg(&sp_params[seg_idx].logdet_sigma_app);
 
-    // -- color component --
-    const float pix_var_x = pix_var.x;
-    const float pix_var_y = pix_var.y;
-    const float pix_var_z = pix_var.z;
-    const float sigma_s_x = __ldg(&sp_params[seg_idx].sigma_s.x);
-    const float sigma_s_y = __ldg(&sp_params[seg_idx].sigma_s.y);
-    const float sigma_s_z = __ldg(&sp_params[seg_idx].sigma_s.z);
-    const float logdet_sigma_s = __ldg(&sp_params[seg_idx].logdet_sigma_s);
+    // -- shape --
+    const int d0 = width_index - __ldg(&sp_params[seg_idx].mu_shape.x);
+    const int d1 = height_index - __ldg(&sp_params[seg_idx].mu_shape.y);
+    const float sigma_s_x = __ldg(&sp_params[seg_idx].sigma_shape.x);
+    const float sigma_s_y = __ldg(&sp_params[seg_idx].sigma_shape.y);
+    const float sigma_s_z = __ldg(&sp_params[seg_idx].sigma_shape.z);
+    const float logdet_sigma_shape = __ldg(&sp_params[seg_idx].logdet_sigma_shape);
 
-    // -- color component --
-    res = res - x0*x0*pix_var_x - x1*x1*pix_var_y - x2*x2*pix_var_z;
-    res = res - logdet_pix_var; // okay; log p(x,y) = -log detSigma
+    // -- appearance --
+    res = res - x0*x0*sigma_a_x - x1*x1*sigma_a_y - x2*x2*sigma_a_z;
+    res = res - logdet_sigma_app;
 
-    // -- space component --
+    // -- shape --
     res = res - d0*d0*sigma_s_x - d1*d1*sigma_s_z - 2*d0*d1*sigma_s_y; // sign(s_y) = -1
-    res = res - logdet_sigma_s;
+    res = res - logdet_sigma_shape;
 
-    // -- prior space component --
-    res = res - sp_params[seg_idx].prior_sigma_s_lprob;
-    res = res - sp_params[seg_idx].prior_sigma_i_lprob;
+    // -- prior --
+    res = res - sp_params[seg_idx].prior_lprob;
 
     // -- potts term --
     res = res - beta*neigh_neq;

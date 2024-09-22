@@ -15,7 +15,7 @@
 // -- local import --
 #include "share/refine.h"
 #include "core/Superpixels.h"
-#include "../prop/sparams_io.h"
+#include "../prop/simple_sparams_io.h"
 #include "../prop/init_utils.h"
 #include "relabel.h"
 
@@ -246,8 +246,9 @@ bass_forward_cuda(const torch::Tensor imgs,
     //                                             counts.data<int>(),
     //                                             sp.get_cuda_sp_params(),
     //                                             unique_ids.data<int>(),nspix);
-    PySuperpixelParams params = get_params_as_tensors(sp.get_cuda_sp_params(),
-                                                       unique_ids.data<int>(),nspix);
+    PySuperpixelParams params = get_params_as_tensors_s(sp.get_cuda_sp_params(),
+                                                        unique_ids.data<int>(),nspix);
+
     
     // -- relabel spix --
     int num_blocks1 = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 

@@ -8,13 +8,6 @@
 
 // -- cpp imports --
 #include <stdio.h>
-// #include <cuda.h>
-// #include <cuda_runtime.h>
-// #include <cuda/std/type_traits>
-// #include <torch/types.h>
-// #include <cuda.h>
-// #include <cuda_runtime.h>
-// #include <torch/extension.h>
 #include "pch.h"
 
 // -- "external" import --
@@ -28,11 +21,11 @@
 #include "rgb2lab.h"
 #include "init_utils.h"
 #include "seg_utils.h"
-#include "sparams_io.h"
+#include "simple_sparams_io.h"
 
 // -- primary functions --
 #include "prop_bass.h"
-#include "split_merge.h"
+#include "simple_split_merge.h"
 #include "update_prop_params.h"
 #include "update_prop_seg.h"
 
@@ -78,7 +71,7 @@ __host__ void prop_bass(float* img, int* seg,
       // -- Run Split/Merge --
       if ((sm_start <=0) or (idx > sm_start)){
         // printf("split merge.\n");
-        max_spix = run_split_merge(img, seg, border, sp_params,
+        max_spix = run_simple_split_merge(img, seg, border, sp_params,
                                    prior_params, prior_map,
                                    sp_helper, sm_helper, sm_seg1, sm_seg2, sm_pairs,
                                    alpha_hastings, pix_var, count, idx, max_spix,
@@ -117,10 +110,10 @@ run_prop_bass(const torch::Tensor img_rgb,
     // -- check --
     CHECK_INPUT(img_rgb);
     CHECK_INPUT(spix);
-    CHECK_INPUT(prior_params.mu_i);
-    CHECK_INPUT(prior_params.mu_s);
-    CHECK_INPUT(prior_params.sigma_s);
-    CHECK_INPUT(prior_params.logdet_Sigma_s);
+    CHECK_INPUT(prior_params.mu_app);
+    CHECK_INPUT(prior_params.mu_shape);
+    CHECK_INPUT(prior_params.sigma_shape);
+    CHECK_INPUT(prior_params.logdet_sigma_shape);
     CHECK_INPUT(prior_params.counts);
     CHECK_INPUT(prior_params.prior_counts);
     CHECK_INPUT(prior_map);
@@ -144,13 +137,13 @@ run_prop_bass(const torch::Tensor img_rgb,
     const int sparam_size = sizeof(superpixel_params);
     const int helper_size = sizeof(superpixel_GPU_helper);
     bool* border = (bool*)easy_allocate(nbatch*npix,sizeof(bool));
-    superpixel_params* prior_sp_params = get_tensors_as_params(prior_params,sp_size,
-                                                               npix,nspix,nspix_buffer);
+    superpixel_params* prior_sp_params = get_tensors_as_params_s(prior_params,sp_size,
+                                                                 npix,nspix,nspix_buffer);
     superpixel_params* sp_params=(superpixel_params*)easy_allocate(nspix_buffer,
                                                                    sparam_size);
     superpixel_GPU_helper* sp_helper=(superpixel_GPU_helper*)easy_allocate(nspix_buffer,
                                                                            helper_size);
-    init_sp_params(sp_params,sp_size,nspix,nspix_buffer,npix);
+    init_sp_params_s(sp_params,sp_size,nspix,nspix_buffer,npix);
 
     // -- compute pixel (inverse) covariance info --
     float pix_half = float(pix_var_i/2) * float(pix_var_i/2);
@@ -197,7 +190,7 @@ run_prop_bass(const torch::Tensor img_rgb,
     auto unique_ids = std::get<0>(at::_unique(filled_spix));
     auto ids = unique_ids.data<int>();
     int nspix_post = unique_ids.sizes()[0];
-    PySuperpixelParams params = get_params_as_tensors(sp_params,ids,nspix_post);
+    PySuperpixelParams params = get_params_as_tensors_s(sp_params,ids,nspix_post);
 
     // -- free --
     cudaFree(prior_map_ptr);

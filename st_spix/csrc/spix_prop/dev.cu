@@ -1,3 +1,8 @@
+/*********************************************************
+
+                Not supported :D
+
+*********************************************************/
 
 
 #include <stdio.h>
@@ -24,7 +29,7 @@
 #define MY_PROP_SP_STRUCT
 #include "../bass/share/refine.h"
 #include "../bass/core/Superpixels.h"
-#include "../bass/sparams_io.h"
+#include "../bass/simple_sparams_io.h"
 // #include "../bass/share/my_sp_struct.h"
 #endif
 // #include "../bass/core/Superpixels.h"

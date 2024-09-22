@@ -5,14 +5,8 @@
 
 ********************************************************************/
 
-
 // -- cpp imports --
 #include <stdio.h>
-// #include <cuda.h>
-// #include <cuda_runtime.h>
-// #include <cuda/std/type_traits>
-
-// #pramga once
 #include "pch.h"
 
 // -- "external" import --
@@ -20,7 +14,6 @@
 #define MY_SP_STRUCT
 #include "../bass/share/my_sp_struct.h"
 #endif
-
 
 // -- utils --
 #include "rgb2lab.h"
@@ -32,16 +25,8 @@
 // -- primary functions --
 #include "prop_bass.h"
 #include "split_merge.h"
-// #include "update_prop_params.h"
-// #include "update_prop_seg.h"
 #include "update_params.h"
 #include "update_seg.h"
-
-// // -- define --
-// #define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
-// #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
-// #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
-// #define THREADS_PER_BLOCK 512
 
 
 /**********************************************************
@@ -72,15 +57,15 @@ __host__ void bass(float* img, int* seg,spix_params* sp_params,bool* border,
                     npix, nspix_buffer, nbatch, width, nftrs);
 
       // -- Run Split/Merge --
-      // if ((sm_start <=0) or (idx > sm_start)){
-      //   // printf("split merge.\n");
-      //   max_spix = run_split_merge(img, seg, border, sp_params,
-      //                              sp_helper, sm_helper, sm_seg1, sm_seg2, sm_pairs,
-      //                              alpha_hastings, pix_var, count, idx, max_spix,
-      //                              npix,nbatch,width,height,nftrs,nspix_buffer);
-      //   update_params(img, seg, sp_params, sp_helper,
-      //                 npix, nspix_buffer, nbatch, width, nftrs);
-      // }
+      if ((sm_start <=0) or (idx > sm_start)){
+        // printf("split merge.\n");
+        max_spix = run_split_merge(img, seg, border, sp_params,
+                                   sp_helper, sm_helper, sm_seg1, sm_seg2, sm_pairs,
+                                   alpha_hastings, pix_var, count, idx, max_spix,
+                                   npix,nbatch,width,height,nftrs,nspix_buffer);
+        update_params(img, seg, sp_params, sp_helper,
+                      npix, nspix_buffer, nbatch, width, nftrs);
+      }
 
       // -- Update Segmentation --
       update_seg(img, seg, border, sp_params,

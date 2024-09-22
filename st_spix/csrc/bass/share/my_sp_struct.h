@@ -7,10 +7,23 @@
 
 
 struct PySuperpixelParams{
-  torch::Tensor mu_i;
-  torch::Tensor mu_s;
-  torch::Tensor sigma_s;
-  torch::Tensor logdet_Sigma_s;
+  // -- appearance --
+  torch::Tensor mu_app;
+  torch::Tensor sigma_app;
+  torch::Tensor logdet_sigma_app;
+  torch::Tensor prior_mu_app;
+  torch::Tensor prior_sigma_app;
+  torch::Tensor prior_mu_app_count;
+  torch::Tensor prior_sigma_app_count;
+  // -- shape --
+  torch::Tensor mu_shape;
+  torch::Tensor sigma_shape;
+  torch::Tensor logdet_sigma_shape;
+  torch::Tensor prior_mu_shape;
+  torch::Tensor prior_sigma_shape;
+  torch::Tensor prior_mu_shape_count;
+  torch::Tensor prior_sigma_shape_count;
+  // -- helpers --
   torch::Tensor counts;
   torch::Tensor prior_counts;
   torch::Tensor ids;
@@ -58,23 +71,29 @@ struct alignas(16) superpixel_GPU_helper_sm {
 
 struct alignas(16) spix_params{
     // -- appearance --
-    float3 mu_i;
-    float3 prior_mu_i;
-    float3 sigma_i;
-    float3 prior_sigma_i;
+    float3 mu_app;
+    float3 sigma_app;
+    float3 prior_mu_app;
+    float3 prior_sigma_app;
+    int prior_mu_app_count;
+    int prior_sigma_app_count;
     // -- shape --
-    double2 mu_s;
-    double2 prior_mu_s;
-    double3 sigma_s;
-    double3 prior_sigma_s;
+    double2 mu_shape;
+    double3 sigma_shape;
+    double2 prior_mu_shape;
+    double3 prior_sigma_shape;
+    int prior_mu_shape_count;
+    int prior_sigma_shape_count;
     // -- helpers --
-    double logdet_sigma_s;
-    double logdet_prior_sigma_s;
+    double logdet_sigma_app;
+    double logdet_sigma_shape;
+    double logdet_prior_sigma_shape;
     // -- priors --
-    double prior_mu_i_lprob;
-    double prior_sigma_i_lprob;
-    double prior_mu_s_lprob;
-    double prior_sigma_s_lprob;
+    double prior_lprob;
+    /* double prior_mu_i_lprob; */
+    /* double prior_sigma_i_lprob; */
+    /* double prior_mu_s_lprob; */
+    /* double prior_sigma_s_lprob; */
     // -- helpers --
     int count;
     float prior_count; // df and lam for shape and appearance
@@ -82,14 +101,16 @@ struct alignas(16) spix_params{
 };
 
 struct alignas(16) spix_helper{
-    double3 mu_i_sum;
-    double3 sigma_i_sum;
-    int2 mu_s_sum;
-    longlong3 sigma_s_sum;
+    double3 sum_app;
+    double3 sq_sum_app;
+    int2 sum_shape;
+    longlong3 sq_sum_shape;
 };
 
 struct alignas(16) spix_helper_sm {
-    float3 squares_i;
+    float3 sum_app;
+    double3 sq_sum_app;
+    /* float3 squares_i; */
     int count_f;
     float3 b_n;
     float3 b_n_f;
@@ -101,7 +122,6 @@ struct alignas(16) spix_helper_sm {
     bool merge; // a bool
     bool remove;
     bool stop_bfs;
-    float3 mu_i_sum;
     int count;
     int max_sp;
 };
