@@ -11,8 +11,9 @@
 #endif
 #define THREADS_PER_BLOCK 512
 #include "pch.h"
+#include "init_utils.h"
 #include "sparams_io.h"
-#include "init_sp_params.h"
+#include "init_sparams.h"
 
 /***********************************************************************
 
@@ -74,7 +75,7 @@ __host__ spix_params* get_tensors_as_params(PySuperpixelParams params,
   // -- allocate superpixel params --
   const int sparam_size = sizeof(spix_params);
   spix_params* sp_params=(spix_params*)easy_allocate(nspix_buffer,sparam_size);
-  init_sp_params(sp_params,sp_size,nspix,nspix_buffer,npix);
+  // init_sp_params(sp_params,sp_size,nspix,nspix_buffer,npix);
 
   // -- check legal accessing --
   int num = params.ids.size(0);

@@ -31,7 +31,7 @@ void* easy_allocate(int size, int esize);
 
 **************************************************/
 
-/* __host__ void init_prior_counts(superpixel_params* sp_params, */
-/*                                 int* prior_counts, int* prior_map, int nprior); */
-/* __global__ void init_prior_counts_kernel(superpixel_params* sp_params, */
-/*                                          int* prior_counts, int* prior_map, int nprior); */
+__host__ void init_prior_counts(superpixel_params* sp_params,
+                                int* prior_counts, int* prior_map, int nprior);
+__global__ void init_prior_counts_kernel(superpixel_params* sp_params,
+                                         int* prior_counts, int* prior_map, int nprior);

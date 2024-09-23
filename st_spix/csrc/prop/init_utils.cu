@@ -94,22 +94,22 @@ void* easy_allocate(int size, int esize){
 
 **************************************************/
 
-// __host__ void init_prior_counts(superpixel_params* sp_params,
-//                                 int* prior_counts, int* prior_map, int nprior){
-//   int num_block = ceil( double(nprior)/double(THREADS_PER_BLOCK) ); //Roy- TO Change
-//   dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
-//   dim3 BlockPerGrid(num_block,1);
-//   init_prior_counts_kernel<<<BlockPerGrid,ThreadPerBlock>>>(sp_params,prior_counts,
-//                                                             prior_map,nprior);
-// }
+__host__ void init_prior_counts(superpixel_params* sp_params,
+                                int* prior_counts, int* prior_map, int nprior){
+  int num_block = ceil( double(nprior)/double(THREADS_PER_BLOCK) ); //Roy- TO Change
+  dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
+  dim3 BlockPerGrid(num_block,1);
+  init_prior_counts_kernel<<<BlockPerGrid,ThreadPerBlock>>>(sp_params,prior_counts,
+                                                            prior_map,nprior);
+}
 
-// __global__ void init_prior_counts_kernel(superpixel_params* sp_params,
-//                                          int* prior_counts, int* prior_map, int nprior){
+__global__ void init_prior_counts_kernel(superpixel_params* sp_params,
+                                         int* prior_counts, int* prior_map, int nprior){
 
-//   // -- prior map --
-//   int k = threadIdx.x + blockIdx.x * blockDim.x;  
-//   if (k>=nprior) return;
-//   sp_params[k].prior_count = prior_counts[prior_map[k]];
+  // -- prior map --
+  int k = threadIdx.x + blockIdx.x * blockDim.x;  
+  if (k>=nprior) return;
+  sp_params[k].prior_count = prior_counts[prior_map[k]];
   
-// }
+}
 

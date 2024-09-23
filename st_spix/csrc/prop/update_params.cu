@@ -31,7 +31,7 @@ __host__ void update_params(const float* img, const int* spix,
 	cudaMemset(sp_helper, 0, nspix_buffer*sizeof(spix_helper));
     sum_by_label<<<BlockPerGrid1,ThreadPerBlock>>>(img,spix,sp_params,sp_helper,
                                                    npixels,nbatch,width,nftrs);
-    calc_posterior_modes<<<BlockPerGrid2,ThreadPerBlock>>>(sp_params,sp_helper,
+    calc_posterior_mode<<<BlockPerGrid2,ThreadPerBlock>>>(sp_params,sp_helper,
                                                            nspix_buffer); 
 }
 

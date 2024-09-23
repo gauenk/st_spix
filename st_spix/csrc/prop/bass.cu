@@ -148,7 +148,7 @@ run_bass(const torch::Tensor img_rgb,
 
     // -- init spix_params --
     init_sp_params(sp_params,img_ptr,spix_ptr,sp_helper,
-                   npix,nspix_buffer,nbatch,width,nftrs);
+                   npix,nspix,nspix_buffer,nbatch,width,nftrs);
     //                  int npix, int nspix_buffer,ftrs);
     //              int nbatch, int width, int nftrs)
     // init_sp_params(sp_paramsimg,,nspix,nspix_buffer,npix);

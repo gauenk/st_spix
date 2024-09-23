@@ -21,7 +21,9 @@
 
 **************************************************/
 
-__host__ void init_sp_params(spix_params* sp_params, const int sp_size,
-                             const int nspix, int nspix_buffer, int npix);
-__global__ void init_sp_params_kernel(spix_params* sp_params, const int sp_size,
+__host__ void init_sp_params(spix_params* sp_params,
+                             float* img, int* spix, spix_helper* sp_helper,
+                             int npix, int nspix, int nspix_buffer,
+                             int nbatch, int width, int nftrs);
+__global__ void init_sp_params_kernel(spix_params* sp_params,
                                       const int nspix, int nspix_buffer, int npix);

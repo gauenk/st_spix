@@ -26,7 +26,7 @@
 
 // -- local import --
 #include "seg_utils.h"
-// #include "init_utils.h"
+#include "init_utils.h"
 #include "fill_missing.h"
 
 // -- define --
