@@ -96,16 +96,16 @@ def inspect_means(vid,spix,params,sp_size):
     print("grids[0].shape: ",grids[0].shape)
     print("grids[1].shape: ",grids[1].shape)
 
-    m0 = params[0].mu_i[8]
-    s0 = params[0].mu_s[8]
-    cov0 = params[0].sigma_s[8]
-    det0 = params[0].logdet_Sigma_s[8]
+    m0 = params[0].mu_app[8]
+    s0 = params[0].mu_shape[8]
+    cov0 = params[0].sigma_shape[8]
+    det0 = params[0].logdet_sigma_shape[8]
     c0 = params[0].counts[8]
-    m1 = params[1].mu_i[8]
+    m1 = params[1].mu_app[8]
     c1 = params[1].counts[8]
-    s1 = params[1].mu_s[8]
-    cov1 = params[1].sigma_s[8]
-    det1 = params[1].logdet_Sigma_s[8]
+    s1 = params[1].mu_shape[8]
+    cov1 = params[1].sigma_shape[8]
+    det1 = params[1].logdet_sigma_shape[8]
 
     # print(".")
     # print(params[0].prior_counts)
@@ -216,7 +216,7 @@ def main():
                        alpha_hastings=alpha_hastings,
                        potts=potts,sm_start=sm_start)
     spix,params,children,missing,pmaps = outs
-    print("[og] 8: ",params[0].mu_i[8])
+    print("[og] 8: ",params[0].mu_app[8])
 
     # -- view --
     marked = mark_spix_vid(vid,spix)
@@ -253,10 +253,10 @@ def main():
     niters_fwd_bwd = 1
     pix_var = 0.1
     potts = 2.
-    # print("8: ",params[0].mu_i[8],params[0].counts[8])
+    # print("8: ",params[0].mu_app[8],params[0].counts[8])
     spix,params = run_fwd_bwd(vid_og,spix,params,pmaps,sp_size,pix_var,
                               potts,niters_fwd_bwd,niters_ref)
-    # print("8:" ,params[0].mu_i[8],params[0].counts[8])
+    # print("8:" ,params[0].mu_app[8],params[0].counts[8])
     border_b = prop_cuda.find_border(spix)
     spix,params = run_fwd_bwd(vid_og,spix,params,pmaps,sp_size,pix_var,
                               potts,niters_fwd_bwd,niters_ref)

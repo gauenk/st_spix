@@ -13,6 +13,11 @@ __host__ void update_params(const float* img,const int* seg,
                             const int npix, const int nspix_buffer,
                             const int nbatch, const int width, const int nftrs);
 
+__host__ void update_params_summ(const float* img, const int* spix,
+                                 spix_params* sp_params,spix_helper* sp_helper,
+                                 const int npixels, const int nspix_buffer,
+                                 const int nbatch, const int width, const int nftrs);
+
 __global__ void clear_fields(spix_params* sp_params,
                              spix_helper* sp_helper,
                              const int nsuperpixel_buffer,
@@ -24,9 +29,12 @@ __global__ void sum_by_label(const float* img, const int* seg,
                              const int npix, const int nbatch,
                              const int width, const int nftrs);
 
-__global__ void calculate_mu_and_sigma(spix_params* sp_params,
-                                       spix_helper* sp_helper,
-                                       const int nspix_buffer);
+__global__ void calc_posterior_mode(spix_params* sp_params,
+                                         spix_helper* sp_helper,
+                                         const int nspix_buffer);
+
+__global__ void calc_summ_stats(spix_params* sp_params,spix_helper* sp_helper,
+                                const int nspix_buffer);
 /* __global__ */
 /* void calculate_mu_and_sigma(spix_params*  sp_params, */
 /*                             spix_helper* sp_helper, */

@@ -246,8 +246,10 @@ bass_forward_cuda(const torch::Tensor imgs,
     //                                             counts.data<int>(),
     //                                             sp.get_cuda_sp_params(),
     //                                             unique_ids.data<int>(),nspix);
+    // fprintf(stdout,"a.\n");
     PySuperpixelParams params = get_params_as_tensors_s(sp.get_cuda_sp_params(),
                                                         unique_ids.data<int>(),nspix);
+    // fprintf(stdout,"b.\n");
 
     
     // -- relabel spix --

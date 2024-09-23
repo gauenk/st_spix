@@ -35,6 +35,7 @@
 // -- utils --
 #include "rgb2lab.h"
 #include "init_utils.h"
+#include "simple_init_sparams.h"
 #include "seg_utils.h"
 #include "simple_sparams_io.h"
 
@@ -123,6 +124,7 @@ run_refine_missing(const torch::Tensor img_rgb,
     CHECK_INPUT(prior_params.prior_counts);
     CHECK_INPUT(prior_map);
 
+
     // -- unpack --
     int nbatch = spix.size(0);
     int height = spix.size(1);
@@ -197,6 +199,7 @@ run_refine_missing(const torch::Tensor img_rgb,
     auto unique_ids = std::get<0>(at::_unique(filled_spix));
     auto ids = unique_ids.data<int>();
     int nspix_post = unique_ids.sizes()[0];
+
     PySuperpixelParams params = get_params_as_tensors_s(sp_params,ids,nspix_post);
 
     // -- free --

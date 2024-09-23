@@ -16,10 +16,10 @@
 #include "../bass/share/my_sp_struct.h"
 #endif
 
-
 // -- utils --
 #include "rgb2lab.h"
 #include "init_utils.h"
+#include "simple_init_sparams.h"
 #include "seg_utils.h"
 #include "simple_sparams_io.h"
 
@@ -70,7 +70,6 @@ __host__ void prop_bass(float* img, int* seg,
 
       // -- Run Split/Merge --
       if ((sm_start <=0) or (idx > sm_start)){
-        // printf("split merge.\n");
         max_spix = run_simple_split_merge(img, seg, border, sp_params,
                                    prior_params, prior_map,
                                    sp_helper, sm_helper, sm_seg1, sm_seg2, sm_pairs,

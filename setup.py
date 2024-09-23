@@ -3,7 +3,7 @@ import os
 
 # Set environment variables to use ccache
 os.environ['PYTORCH_NVCC'] = "ccache nvcc"
-os.environ['TORCH_EXTENSION_SKIP_NVCC_GEN_DEPENDENCIES'] = '1'
+os.environ['TORCH_EXTENSION_SKIP_NVCC_GEN_DEPENDENCIES'] = '1' # "1" # for faster
 
 from setuptools import setup, find_packages
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
@@ -43,7 +43,7 @@ setup(
             'st_spix/csrc/pwd/pair_wise_distance_cuda_source.cu',
             # -- shared utils --
             "st_spix/csrc/bass/relabel.cu",
-            "st_spix/csrc/prop/sparams_io.cu",
+            "st_spix/csrc/prop/simple_sparams_io.cu",
             "st_spix/csrc/prop/init_utils.cu",
             # -- apis --
             # 'st_spix/csrc/bass/dev.cu',
@@ -103,14 +103,18 @@ setup(
 
         CUDAExtension('prop_cuda', [
             # -- shared utils --
+            "st_spix/csrc/prop/pch.cu",
             "st_spix/csrc/bass/relabel.cu",
             "st_spix/csrc/prop/sparams_io.cu",
-            "st_spix/csrc/prop/pch.cu",
-            # -- prop utils
+            "st_spix/csrc/prop/simple_sparams_io.cu",
+            # -- prop utils --
+            "st_spix/csrc/prop/rgb2lab.cu",
             "st_spix/csrc/prop/seg_utils.cu",
             "st_spix/csrc/prop/init_seg.cu",
             "st_spix/csrc/prop/init_utils.cu",
-            "st_spix/csrc/prop/rgb2lab.cu",
+            "st_spix/csrc/prop/init_sparams.cu",
+            "st_spix/csrc/prop/simple_init_sparams.cu",
+            # -- tools --
             "st_spix/csrc/prop/split_disconnected.cu",
             "st_spix/csrc/prop/fill_missing.cu",
             # -- standard bass --
@@ -118,10 +122,10 @@ setup(
             "st_spix/csrc/prop/update_params.cu",
             "st_spix/csrc/prop/update_seg.cu",
             "st_spix/csrc/prop/split_merge.cu",
+            "st_spix/csrc/prop/simple_split_merge.cu",
             # -- prop bass spix  --
             "st_spix/csrc/prop/refine_missing.cu",
             "st_spix/csrc/prop/prop_bass.cu",
-            "st_spix/csrc/prop/simple_split_merge.cu",
             "st_spix/csrc/prop/update_prop_params.cu",
             "st_spix/csrc/prop/update_missing_seg.cu",
             "st_spix/csrc/prop/update_prop_seg.cu",

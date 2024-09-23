@@ -30,7 +30,7 @@ from dev_basics.utils.metrics import compute_psnrs
 # import st_spix_cuda
 import bass_cuda
 import prop_cuda
-from .param_utils import copy_spix_params
+from .param_utils import copy_spix_params,unpack_spix_params_to_list
 
 
 def stream_bass(vid,flow=None,niters=30,niters_seg=5,
@@ -61,15 +61,21 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=5,
     # print(bass_cuda.SuperpixelParams)
 
     # pix_var = 0.
-    spix_t,params_t = bass_cuda.bass_forward(img_t,sp_size,pix_var,alpha_hastings,potts)
+    # img_t = img4bass(vid[None,0])
+    # spix_t,params_t = bass_cuda.bass_forward(img_t,sp_size,pix_var,alpha_hastings,potts)
+    img_t = rearrange(vid[None,0],'b f h w -> b h w f').contiguous()
+    spix_t,params_t = prop_cuda.bass(img_t,sp_size,pix_var,alpha_hastings,potts)
     nspix_t = spix_t.max().item()+1
+
     # print(params_t)
     # print(params_t.mu_i)
     # params_copy = copy_spix_params(params_t)
     # print(params_copy.mu_i)
     # exit()
-    print(flow[:,0].abs().min().item(),flow[:,0].abs().max().item(),
-          flow[:,1].abs().min().item(),flow[:,1].abs().max().item())
+
+    # -- info --
+    # print(flow[:,0].abs().min().item(),flow[:,0].abs().max().item(),
+    #       flow[:,1].abs().min().item(),flow[:,1].abs().max().item())
 
     # -- iterations --
     spix = [spix_t]
@@ -113,12 +119,13 @@ def run_prop(img,flow,spix_tm1,params_tm1,
     # print(params_tm1.mu_s[:4]/th.tensor([[W-1,H-1]]).to(img.device))
     params_t0 = params_tm1
     params_tm1 = copy_spix_params(params_tm1)
-    means_tm1 = params_tm1.mu_s[None,:]
+    print([p.device for p in unpack_spix_params_to_list(params_tm1)])
+    means_tm1 = params_tm1.mu_shape[None,:]
     fxn = st_spix.pool_flow_and_shift_mean
-    flow_sp,means_shift = fxn(flow,params_tm1.mu_s[None,:],spix_tm1)
+    flow_sp,means_shift = fxn(flow,params_tm1.mu_shape[None,:],spix_tm1)
     # print(params_tm1.mu_s[:4]/th.tensor([[W-1,H-1]]).to(img.device))
     # outs = shift_labels(spix_tm1,params_tm1.mu_s,flow_sp) #? mu_s [shifted]/[unshifted]?
-    outs = shift_labels(spix_tm1,params_t0.mu_s,flow_sp) #? mu_s [shifted]/[unshifted]?
+    outs = shift_labels(spix_tm1,params_t0.mu_shape,flow_sp)
     spix_prop,missing,missing_mask = outs
     # print("missing_mask.shape: ",missing_mask.shape)
     # print(params_tm1.mu_s[:4]/th.tensor([[W-1,H-1]]).to(img.device))
@@ -136,7 +143,7 @@ def run_prop(img,flow,spix_tm1,params_tm1,
     # centers = means_shift[...,-2:].contiguous()
     # print(centers)
     # print(spix_prop.shape,centers.shape,missing.shape,nspix_tm1)
-    spix_prop = prop_cuda.fill_missing(spix_prop,params_tm1.mu_s,missing,nspix_tm1,0)
+    spix_prop = prop_cuda.fill_missing(spix_prop,params_tm1.mu_shape,missing,nspix_tm1,0)
     assert(spix_prop.min().item() >= 0)
     # print(spix_prop.min().item(),spix_prop.max().item())
     # exit()
@@ -162,17 +169,23 @@ def run_prop(img,flow,spix_tm1,params_tm1,
     # print("missing_mask.shape: ",missing_mask.shape)
     # exit()
     # niters = 10
-    print(missing_mask.dtype)
-    print(missing_mask.type())
     prior_map = get_prior_map(spix_prop,children_t,nspix_tm1).int()
 
     nspix_t = spix_prop.max().item()+1
     # prior_map = th.arange(nspix_t).to(spix_prop.device).int()
     # print(niters,niters_seg)
+    print("py a.")
+    print(nspix_t)
+    print(params_tm1.mu_app.is_contiguous())
+    print(params_tm1.mu_shape.is_contiguous(),params_tm1.mu_shape.device)
+    print(params_tm1.sigma_shape.is_contiguous(),params_tm1.sigma_shape.device)
+    th.cuda.synchronize()
     spix_t,params_t = prop_cuda.refine_missing(img,spix_prop,missing_mask,
                                                params_tm1,prior_map,
                                                nspix_t,niters,niters_seg,
                                                sp_size,pix_var,potts)
+    print("py b.")
+
     # nspix_t = spix_t.max().item()+1
     # print("nspix_t: ",spix_t.max().item()+1,spix_t.min().item())
 

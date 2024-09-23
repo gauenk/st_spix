@@ -145,11 +145,11 @@ __device__ inline float2 cal_joint(
     const float sigma_s_z = __ldg(&sp_params[seg_idx].sigma_shape.z);
     const float logdet_sigma_shape = __ldg(&sp_params[seg_idx].logdet_sigma_shape);
 
-    // -- appearance --
-    res = res - x0*x0*sigma_a_x - x1*x1*sigma_a_y - x2*x2*sigma_a_z;
+    // -- appearance [sigma is actually \sigma^2] --
+    res = res - x0*x0/sigma_a_x - x1*x1/sigma_a_y - x2*x2/sigma_a_z;
     res = res - logdet_sigma_app;
 
-    // -- shape --
+    // -- shape [sigma is actually \Sigma^{(-1)}, the inverse] --
     res = res - d0*d0*sigma_s_x - d1*d1*sigma_s_z - 2*d0*d1*sigma_s_y; // sign(s_y) = -1
     res = res - logdet_sigma_shape;
 

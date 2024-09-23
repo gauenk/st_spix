@@ -20,6 +20,7 @@
 #include "sparams_io.h"
 #include "seg_utils.h"
 #include "init_utils.h"
+#include "init_sparams.h"
 #include "init_seg.h"
 
 // -- primary functions --
@@ -115,7 +116,6 @@ run_bass(const torch::Tensor img_rgb,
     bool* border = (bool*)easy_allocate(nbatch*npix,sizeof(bool));
     spix_params* sp_params=(spix_params*)easy_allocate(nspix_buffer,sparam_size);
     spix_helper* sp_helper=(spix_helper*)easy_allocate(nspix_buffer,helper_size);
-    // init_sp_params(sp_params,sp_size,nspix,nspix_buffer,npix);
 
     // -- compute pixel (inverse) covariance info --
     float pix_half = float(pix_var_i/2) * float(pix_var_i/2);
@@ -146,8 +146,15 @@ run_bass(const torch::Tensor img_rgb,
     //
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
+    // -- init spix_params --
+    init_sp_params(sp_params,img_ptr,spix_ptr,sp_helper,
+                   npix,nspix_buffer,nbatch,width,nftrs);
+    //                  int npix, int nspix_buffer,ftrs);
+    //              int nbatch, int width, int nftrs)
+    // init_sp_params(sp_paramsimg,,nspix,nspix_buffer,npix);
+
     // -- run method --
-    bass(img_ptr,spix_ptr,sp_params,
+    bass(img_ptr, spix_ptr, sp_params,
          border, sp_helper, sm_helper, sm_seg1, sm_seg2, sm_pairs,
          niters, niters_seg, sm_start, pix_var, logdet_pix_var,
          potts, alpha_hastings, nspix, nbatch, width, height, nftrs);
@@ -156,8 +163,8 @@ run_bass(const torch::Tensor img_rgb,
     auto unique_ids = std::get<0>(at::_unique(spix));
     auto ids = unique_ids.data<int>();
     int nspix_post = unique_ids.sizes()[0];
-    PySuperpixelParams params;
-    // PySuperpixelParams params = get_params_as_tensors(sp_params,ids,nspix_post);
+    // PySuperpixelParams params;
+    PySuperpixelParams params = get_params_as_tensors(sp_params,ids,nspix_post);
 
 
     // -- free --

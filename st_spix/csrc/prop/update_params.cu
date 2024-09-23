@@ -11,6 +11,11 @@
 
 ***********************************************************/
 
+/***********************************************
+
+           Compute Posterior Mode
+
+************************************************/
 __host__ void update_params(const float* img, const int* spix,
                             spix_params* sp_params,spix_helper* sp_helper,
                             const int npixels, const int nspix_buffer,
@@ -26,8 +31,35 @@ __host__ void update_params(const float* img, const int* spix,
 	cudaMemset(sp_helper, 0, nspix_buffer*sizeof(spix_helper));
     sum_by_label<<<BlockPerGrid1,ThreadPerBlock>>>(img,spix,sp_params,sp_helper,
                                                    npixels,nbatch,width,nftrs);
-	calculate_mu_and_sigma<<<BlockPerGrid2,ThreadPerBlock>>>(sp_params,sp_helper,
-                                                             nspix_buffer); 
+    calc_posterior_modes<<<BlockPerGrid2,ThreadPerBlock>>>(sp_params,sp_helper,
+                                                           nspix_buffer); 
+}
+
+/*****************************************************************
+
+         Compute Only the Summary Statistics
+     [for init; maybe a misplaced function in the code base]
+
+******************************************************************/
+
+
+__host__ void update_params_summ(const float* img, const int* spix,
+                                 spix_params* sp_params,spix_helper* sp_helper,
+                                 const int npixels, const int nspix_buffer,
+                                 const int nbatch, const int width, const int nftrs){
+
+  	dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
+    int num_block1 = ceil( double(npixels) / double(THREADS_PER_BLOCK) ); 
+	int num_block2 = ceil( double(nspix_buffer) / double(THREADS_PER_BLOCK) );
+    dim3 BlockPerGrid1(num_block1,nbatch);
+    dim3 BlockPerGrid2(num_block2,nbatch);
+    clear_fields<<<BlockPerGrid2,ThreadPerBlock>>>(sp_params,sp_helper,
+                                                   nspix_buffer,nftrs);
+	cudaMemset(sp_helper, 0, nspix_buffer*sizeof(spix_helper));
+    sum_by_label<<<BlockPerGrid1,ThreadPerBlock>>>(img,spix,sp_params,sp_helper,
+                                                   npixels,nbatch,width,nftrs);
+    calc_summ_stats<<<BlockPerGrid2,ThreadPerBlock>>>(sp_params,sp_helper,
+                                                      nspix_buffer); 
 }
 
 __global__
@@ -102,10 +134,84 @@ void sum_by_label(const float* img, const int* spix,
 }
 
 
+/***********************************************************
+
+          Summary Statistics for
+          -> Normal-Inverse-Gamma for Appearance (_app)
+          -> Normal-Inverse-Wishart for Shape (_shape)
+
+************************************************************/
+
 __global__
-void calculate_mu_and_sigma(spix_params*  sp_params,
-                            spix_helper* sp_helper,
-                            const int nsuperpixel_buffer) {
+void calc_summ_stats(spix_params*  sp_params,spix_helper* sp_helper,
+                     const int nsuperpixel_buffer) {
+
+    // -- update thread --
+	int k = threadIdx.x + blockIdx.x * blockDim.x; // the label
+	if (k>=nsuperpixel_buffer) return;
+	if (sp_params[k].valid == 0) return;
+    
+    // -- read curr --
+	int count_int = sp_params[k].count;
+	float a_prior = sp_params[k].prior_count;
+	float prior_sigma_s_2 = a_prior * a_prior;
+	double count = count_int * 1.0;
+    double2 mu_shape;
+    float3 mu_app;
+    double3 sigma_shape;
+
+    // --  sample means --
+	if (count_int<=0){ return; }
+
+    // -- appearance --
+    mu_app.x = sp_helper[k].sum_app.x / count;
+    mu_app.y = sp_helper[k].sum_app.y / count;
+    mu_app.z = sp_helper[k].sum_app.z / count;
+    sp_params[k].mu_app.x = mu_app.x;
+    sp_params[k].mu_app.y = mu_app.y;
+    sp_params[k].mu_app.z = mu_app.z;
+    sp_params[k].sigma_app.x = sp_helper[k].sq_sum_app.x/count - mu_app.x*mu_app.x;
+    sp_params[k].sigma_app.y = sp_helper[k].sq_sum_app.y/count - mu_app.y*mu_app.y;
+    sp_params[k].sigma_app.z = sp_helper[k].sq_sum_app.z/count - mu_app.z*mu_app.z;
+
+    // -- shape --
+    mu_shape.x = sp_helper[k].sum_shape.x / count;
+    mu_shape.y = sp_helper[k].sum_shape.y / count;
+    sp_params[k].mu_shape.x = mu_shape.x;
+    sp_params[k].mu_shape.y = mu_shape.y;
+
+    // -- sample covariance [NOT inverse] for shape --
+    sigma_shape.x = sp_helper[k].sq_sum_shape.x/count - mu_shape.x*mu_shape.x;
+    sigma_shape.y = sp_helper[k].sq_sum_shape.y/count - mu_shape.x*mu_shape.y;
+    sigma_shape.z = sp_helper[k].sq_sum_shape.z/count - mu_shape.y*mu_shape.y;
+
+    // -- correct sample cov if not invertable --
+    double det = sigma_shape.x*sigma_shape.z - sigma_shape.y*sigma_shape.y;
+    if (det <= 0){
+      sigma_shape.x = sigma_shape.x + 0.00001;
+      sigma_shape.y = sigma_shape.y + 0.00001;
+      det = sigma_shape.x * sigma_shape.z - sigma_shape.y * sigma_shape.y;
+      if (det<=0){ det = 0.00001; } // safety hack
+    }
+    sp_params[k].sigma_shape.x = sigma_shape.x;
+    sp_params[k].sigma_shape.y = sigma_shape.y;
+    sp_params[k].sigma_shape.z = sigma_shape.z;
+    sp_params[k].logdet_sigma_shape = det;
+
+}
+
+/***********************************************************
+
+          Posterior Modes of
+          -> Normal-Inverse-Gamma for Appearance (_app)
+          -> Normal-Inverse-Wishart for Shape (_shape)
+
+************************************************************/
+
+__global__
+void calc_posterior_modes(spix_params*  sp_params,
+                          spix_helper* sp_helper,
+                          const int nsuperpixel_buffer) {
 
     // -- update thread --
 	int k = threadIdx.x + blockIdx.x * blockDim.x; // the label

@@ -11,8 +11,9 @@
 #endif
 #define THREADS_PER_BLOCK 512
 #include "pch.h"
-#include "simple_sparams_io.h"
 #include "init_utils.h"
+#include "simple_sparams_io.h"
+#include "simple_init_sparams.h"
 
 /***********************************************************************
 
@@ -35,13 +36,38 @@ __host__ PySuperpixelParams get_params_as_tensors_s(superpixel_params* sp_params
 
   // -- allocate superpixel params --
   PySuperpixelParams sp_params_py;
+  // -- appearance --
   sp_params_py.mu_app = torch::zeros({num,3},options_f32);
+  sp_params_py.sigma_app = torch::zeros({num,3},options_f32);
+  sp_params_py.logdet_sigma_app = torch::zeros({num},options_f32);
+  sp_params_py.prior_mu_app = torch::zeros({num,3},options_f32);
+  sp_params_py.prior_sigma_app = torch::zeros({num,3},options_f32);
+  sp_params_py.prior_mu_app_count = torch::zeros({num},options_i32);
+  sp_params_py.prior_sigma_app_count = torch::zeros({num},options_i32);
+
+  // -- shape --
   sp_params_py.mu_shape = torch::zeros({num,2},options_f32);
-  sp_params_py.sigma_s = torch::zeros({num,3},options_f32);
-  sp_params_py.logdet_Sigma_s = torch::zeros({num},options_f32);
+  sp_params_py.sigma_shape = torch::zeros({num,3},options_f32);
+  sp_params_py.logdet_sigma_shape = torch::zeros({num},options_f32);
+  sp_params_py.prior_mu_shape = torch::zeros({num,2},options_f32);
+  sp_params_py.prior_sigma_shape = torch::zeros({num,3},options_f32);
+  sp_params_py.prior_mu_shape_count = torch::zeros({num},options_i32);
+  sp_params_py.prior_sigma_shape_count = torch::zeros({num},options_i32);
+
+  // -- helpers --
   sp_params_py.counts = torch::zeros({num},options_i32);
   sp_params_py.prior_counts = torch::zeros({num},options_i32);
   sp_params_py.ids = torch::from_blob(ids,{num},options_i32);
+
+  // // -- allocate superpixel params --
+  // PySuperpixelParams sp_params_py;
+  // sp_params_py.mu_app = torch::zeros({num,3},options_f32);
+  // sp_params_py.mu_shape = torch::zeros({num,2},options_f32);
+  // sp_params_py.sigma_shape = torch::zeros({num,3},options_f32);
+  // sp_params_py.logdet_sigma_shape = torch::zeros({num},options_f32);
+  // sp_params_py.counts = torch::zeros({num},options_i32);
+  // sp_params_py.prior_counts = torch::zeros({num},options_i32);
+  // sp_params_py.ids = torch::from_blob(ids,{num},options_i32);
 
   // -- fill the tensors with sp_params --
   params_to_tensors_s(sp_params_py,sp_params,num);
@@ -53,14 +79,6 @@ __host__ PySuperpixelParams get_params_as_tensors_s(superpixel_params* sp_params
 __host__ superpixel_params* get_tensors_as_params_s(PySuperpixelParams params,
                                                     int sp_size, int npix, int nspix,
                                                     int nspix_buffer){
-  // -- allocate helpers --
-  torch::Device device(torch::kCUDA, 0); 
-  auto options_i32 = torch::TensorOptions().dtype(torch::kInt32)
-    .layout(torch::kStrided).device(device);
-  auto options_f32 = torch::TensorOptions().dtype(torch::kFloat32)
-    .layout(torch::kStrided).device(device);
-
-
   // -- allocate superpixel params --
   const int sparam_size = sizeof(superpixel_params);
   superpixel_params* sp_params=(superpixel_params*)easy_allocate(nspix_buffer,
@@ -86,8 +104,8 @@ void params_to_tensors_s(PySuperpixelParams sp_params_py,
   // -- unpack python pointers --
   auto mu_app = sp_params_py.mu_app.data<float>();
   auto mu_shape = sp_params_py.mu_shape.data<float>();
-  auto sigma_s = sp_params_py.sigma_s.data<float>();
-  auto logdet_Sigma_s = sp_params_py.logdet_Sigma_s.data<float>();
+  auto sigma_s = sp_params_py.sigma_shape.data<float>();
+  auto logdet_Sigma_s = sp_params_py.logdet_sigma_shape.data<float>();
   auto counts = sp_params_py.counts.data<int>();
   auto prior_counts = sp_params_py.prior_counts.data<int>();
   auto ids = sp_params_py.ids.data<int>();
@@ -130,12 +148,12 @@ void read_params_s(float* mu_app, float* mu_shape, float* cov, float* logdet_Sig
 
     logsigma_ix[0] = params_ix.logdet_Sigma_s;
 
-    mu_app_ix[0] = params_ix.mu_app.x;
-    mu_app_ix[1] = params_ix.mu_app.y;
-    mu_app_ix[2] = params_ix.mu_app.z;
+    mu_app_ix[0] = params_ix.mu_i.x;
+    mu_app_ix[1] = params_ix.mu_i.y;
+    mu_app_ix[2] = params_ix.mu_i.z;
 
-    mu_shape_ix[0] = params_ix.mu_shape.x;
-    mu_shape_ix[1] = params_ix.mu_shape.y;
+    mu_shape_ix[0] = params_ix.mu_s.x;
+    mu_shape_ix[1] = params_ix.mu_s.y;
 
     counts_ix[0] = params_ix.count;
     prior_counts_ix[0] = params_ix.prior_count;
@@ -148,7 +166,7 @@ void tensors_to_params_s(PySuperpixelParams sp_params_py,
   // -- unpack python pointers --
   auto mu_app = sp_params_py.mu_app.data<float>();
   auto mu_shape = sp_params_py.mu_shape.data<float>();
-  auto sigma_s = sp_params_py.sigma_shape.data<float>();
+  auto sigma_shape = sp_params_py.sigma_shape.data<float>();
   auto logdet_Sigma_s = sp_params_py.logdet_sigma_shape.data<float>();
   auto counts = sp_params_py.counts.data<int>();
   auto prior_counts = sp_params_py.prior_counts.data<int>();
@@ -159,7 +177,7 @@ void tensors_to_params_s(PySuperpixelParams sp_params_py,
   int num_blocks = ceil( double(num) / double(THREADS_PER_BLOCK) ); 
   dim3 nblocks(num_blocks);
   dim3 nthreads(THREADS_PER_BLOCK);
-  write_params_s<<<nblocks,nthreads>>>(mu_app, mu_s, sigma_s, logdet_Sigma_s,
+  write_params_s<<<nblocks,nthreads>>>(mu_app, mu_shape, sigma_shape, logdet_Sigma_s,
                                        counts, prior_counts, ids, sp_params, num);
   
 }

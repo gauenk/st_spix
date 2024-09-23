@@ -12,7 +12,7 @@
 #define THREADS_PER_BLOCK 512
 #include "pch.h"
 #include "sparams_io.h"
-#include "init_utils.h"
+#include "init_sp_params.h"
 
 /***********************************************************************
 
