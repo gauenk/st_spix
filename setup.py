@@ -1,8 +1,8 @@
 
+# -- local --
 import os
-
-# Set environment variables to use ccache
 os.environ['PYTORCH_NVCC'] = "ccache nvcc"
+# os.environ['TORCH_EXTENSION_SKIP_NVCC_GEN_DEPENDENCIES'] = '1' # "1" # for faster
 os.environ['TORCH_EXTENSION_SKIP_NVCC_GEN_DEPENDENCIES'] = '1' # "1" # for faster
 
 from setuptools import setup, find_packages
@@ -45,6 +45,7 @@ setup(
             "st_spix/csrc/bass/relabel.cu",
             "st_spix/csrc/prop/simple_sparams_io.cu",
             "st_spix/csrc/prop/init_utils.cu",
+            "st_spix/csrc/prop/simple_init_sparams.cu",
             # -- apis --
             # 'st_spix/csrc/bass/dev.cu',
             'st_spix/csrc/bass/core_params.cu',
@@ -124,6 +125,7 @@ setup(
             "st_spix/csrc/prop/split_merge.cu",
             "st_spix/csrc/prop/simple_split_merge.cu",
             # -- prop bass spix  --
+            "st_spix/csrc/prop/simple_refine_missing.cu",
             "st_spix/csrc/prop/refine_missing.cu",
             "st_spix/csrc/prop/prop_bass.cu",
             "st_spix/csrc/prop/update_prop_params.cu",

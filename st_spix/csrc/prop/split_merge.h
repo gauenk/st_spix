@@ -22,16 +22,36 @@
 
 *************************************************************/
 
-__host__ int run_split_merge(const float* img, int* seg,
-                             bool* border, spix_params* sp_params,
-                             spix_helper* sp_helper,
-                             spix_helper_sm* sm_helper,
-                             int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
-                             float alpha_hastings, float pix_var,
-                             int& count, int idx, int max_nspix,
-                             const int npix, const int nbatch,
-                             const int width, const int height,
-                             const int nftrs, const int nspix_buffer);
+/* __host__ int run_split_merge(const float* img, int* seg, */
+/*                              bool* border, spix_params* sp_params, */
+/*                              spix_helper* sp_helper, */
+/*                              spix_helper_sm* sm_helper, */
+/*                              int* sm_seg1 ,int* sm_seg2, int* sm_pairs, */
+/*                              float alpha_hastings, float pix_var, */
+/*                              int& count, int idx, int max_nspix, */
+/*                              const int npix, const int nbatch, */
+/*                              const int width, const int height, */
+/*                              const int nftrs, const int nspix_buffer); */
+
+__host__ int run_split(const float* img, int* seg, bool* border,
+                       spix_params* sp_params, spix_helper* sp_helper,
+                       spix_helper_sm* sm_helper,
+                       int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
+                       float alpha_hastings, float pix_var,
+                       int& count, int idx, int max_nspix,
+                       const int npix, const int nbatch,
+                       const int width, const int height,
+                       const int nftrs, const int nspix_buffer);
+
+__host__ void run_merge(const float* img, int* seg, bool* border,
+                        spix_params* sp_params, spix_helper* sp_helper,
+                        spix_helper_sm* sm_helper,
+                        int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
+                        float alpha_hastings, float pix_var,
+                        int& count, int idx, int max_nspix,
+                        const int npix, const int nbatch,
+                        const int width, const int height,
+                        const int nftrs, const int nspix_buffer);
 
 __host__ void CudaCalcMergeCandidate(const float* img, int* seg,
                                      bool* border, spix_params* sp_params,
@@ -83,11 +103,11 @@ __global__  void calc_merge_candidate(int* seg, bool* border, int* sm_pairs,
                                       const int width, const int height,
                                       const int change);
 
-/* __global__ void sum_by_label_merge(const float* img, const int* seg_gpu, */
-/*                                    spix_params* sp_params, */
-/*                                    spix_helper_sm* sm_helper, */
-/*                                    const int npix, const int nbatch, */
-/*                                    const int width, const int nftrs); */
+__global__ void sum_by_label_merge(const float* img, const int* seg_gpu,
+                                   spix_params* sp_params,
+                                   spix_helper_sm* sm_helper,
+                                   const int npix, const int nbatch,
+                                   const int width, const int nftrs);
 
 __global__ void calc_bn_merge(int* seg, int* sm_pairs,
                               spix_params* sp_params,

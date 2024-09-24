@@ -21,15 +21,15 @@
 #endif
 
 __host__
-int run_split_merge(const float* img, int* seg, bool* border,
-                    spix_params* sp_params, spix_helper* sp_helper,
-                    spix_helper_sm* sm_helper,
-                    int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
-                    float alpha_hastings, float pix_var,
-                    int& count, int idx, int max_nspix,
-                    const int npix, const int nbatch,
-                    const int width, const int height,
-                    const int nftrs, const int nspix_buffer){
+int run_split(const float* img, int* seg, bool* border,
+              spix_params* sp_params, spix_helper* sp_helper,
+              spix_helper_sm* sm_helper,
+              int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
+              float alpha_hastings, float pix_var,
+              int& count, int idx, int max_nspix,
+              const int npix, const int nbatch,
+              const int width, const int height,
+              const int nftrs, const int nspix_buffer){
 
   if(idx%4 == 0){
     count += 1;
@@ -41,16 +41,32 @@ int run_split_merge(const float* img, int* seg, bool* border,
                                        npix,nbatch,width,height,nftrs,
                                        nspix_buffer, max_nspix,
                                        direction, alpha_hastings, pix_var);
-  }else if( idx%4 == 2){
-    int direction = count%2;
+
+  }
+  return max_nspix;
+}
+
+__host__
+void run_merge(const float* img, int* seg, bool* border,
+               spix_params* sp_params, spix_helper* sp_helper,
+               spix_helper_sm* sm_helper,
+               int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
+               float alpha_hastings, float pix_var,
+               int& count, int idx, int max_nspix,
+               const int npix, const int nbatch,
+               const int width, const int height,
+               const int nftrs, const int nspix_buffer){
+
+  if( idx%4 == 2){
+    fprintf(stdout,"idx,count: %d,%d\n",idx,count);
     // -- run merge --
+    int direction = count%2;
     CudaCalcMergeCandidate(img, seg, border,
                            sp_params, sp_helper, sm_helper, sm_pairs,
                            npix,nbatch,width,height,nftrs,
                            nspix_buffer,direction, alpha_hastings, pix_var);
 
   }
-  return max_nspix;
 }
 
 __host__ void CudaCalcMergeCandidate(const float* img, int* seg, bool* border,
@@ -73,11 +89,12 @@ __host__ void CudaCalcMergeCandidate(const float* img, int* seg, bool* border,
     init_sm<<<BlockPerGrid2,ThreadPerBlock>>>(img,seg,sp_params,sm_helper,
                                               nspix_buffer, nbatch, width,
                                               nftrs, sm_pairs);
+    fprintf(stdout,"direction: %d\n",direction);
     calc_merge_candidate<<<BlockPerGrid,ThreadPerBlock>>>(seg,border, sm_pairs,
                                                           npix, nbatch, width,
                                                           height, direction); 
-    // sum_by_label_merge<<<BlockPerGrid,ThreadPerBlock>>>(img,seg,sp_params,sm_helper,
-    //                                                     npix, nbatch, width,  nftrs);
+    sum_by_label_merge<<<BlockPerGrid,ThreadPerBlock>>>(img,seg,sp_params,sm_helper,
+                                                        npix, nbatch, width,  nftrs);
     calc_bn_merge<<<BlockPerGrid2,ThreadPerBlock>>>(seg, sm_pairs, sp_params,
                                                     sp_helper, sm_helper,
                                                     npix, nbatch, width,
@@ -390,26 +407,26 @@ __global__ void calc_seg_split(int* sm_seg1, int* sm_seg2, int* seg,
     return;
 }
 
-// __global__ void sum_by_label_merge(const float* img, const int* seg_gpu,
-//                                    spix_params* sp_params,
-//                                    spix_helper_sm* sm_helper,
-//                                    const int npix, const int nbatch,
-//                                    const int width, const int nftrs) {
-//   // todo: nbatch
-// 	// getting the index of the pixel
-//     int t = threadIdx.x + blockIdx.x * blockDim.x;
-// 	if (t>=npix) return;
+__global__ void sum_by_label_merge(const float* img, const int* seg_gpu,
+                                   spix_params* sp_params,
+                                   spix_helper_sm* sm_helper,
+                                   const int npix, const int nbatch,
+                                   const int width, const int nftrs) {
+  // todo: nbatch
+	// getting the index of the pixel
+    int t = threadIdx.x + blockIdx.x * blockDim.x;
+	if (t>=npix) return;
 
-// 	//get the label
-// 	int k = __ldg(&seg_gpu[t]);
-//     float l = __ldg(& img[3*t]);
-//     float a = __ldg(& img[3*t+1]);
-//     float b = __ldg(& img[3*t+2]);
-// 	//atomicAdd(&sp_params[k].count, 1); //TODO: Time it
-// 	atomicAdd(&sm_helper[k].sq_sum_app.x, l*l);
-// 	atomicAdd(&sm_helper[k].sq_sum_app.y, a*a);
-// 	atomicAdd(&sm_helper[k].sq_sum_app.z,b*b);
-// }
+	//get the label
+	int k = __ldg(&seg_gpu[t]);
+    float l = __ldg(& img[3*t]);
+    float a = __ldg(& img[3*t+1]);
+    float b = __ldg(& img[3*t+2]);
+	//atomicAdd(&sp_params[k].count, 1); //TODO: Time it
+	atomicAdd(&sm_helper[k].sq_sum_app.x, l*l);
+	atomicAdd(&sm_helper[k].sq_sum_app.y, a*a);
+	atomicAdd(&sm_helper[k].sq_sum_app.z,b*b);
+}
 
 __global__ void sum_by_label_split(const float* img, const int* seg,
                                    spix_params* sp_params,
@@ -434,6 +451,11 @@ __global__ void sum_by_label_split(const float* img, const int* seg,
     atomicAdd(&sm_helper[k].sum_app.x, l);
 	atomicAdd(&sm_helper[k].sum_app.y, a);
 	atomicAdd(&sm_helper[k].sum_app.z, b);
+    
+	int x = t % width;
+	int y = t / width; 
+    atomicAdd(&sm_helper[k].sum_shape.x, x);
+    atomicAdd(&sm_helper[k].sum_shape.y, y);
     return;
 }
 

@@ -22,6 +22,7 @@
 #include "init_utils.h"
 #include "init_sparams.h"
 #include "init_seg.h"
+#include "../bass/relabel.h"
 
 // -- primary functions --
 #include "prop_bass.h"
@@ -36,7 +37,7 @@
 
 ***********************************************************/
 
-__host__ void bass(float* img, int* seg,spix_params* sp_params,bool* border,
+__host__ int bass(float* img, int* seg,spix_params* sp_params,bool* border,
                    spix_helper* sp_helper,spix_helper_sm* sm_helper,
                    int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
                    int niters, int niters_seg, int sm_start,
@@ -49,7 +50,8 @@ __host__ void bass(float* img, int* seg,spix_params* sp_params,bool* border,
     int npix = height * width;
     int nspix_buffer = nspix * 45;
     int max_spix = nspix;
-    float pix_var = std::sqrt(1./(4*pix_ivar.x));
+    float pix_var = 2*std::sqrt(1./pix_ivar.x);
+    fprintf(stdout,"pix_var: %3.5f\n",pix_var);
 
     for (int idx = 0; idx < niters; idx++) {
 
@@ -58,14 +60,23 @@ __host__ void bass(float* img, int* seg,spix_params* sp_params,bool* border,
                     npix, nspix_buffer, nbatch, width, nftrs);
 
       // -- Run Split/Merge --
-      if ((sm_start <=0) or (idx > sm_start)){
-        // printf("split merge.\n");
-        max_spix = run_split_merge(img, seg, border, sp_params,
-                                   sp_helper, sm_helper, sm_seg1, sm_seg2, sm_pairs,
-                                   alpha_hastings, pix_var, count, idx, max_spix,
-                                   npix,nbatch,width,height,nftrs,nspix_buffer);
-        update_params(img, seg, sp_params, sp_helper,
-                      npix, nspix_buffer, nbatch, width, nftrs);
+      if (idx >= sm_start){
+        if(idx%4 == 0){
+          max_spix = run_split(img, seg, border, sp_params,
+                               sp_helper, sm_helper, sm_seg1, sm_seg2, sm_pairs,
+                               alpha_hastings, pix_var, count, idx, max_spix,
+                               npix,nbatch,width,height,nftrs,nspix_buffer);
+          update_params(img, seg, sp_params, sp_helper,
+                        npix, nspix_buffer, nbatch, width, nftrs);
+        }
+        if( idx%4 == 2){
+          run_merge(img, seg, border, sp_params,
+                    sp_helper, sm_helper, sm_seg1, sm_seg2, sm_pairs,
+                    alpha_hastings, pix_var, count, idx, max_spix,
+                    npix,nbatch,width,height,nftrs,nspix_buffer);
+          update_params(img, seg, sp_params, sp_helper,
+                        npix, nspix_buffer, nbatch, width, nftrs);
+        }
       }
 
       // -- Update Segmentation --
@@ -76,6 +87,7 @@ __host__ void bass(float* img, int* seg,spix_params* sp_params,bool* border,
     }
 
     CudaFindBorderPixels_end(seg, border, npix, nbatch, width, height);
+    return max_spix;
 
 }
 
@@ -123,7 +135,7 @@ run_bass(const torch::Tensor img_rgb,
     pix_var.x = 1.0/pix_half;
     pix_var.y = 1.0/pix_half;
     pix_var.z = 1.0/pix_half;
-    float logdet_pix_var = log(pix_half * pix_half * pix_half);
+    float logdet_pix_var = 3.*log(pix_half);
 
     // -- convert image color --
     auto img_lab = img_rgb.clone();
@@ -147,17 +159,18 @@ run_bass(const torch::Tensor img_rgb,
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
     // -- init spix_params --
-    init_sp_params(sp_params,img_ptr,spix_ptr,sp_helper,
+    float prior_sigma_app = pix_var_i; // somehow "i" is appearance"
+    init_sp_params(sp_params,prior_sigma_app,img_ptr,spix_ptr,sp_helper,
                    npix,nspix,nspix_buffer,nbatch,width,nftrs);
     //                  int npix, int nspix_buffer,ftrs);
     //              int nbatch, int width, int nftrs)
     // init_sp_params(sp_paramsimg,,nspix,nspix_buffer,npix);
 
     // -- run method --
-    bass(img_ptr, spix_ptr, sp_params,
-         border, sp_helper, sm_helper, sm_seg1, sm_seg2, sm_pairs,
-         niters, niters_seg, sm_start, pix_var, logdet_pix_var,
-         potts, alpha_hastings, nspix, nbatch, width, height, nftrs);
+    int max_spix = bass(img_ptr, spix_ptr, sp_params,
+                        border, sp_helper, sm_helper, sm_seg1, sm_seg2, sm_pairs,
+                        niters, niters_seg, sm_start, pix_var, logdet_pix_var,
+                        potts, alpha_hastings, nspix, nbatch, width, height, nftrs);
 
     // -- get spixel parameters as tensors --
     auto unique_ids = std::get<0>(at::_unique(spix));
@@ -165,6 +178,14 @@ run_bass(const torch::Tensor img_rgb,
     int nspix_post = unique_ids.sizes()[0];
     // PySuperpixelParams params;
     PySuperpixelParams params = get_params_as_tensors(sp_params,ids,nspix_post);
+
+    // -- relabel spix --
+    int num_blocks1 = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
+    dim3 nthreads1(THREADS_PER_BLOCK);
+    dim3 nblocks1(num_blocks1);
+    relabel_spix<false><<<nblocks1,nthreads1>>>(spix.data<int>(),
+                                                unique_ids.data<int>(),
+                                                npix, nspix);
 
 
     // -- free --

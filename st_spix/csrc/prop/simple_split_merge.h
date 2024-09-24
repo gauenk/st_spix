@@ -22,17 +22,29 @@
 
 *************************************************************/
 
-__host__ int run_simple_split_merge(const float* img, int* seg,
-                             bool* border, superpixel_params* sp_params,
-                             superpixel_params* prior_params, int* prior_map,
-                             superpixel_GPU_helper* sp_helper,
-                             superpixel_GPU_helper_sm* sm_helper,
-                             int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
-                             float alpha_hastings, float pix_var,
-                             int& count, int idx, int max_nspix,
-                             const int npix, const int nbatch,
-                             const int width, const int height,
-                             const int nftrs, const int nspix_buffer);
+__host__ int run_simple_split(const float* img, int* seg,
+                              bool* border, superpixel_params* sp_params,
+                              superpixel_params* prior_params, int* prior_map,
+                              superpixel_GPU_helper* sp_helper,
+                              superpixel_GPU_helper_sm* sm_helper,
+                              int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
+                              float alpha_hastings, float pix_var,
+                              int& count, int idx, int max_nspix,
+                              const int npix, const int nbatch,
+                              const int width, const int height,
+                              const int nftrs, const int nspix_buffer);
+
+__host__ void run_simple_merge(const float* img, int* seg,
+                              bool* border, superpixel_params* sp_params,
+                              superpixel_params* prior_params, int* prior_map,
+                              superpixel_GPU_helper* sp_helper,
+                              superpixel_GPU_helper_sm* sm_helper,
+                              int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
+                              float alpha_hastings, float pix_var,
+                              int& count, int idx, int max_nspix,
+                              const int npix, const int nbatch,
+                              const int width, const int height,
+                              const int nftrs, const int nspix_buffer);
 
 __host__ void CudaCalcSimpleMergeCandidate(const float* img, int* seg,
                                      bool* border, superpixel_params* sp_params,

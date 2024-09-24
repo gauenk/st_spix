@@ -55,11 +55,10 @@ Superpixels::Superpixels(int img_nbatch, int img_dimx, int img_dimy,
 
     sp_options = spoptions;
     float i_std  = float(sp_options.i_std);
-
     float half_i_std_square = float(i_std/2) * float(i_std/2);
     float i_std_square = float(i_std) * float(i_std);
 
-    logdet_Sigma_i = log(half_i_std_square * i_std_square * i_std_square);
+    // logdet_Sigma_i = log(half_i_std_square * i_std_square * i_std_square);
     logdet_Sigma_i = log(half_i_std_square * half_i_std_square * half_i_std_square);
 
     J_i.x = 1.0/half_i_std_square;
@@ -314,14 +313,17 @@ void Superpixels::calc_seg() {
         if( (i<sp_options.nEMIters*20) && (i>-1) )
         {
             // if(i>sp_options.nEMIters*split_merge_start){
-            if(i>split_merge_start){
+            if(i>=split_merge_start){
               if((i%4==0)&&(count<100)){
                 count+=1;
                 // // if not split, then all spix are connected.
-                max_SP = CudaCalcSplitCandidate(image_gpu_double, split_merge_pairs,
-                   seg_gpu, border_gpu, sp_params ,sp_gpu_helper,sp_gpu_helper_sm,
-                   nPixels,nbatch,dim_x,dim_y,nftrs,nSPs_buffer,seg_split1,seg_split2,
-                       seg_split3,max_SP, count, i_std, alpha);
+
+                // --- .... ---
+                // max_SP = CudaCalcSplitCandidate(image_gpu_double, split_merge_pairs,
+                //    seg_gpu, border_gpu, sp_params ,sp_gpu_helper,sp_gpu_helper_sm,
+                //    nPixels,nbatch,dim_x,dim_y,nftrs,nSPs_buffer,seg_split1,seg_split2,
+                //        seg_split3,max_SP, count, i_std, alpha);
+
                 // // gpuErrchk( cudaPeekAtLastError() );
                 // // gpuErrchk( cudaDeviceSynchronize() );
 
@@ -350,10 +352,15 @@ void Superpixels::calc_seg() {
               if((i%4==2)&&(count<100)){
 
                 for(int j=0; j<1; j++){
+
+                    // -- ... --
+                  fprintf(stdout,"i,count: %d,%d\n",i,count);
                     CudaCalcMergeCandidate(image_gpu_double,split_merge_pairs,seg_gpu,
                            border_gpu, sp_params ,sp_gpu_helper,sp_gpu_helper_sm,
                            nPixels,nbatch,dim_x,dim_y,nftrs,
                            nSPs_buffer,count%2,i_std, alpha);
+
+                    // -- ... --
                     // // gpuErrchk( cudaPeekAtLastError() );
                     // // gpuErrchk( cudaDeviceSynchronize() );
 

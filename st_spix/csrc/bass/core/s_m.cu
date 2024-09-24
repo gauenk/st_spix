@@ -114,8 +114,13 @@ __host__ void CudaCalcMergeCandidate(const float* image_gpu_double,
     cudaMalloc((void **)&mutex, sizeof(int));
     cudaMemset(mutex, 0, sizeof(int));
 
-    init_sm<<<BlockPerGrid2,ThreadPerBlock>>>(image_gpu_double,seg,sp_params,sp_gpu_helper_sm, nSPs_buffer, nbatch, xdim, nftrs, split_merge_pairs);
-    calc_merge_candidate<<<BlockPerGrid,ThreadPerBlock>>>(seg,border,split_merge_pairs,nPixels, nbatch, xdim, ydim, change); 
+    init_sm<<<BlockPerGrid2,ThreadPerBlock>>>(image_gpu_double,seg,sp_params,
+                                              sp_gpu_helper_sm, nSPs_buffer,
+                                              nbatch, xdim, nftrs, split_merge_pairs);
+    fprintf(stdout,"change: %d\n",change);
+    calc_merge_candidate<<<BlockPerGrid,ThreadPerBlock>>>(seg,border,
+                                                          split_merge_pairs,nPixels,
+                                                          nbatch, xdim, ydim, change); 
     sum_by_label_sm<<<BlockPerGrid,ThreadPerBlock>>>(image_gpu_double,seg,sp_params,sp_gpu_helper_sm, nPixels, nbatch, xdim,  nftrs);
     calc_bn<<<BlockPerGrid2,ThreadPerBlock>>>(seg, split_merge_pairs, sp_params, sp_gpu_helper, sp_gpu_helper_sm, nPixels, nbatch, xdim, nSPs_buffer, b0);
     calc_marginal_liklelyhoood_of_sp<<<BlockPerGrid2,ThreadPerBlock>>>(image_gpu_double,  split_merge_pairs,  sp_params,  sp_gpu_helper, sp_gpu_helper_sm,  nPixels, nbatch, xdim, nftrs, nSPs_buffer , a0, b0);

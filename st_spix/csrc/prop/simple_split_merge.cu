@@ -21,17 +21,17 @@
 #endif
 
 __host__
-int run_simple_split_merge(const float* img, int* seg,
-                           bool* border, superpixel_params* sp_params,
-                           superpixel_params* prior_params, int* prior_map,
-                           superpixel_GPU_helper* sp_helper,
-                           superpixel_GPU_helper_sm* sm_helper,
-                           int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
-                           float alpha_hastings, float pix_var,
-                           int& count, int idx, int max_nspix,
-                           const int npix, const int nbatch,
-                           const int width, const int height,
-                           const int nftrs, const int nspix_buffer){
+int run_simple_split(const float* img, int* seg,
+                     bool* border, superpixel_params* sp_params,
+                     superpixel_params* prior_params, int* prior_map,
+                     superpixel_GPU_helper* sp_helper,
+                     superpixel_GPU_helper_sm* sm_helper,
+                     int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
+                     float alpha_hastings, float pix_var,
+                     int& count, int idx, int max_nspix,
+                     const int npix, const int nbatch,
+                     const int width, const int height,
+                     const int nftrs, const int nspix_buffer){
 
   if(idx%4 == 0){
     count += 1;
@@ -43,7 +43,24 @@ int run_simple_split_merge(const float* img, int* seg,
                                        npix,nbatch,width,height,nftrs,
                                        nspix_buffer, max_nspix,
                                        direction, alpha_hastings, pix_var);
-  }else if( idx%4 == 2){
+  }
+  return max_nspix;
+}
+
+__host__
+void run_simple_merge(const float* img, int* seg,
+                      bool* border, superpixel_params* sp_params,
+                      superpixel_params* prior_params, int* prior_map,
+                      superpixel_GPU_helper* sp_helper,
+                      superpixel_GPU_helper_sm* sm_helper,
+                      int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
+                      float alpha_hastings, float pix_var,
+                      int& count, int idx, int max_nspix,
+                      const int npix, const int nbatch,
+                      const int width, const int height,
+                      const int nftrs, const int nspix_buffer){
+
+  if( idx%4 == 2){
     int direction = count%2;
     // -- run merge --
     CudaCalcSimpleMergeCandidate(img, seg, border,
@@ -52,7 +69,6 @@ int run_simple_split_merge(const float* img, int* seg,
                            nspix_buffer,direction, alpha_hastings, pix_var);
 
   }
-  return max_nspix;
 }
 
 

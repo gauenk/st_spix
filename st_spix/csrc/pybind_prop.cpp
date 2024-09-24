@@ -13,8 +13,10 @@ void init_rgb2lab(py::module &m);
 void init_split_disconnected(py::module &m);
 void init_fill_missing(py::module &);
 void init_refine_missing(py::module &m);
+void init_simple_refine_missing(py::module &m);
 void init_seg_utils(py::module &m);
 void init_prop_bass(py::module &m);
+void init_bass(py::module &m);
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
@@ -22,8 +24,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_split_disconnected(m);
   init_fill_missing(m);
   init_refine_missing(m);
+  init_simple_refine_missing(m);
   init_seg_utils(m);
   init_prop_bass(m);
+  init_bass(m);
 
   // -- nicer superpixel parameter IO --
   py::class_<PySuperpixelParams>(m, "SuperpixelParams")
@@ -35,6 +39,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
          torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor,
          torch::Tensor, torch::Tensor, torch::Tensor>())
     .def("__repr__", [](const PySuperpixelParams& d){ return "Superpixel Parameters"; })
+    // -- appearance --
     .def_readwrite("mu_app", &PySuperpixelParams::mu_app)
     .def_readwrite("sigma_app", &PySuperpixelParams::sigma_app)
     .def_readwrite("logdet_sigma_app", &PySuperpixelParams::logdet_sigma_app)

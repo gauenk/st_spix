@@ -118,56 +118,6 @@ __device__ inline float2 cal_prop_likelihood(
     return res_max;
 }
 
-__device__ inline float2 cal_joint(
-    float* imgC, int* seg, int width_index, int height_index,
-    spix_params* sp_params, int seg_idx,
-    float3 pix_var, float logdet_pix_var,
-    float neigh_neq, float beta, float2 res_max){
-
-    // -- init res --
-    /* float res = -1000; // some large negative number // why? */
-    float res = 0.;
-
-    // -- appearance --
-    const float x0 = __ldg(&imgC[0])-__ldg(&sp_params[seg_idx].mu_app.x);
-    const float x1 = __ldg(&imgC[1])-__ldg(&sp_params[seg_idx].mu_app.y);
-    const float x2 = __ldg(&imgC[2])-__ldg(&sp_params[seg_idx].mu_app.z);
-    const float sigma_a_x = __ldg(&sp_params[seg_idx].sigma_app.x);
-    const float sigma_a_y = __ldg(&sp_params[seg_idx].sigma_app.y);
-    const float sigma_a_z = __ldg(&sp_params[seg_idx].sigma_app.z);
-    const float logdet_sigma_app = __ldg(&sp_params[seg_idx].logdet_sigma_app);
-
-    // -- shape --
-    const int d0 = width_index - __ldg(&sp_params[seg_idx].mu_shape.x);
-    const int d1 = height_index - __ldg(&sp_params[seg_idx].mu_shape.y);
-    const float sigma_s_x = __ldg(&sp_params[seg_idx].sigma_shape.x);
-    const float sigma_s_y = __ldg(&sp_params[seg_idx].sigma_shape.y);
-    const float sigma_s_z = __ldg(&sp_params[seg_idx].sigma_shape.z);
-    const float logdet_sigma_shape = __ldg(&sp_params[seg_idx].logdet_sigma_shape);
-
-    // -- appearance [sigma is actually \sigma^2] --
-    res = res - x0*x0/sigma_a_x - x1*x1/sigma_a_y - x2*x2/sigma_a_z;
-    res = res - logdet_sigma_app;
-
-    // -- shape [sigma is actually \Sigma^{(-1)}, the inverse] --
-    res = res - d0*d0*sigma_s_x - d1*d1*sigma_s_z - 2*d0*d1*sigma_s_y; // sign(s_y) = -1
-    res = res - logdet_sigma_shape;
-
-    // -- prior --
-    res = res - sp_params[seg_idx].prior_lprob;
-
-    // -- potts term --
-    res = res - beta*neigh_neq;
-
-    // -- update res --
-    if( res>res_max.x ){
-      res_max.x = res;
-      res_max.y = seg_idx;
-    }
-
-    return res_max;
-}
-
 #endif
 
 

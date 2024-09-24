@@ -69,15 +69,27 @@ __host__ void prop_bass(float* img, int* seg,
                          nspix_buffer, nbatch, width, nftrs);
 
       // -- Run Split/Merge --
-      if ((sm_start <=0) or (idx > sm_start)){
-        max_spix = run_simple_split_merge(img, seg, border, sp_params,
-                                   prior_params, prior_map,
-                                   sp_helper, sm_helper, sm_seg1, sm_seg2, sm_pairs,
-                                   alpha_hastings, pix_var, count, idx, max_spix,
-                                   npix,nbatch,width,height,nftrs,nspix_buffer);
-        update_prop_params(img, seg, sp_params, sp_helper,
-                           prior_params, prior_map, npix,
-                           nspix_buffer, nbatch, width, nftrs);
+      if (idx >= sm_start){
+        if(idx%4 == 0){
+          max_spix = run_simple_split(img, seg, border, sp_params,
+                                      prior_params, prior_map,
+                                      sp_helper, sm_helper, sm_seg1, sm_seg2, sm_pairs,
+                                      alpha_hastings, pix_var, count, idx, max_spix,
+                                      npix,nbatch,width,height,nftrs,nspix_buffer);
+          update_prop_params(img, seg, sp_params, sp_helper,
+                             prior_params, prior_map, npix,
+                             nspix_buffer, nbatch, width, nftrs);
+        }
+        if( idx%4 == 2){
+          run_simple_merge(img, seg, border, sp_params,
+                           prior_params, prior_map,
+                           sp_helper, sm_helper, sm_seg1, sm_seg2, sm_pairs,
+                           alpha_hastings, pix_var, count, idx, max_spix,
+                           npix,nbatch,width,height,nftrs,nspix_buffer);
+          update_prop_params(img, seg, sp_params, sp_helper,
+                             prior_params, prior_map, npix,
+                             nspix_buffer, nbatch, width, nftrs);
+        }
       }
 
       // -- Update Segmentation --

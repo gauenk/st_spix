@@ -110,6 +110,7 @@ struct alignas(16) spix_helper{
 struct alignas(16) spix_helper_sm {
     float3 sum_app;
     double3 sq_sum_app;
+    double2 sum_shape;
     /* float3 squares_i; */
     int count_f;
     float3 b_n;

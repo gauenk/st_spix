@@ -46,7 +46,7 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=5,
         flow,bflow = run_raft(th.clip(255.*vid,0.,255.).type(th.uint8))
 
     # -- bass --
-    img_t = img4bass(vid[None,0])
+    # img_t = img4bass(vid[None,0])
     # bass_fwd = st_spix_cuda.bass_forward
     # # spix_t,means_t,cov_t,counts_t,ids_t = bass_fwd(img_t,sp_size,pix_var,alpha,potts)
     # spix_t,params_t,ids_t = bass_fwd(img_t,sp_size,pix_var,alpha,potts)
@@ -60,12 +60,23 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=5,
     # print(dir(bass_cuda))
     # print(bass_cuda.SuperpixelParams)
 
-    # pix_var = 0.
+    # -- old version --
     # img_t = img4bass(vid[None,0])
     # spix_t,params_t = bass_cuda.bass_forward(img_t,sp_size,pix_var,alpha_hastings,potts)
+    # nspix_t = spix_t.max().item()+1
+
+    # -- updated version --
     img_t = rearrange(vid[None,0],'b f h w -> b h w f').contiguous()
-    spix_t,params_t = prop_cuda.bass(img_t,sp_size,pix_var,alpha_hastings,potts)
+    sm_start = 0
+    niters,niters_seg = sp_size,4 # a fun choice from BASS authors
+    spix_t,params_t = prop_cuda.bass(img_t,niters,niters_seg,sm_start,
+                                     sp_size,pix_var,potts,alpha_hastings)
     nspix_t = spix_t.max().item()+1
+
+    # -- info --
+    # print(spix_t.shape)
+    # print(spix_t)
+    # exit()
 
     # print(params_t)
     # print(params_t.mu_i)
@@ -119,13 +130,20 @@ def run_prop(img,flow,spix_tm1,params_tm1,
     # print(params_tm1.mu_s[:4]/th.tensor([[W-1,H-1]]).to(img.device))
     params_t0 = params_tm1
     params_tm1 = copy_spix_params(params_tm1)
-    print([p.device for p in unpack_spix_params_to_list(params_tm1)])
+    # print([p.device for p in unpack_spix_params_to_list(params_tm1)])
     means_tm1 = params_tm1.mu_shape[None,:]
     fxn = st_spix.pool_flow_and_shift_mean
+    # print("AHY.")
+    # print(spix_tm1.shape)
+    # print(params_tm1.mu_shape.shape)
+    # print(spix_tm1.max())
+    # exit()
     flow_sp,means_shift = fxn(flow,params_tm1.mu_shape[None,:],spix_tm1)
+    # print("OH.")
     # print(params_tm1.mu_s[:4]/th.tensor([[W-1,H-1]]).to(img.device))
     # outs = shift_labels(spix_tm1,params_tm1.mu_s,flow_sp) #? mu_s [shifted]/[unshifted]?
     outs = shift_labels(spix_tm1,params_t0.mu_shape,flow_sp)
+    # print("YO.")
     spix_prop,missing,missing_mask = outs
     # print("missing_mask.shape: ",missing_mask.shape)
     # print(params_tm1.mu_s[:4]/th.tensor([[W-1,H-1]]).to(img.device))
@@ -174,17 +192,21 @@ def run_prop(img,flow,spix_tm1,params_tm1,
     nspix_t = spix_prop.max().item()+1
     # prior_map = th.arange(nspix_t).to(spix_prop.device).int()
     # print(niters,niters_seg)
-    print("py a.")
-    print(nspix_t)
-    print(params_tm1.mu_app.is_contiguous())
-    print(params_tm1.mu_shape.is_contiguous(),params_tm1.mu_shape.device)
-    print(params_tm1.sigma_shape.is_contiguous(),params_tm1.sigma_shape.device)
-    th.cuda.synchronize()
+    # print("py a.")
+    # print(nspix_t)
+    # print(params_tm1.mu_app.is_contiguous())
+    # print(params_tm1.mu_shape.is_contiguous(),params_tm1.mu_shape.device)
+    # print(params_tm1.sigma_shape.is_contiguous(),params_tm1.sigma_shape.device)
+    # th.cuda.synchronize()
+    # print(img)
+    # print(spix_prop)
+    # exit()
+    rescales = th.tensor([1.,1.,1.,1.])
     spix_t,params_t = prop_cuda.refine_missing(img,spix_prop,missing_mask,
-                                               params_tm1,prior_map,
+                                               params_tm1,prior_map,rescales,
                                                nspix_t,niters,niters_seg,
                                                sp_size,pix_var,potts)
-    print("py b.")
+    # print("py b.")
 
     # nspix_t = spix_t.max().item()+1
     # print("nspix_t: ",spix_t.max().item()+1,spix_t.min().item())
@@ -236,8 +258,9 @@ def run_fwd_bwd(vid,spix,params,pmaps,sp_size,pix_var,potts,niters_fwd_bwd,niter
             img_t = rearrange(vid[[t]],'1 f h w -> 1 h w f').contiguous()
             nspix_t = spix[t].max().item()+1
             tp = (t+1) % T
+            rescales = th.tensor([1.,1.,1.,1.])
             spix[t],params[t] = prop_cuda.refine_missing(img_t,spix[[t]],nomissing,
-                                                         params[tp],pmaps[tp],
+                                                         params[tp],pmaps[tp],rescales,
                                                          nspix_t,niters_ref,niters_seg,
                                                          sp_size,pix_var,potts)
     return spix,params

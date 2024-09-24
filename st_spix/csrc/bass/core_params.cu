@@ -16,6 +16,7 @@
 #include "share/refine.h"
 #include "core/Superpixels.h"
 #include "../prop/simple_sparams_io.h"
+#include "../prop/simple_init_sparams.h"
 #include "../prop/init_utils.h"
 #include "relabel.h"
 

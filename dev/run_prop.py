@@ -177,7 +177,7 @@ def main():
     sm_start = 10
     sp_size = 15
     alpha_hastings,potts = 1.,10.
-    pix_var = 0.1
+    pix_var = 0.09
 
     # -- read img/flow --
     vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['tennis'])

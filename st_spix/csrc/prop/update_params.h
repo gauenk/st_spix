@@ -30,8 +30,8 @@ __global__ void sum_by_label(const float* img, const int* seg,
                              const int width, const int nftrs);
 
 __global__ void calc_posterior_mode(spix_params* sp_params,
-                                         spix_helper* sp_helper,
-                                         const int nspix_buffer);
+                                    spix_helper* sp_helper,
+                                    const int nspix_buffer);
 
 __global__ void calc_summ_stats(spix_params* sp_params,spix_helper* sp_helper,
                                 const int nspix_buffer);
@@ -62,6 +62,9 @@ __device__ double calc_app_sigma_ll(float3 sigma, float3 prior_sigma, int prior_
 // ---- Shape [mean,cov] ---
 __device__ double2 calc_shape_mean_mode(double2& mu, double2 prior_mu,
                                         int count, int lam);
+__device__ double3 calc_shape_sigma_mode_simp(longlong3 sq_sum, double2 mu,
+                                              double3 prior_sigma_s, double2 prior_mu,
+                                              int count, int prior_count);
 __device__ double3 calc_shape_sigma_mode(longlong3 sigma_s_sum, double2 mu_s,
                                        double3 prior_sigma_s, double2 prior_mu_s,
                                        int count, int lam, int df);
