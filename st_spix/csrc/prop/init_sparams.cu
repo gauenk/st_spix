@@ -46,11 +46,12 @@ __global__ void init_sp_params_kernel(spix_params* sp_params,float prior_sigma_a
 
   *****************************************************/
 
+  int count = npix/(1.*nspix);
+  // int count = max(sp_params[k].count,1);
   if(k<nspix) {
 
     // -- activate! --
     sp_params[k].valid = 1;
-    int count = max(sp_params[k].count,1);
     sp_params[k].prior_count = npix/nspix;
 
     // -- appearance --
@@ -70,12 +71,12 @@ __global__ void init_sp_params_kernel(spix_params* sp_params,float prior_sigma_a
     // -- shape --
     sp_params[k].prior_mu_shape = sp_params[k].mu_shape;
     // sp_params[k].prior_sigma_shape = sp_params[k].sigma_shape;
-    sp_params[k].prior_sigma_shape.x = count;
-    sp_params[k].prior_sigma_shape.z = count;
+    sp_params[k].prior_sigma_shape.x = count*count;
+    sp_params[k].prior_sigma_shape.z = count*count;
     sp_params[k].prior_sigma_shape.y = 0;
     sp_params[k].prior_mu_shape_count = 1;
     sp_params[k].prior_sigma_shape_count = count;
-    sp_params[k].logdet_prior_sigma_shape = sp_params[k].logdet_sigma_shape;
+    sp_params[k].logdet_prior_sigma_shape = 4*log(max(count,1));
     sp_params[k].mu_shape.x = 0;
     sp_params[k].mu_shape.y = 0;
     sp_params[k].sigma_shape.x = 0;
@@ -95,6 +96,14 @@ __global__ void init_sp_params_kernel(spix_params* sp_params,float prior_sigma_a
     mu_shape.y = -999;
     sp_params[k].mu_shape = mu_shape;
     sp_params[k].valid = 0;
+
+    // -- fixed for debugging --
+    // sp_params[k].prior_sigma_shape.x = count*count;
+    // sp_params[k].prior_sigma_shape.z = count*count;
+    // sp_params[k].prior_sigma_shape.y = 0;
+    // sp_params[k].prior_sigma_shape_count = count;
+    // sp_params[k].logdet_prior_sigma_shape = 4*log(max(count,1));
+
   }
 
 }

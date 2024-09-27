@@ -51,7 +51,7 @@ __host__ int bass(float* img, int* seg,spix_params* sp_params,bool* border,
     int nspix_buffer = nspix * 45;
     int max_spix = nspix;
     float pix_var = 2*std::sqrt(1./pix_ivar.x);
-    fprintf(stdout,"pix_var: %3.5f\n",pix_var);
+    // fprintf(stdout,"pix_var: %3.5f\n",pix_var);
 
     for (int idx = 0; idx < niters; idx++) {
 

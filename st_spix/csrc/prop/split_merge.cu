@@ -58,7 +58,7 @@ void run_merge(const float* img, int* seg, bool* border,
                const int nftrs, const int nspix_buffer){
 
   if( idx%4 == 2){
-    fprintf(stdout,"idx,count: %d,%d\n",idx,count);
+    // fprintf(stdout,"idx,count: %d,%d\n",idx,count);
     // -- run merge --
     int direction = count%2;
     CudaCalcMergeCandidate(img, seg, border,
@@ -89,7 +89,7 @@ __host__ void CudaCalcMergeCandidate(const float* img, int* seg, bool* border,
     init_sm<<<BlockPerGrid2,ThreadPerBlock>>>(img,seg,sp_params,sm_helper,
                                               nspix_buffer, nbatch, width,
                                               nftrs, sm_pairs);
-    fprintf(stdout,"direction: %d\n",direction);
+    // fprintf(stdout,"direction: %d\n",direction);
     calc_merge_candidate<<<BlockPerGrid,ThreadPerBlock>>>(seg,border, sm_pairs,
                                                           npix, nbatch, width,
                                                           height, direction); 
@@ -885,7 +885,14 @@ void split_hastings_ratio(const float* img, int* sm_pairs,
         sm_pairs[2*k] = s;
         // -- update shape prior --
         sp_params[k].prior_count/=2;
+
+        sp_params[k].prior_sigma_shape.x/=2;
+        sp_params[k].prior_sigma_shape.y/=2;
+        sp_params[k].prior_sigma_shape.z/=2;
+
         sp_params[s].prior_count=  sp_params[k].prior_count; 
+        sp_params[s].prior_sigma_shape = sp_params[k].prior_sigma_shape;
+        
 
       }
 
@@ -927,6 +934,10 @@ __global__ void split_sp(int* seg, int* sm_seg1, int* sm_pairs,
     //seg[idx] = sm_seg1[idx];
     //printf("Add the following: %d - %d'\n", k,sm_pairs[2*k]);
     sp_params[sm_pairs[2*k]].valid = 1;
+    // sp_params[sm_pairs[2*k]].prior_count = sp_params[sm_pairs[2*k]].prior_count;
+    // sp_params[k].prior_sigma_shape.x = count*count;
+    // sp_params[k].prior_sigma_shape.z = count*count;
+
     // ?
 
     return;  
@@ -950,7 +961,16 @@ __global__ void remove_sp(int* sm_pairs, spix_params* sp_params,
       {
         sm_helper[k].remove=true;
         sp_params[k].valid =0;
+
+        // -- update priors --
         sp_params[f].prior_count =sp_params[k].prior_count+sp_params[f].prior_count;
+        sp_params[f].prior_sigma_shape.x+= sp_params[k].prior_sigma_shape.x;
+        sp_params[f].prior_sigma_shape.y+= sp_params[k].prior_sigma_shape.y;
+        sp_params[f].prior_sigma_shape.z+= sp_params[k].prior_sigma_shape.z;
+        // sp_params[k].prior_sigma_shape.x/=2;
+        // sp_params[k].prior_sigma_shape.y/=2;
+        // sp_params[k].prior_sigma_shape.z/=2;
+
       }
     else
       {

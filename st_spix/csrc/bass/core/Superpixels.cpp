@@ -354,7 +354,7 @@ void Superpixels::calc_seg() {
                 for(int j=0; j<1; j++){
 
                     // -- ... --
-                  fprintf(stdout,"i,count: %d,%d\n",i,count);
+                  // fprintf(stdout,"i,count: %d,%d\n",i,count);
                     CudaCalcMergeCandidate(image_gpu_double,split_merge_pairs,seg_gpu,
                            border_gpu, sp_params ,sp_gpu_helper,sp_gpu_helper_sm,
                            nPixels,nbatch,dim_x,dim_y,nftrs,

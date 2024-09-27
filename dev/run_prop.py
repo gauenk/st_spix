@@ -106,6 +106,7 @@ def inspect_means(vid,spix,params,sp_size):
     s1 = params[1].mu_shape[8]
     cov1 = params[1].sigma_shape[8]
     det1 = params[1].logdet_sigma_shape[8]
+    print(params[0].prior_sigma_shape)
 
     # print(".")
     # print(params[0].prior_counts)
