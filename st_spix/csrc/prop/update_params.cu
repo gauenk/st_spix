@@ -281,16 +281,14 @@ void calc_posterior_mode(spix_params*  sp_params,
     // double3 sigma_shape = calc_shape_sigma_mode_simp(sp_helper[k].sq_sum_shape,
     //                                                  mu_shape,prior_sigma_shape,
     //                                                  prior_mu_shape,count,prior_count);
-    // double3 sigma_shape = calc_shape_sigma_mode_simp(sp_helper[k].sq_sum_shape,
-    //                                                  mu_shape,prior_sigma_shape,
-    //                                                  prior_mu_shape,count,df);
     double3 sigma_shape = calc_shape_sigma_mode(sp_helper[k].sq_sum_shape,mu_shape,
                                                 prior_sigma_shape,prior_mu_shape,
                                                 count,lam,df);
     double det_sigma_shape = determinant2x2(sigma_shape);
 
     // -- mu mode [AFTER sigma mode] --
-    // mu_shape = calc_shape_mean_mode(mu_shape, prior_mu_shape, count, lam);
+    mu_shape = calc_shape_mean_mode(mu_shape, prior_mu_shape,
+                                    count, prior_mu_shape_count);
 
     // -- compute covariance matrix prior likelihood --
     lprob += calc_shape_mean_ll(mu_shape,prior_mu_shape,prior_isigma_shape,det_prior);
@@ -307,6 +305,7 @@ void calc_posterior_mode(spix_params*  sp_params,
     sp_params[k].mu_app = post_mu_app;
     sp_params[k].sigma_app = post_sigma_app;
     sp_params[k].logdet_sigma_app = log(det_sigma_app);
+
     // -- shape --
     sp_params[k].mu_shape = mu_shape;
     sp_params[k].sigma_shape = isigma_shape;
@@ -408,9 +407,9 @@ __device__ double calc_app_sigma_ll(float3 sigma, float3 prior_sigma, int prior_
 ******************************************************************/
 
 __device__ double2 calc_shape_mean_mode(double2& mu, double2 prior_mu,
-                                        int count, int lam) {
-  mu.x = (lam * prior_mu.x + count*mu.x)/(lam + count);
-  mu.y = (lam * prior_mu.y + count*mu.y)/(lam + count);
+                                        int count, int prior_count) {
+  mu.x = (prior_count * prior_mu.x + count*mu.x)/(prior_count + count);
+  mu.y = (prior_count * prior_mu.y + count*mu.y)/(prior_count + count);
   return mu;
 }
 
@@ -471,15 +470,11 @@ __device__ double3 calc_shape_sigma_mode(longlong3 sq_sum, double2 mu,
       sigma_mode.z = sq_sum.z;
     }
 
-	double total_count = (double) count + df;
+	double tcount = (double) count + df;
     // -- compute cov matrix [.x = dx*dx   .y = dx*dy    .z = dy*dy] --
-    // sigma_mode.x = (prior_sigma.x + sigma_mode.x + sigma_opt.x) / (df_post + 3.0);
-    // sigma_mode.y = (prior_sigma.y + sigma_mode.y + sigma_opt.y) / (df_post + 3.0);
-    // sigma_mode.z = (prior_sigma.z + sigma_mode.z + sigma_opt.z) / (df_post + 3.0);
-
-    sigma_mode.x = (prior_sigma.x + sigma_mode.x) / (total_count + 3.0);
-    sigma_mode.y = (prior_sigma.y + sigma_mode.y) / (total_count + 3.0);
-    sigma_mode.z = (prior_sigma.z + sigma_mode.z) / (total_count + 3.0);
+    sigma_mode.x = (prior_sigma.x + sigma_mode.x + sigma_opt.x) / (tcount + 3.0);
+    sigma_mode.y = (prior_sigma.y + sigma_mode.y + sigma_opt.y) / (tcount + 3.0);
+    sigma_mode.z = (prior_sigma.z + sigma_mode.z + sigma_opt.z) / (tcount + 3.0);
 
     return sigma_mode;
 }

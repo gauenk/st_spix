@@ -159,7 +159,7 @@ run_bass(const torch::Tensor img_rgb,
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
     // -- init spix_params --
-    float prior_sigma_app = pix_var_i; // somehow "i" is appearance"
+    float prior_sigma_app = float(pix_var_i/2) * float(pix_var_i/2);
     init_sp_params(sp_params,prior_sigma_app,img_ptr,spix_ptr,sp_helper,
                    npix,nspix,nspix_buffer,nbatch,width,nftrs);
     //                  int npix, int nspix_buffer,ftrs);

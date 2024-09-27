@@ -34,6 +34,8 @@
 
 // -- primary functions --
 #include "refine_missing.h"
+#include "update_params.h"
+#include "update_seg.h"
 // #include "update_prop_params.h"
 // #include "update_missing_seg.h"
 
@@ -59,27 +61,24 @@ __host__ void refine_missing(float* img, int* seg, spix_params* sp_params,
     // -- init --
     int npix = height * width;
     int nspix_buffer = nspix * 45;
-    // for (int i = 0; i < niters; i++) {
+    for (int i = 0; i < niters; i++) {
 
-    //   // -- Update Parameters with Previous SuperpixelParams as Prior --
-    //   update_prop_params(img, seg, sp_params, sp_helper,
-    //                      prior_params, prior_map, npix,
-    //                      nspix_buffer, nbatch, width, nftrs);
+      // -- Update Parameters with Previous SuperpixelParams as Prior --
+      update_params(img, seg, sp_params, sp_helper,
+                    npix, nspix_buffer, nbatch, width, nftrs);
 
-    //   // -- Update Segmentation ONLY within missing pix --
-    //   update_missing_seg(img, seg, border, missing, sp_params,
-    //                      niters_seg, pix_ivar, logdet_pix_var, potts,
-    //                      npix, nbatch, width, height, nftrs);
+      // -- Update Segmentation --
+      update_seg(img, seg, border, sp_params,
+                 niters_seg, pix_ivar, logdet_pix_var, potts,
+                 npix, nbatch, width, height, nftrs);
 
-    // }
+    }
 
-    // // -- Update Parameters with Previous SuperpixelParams as Prior --
-    // update_prop_params(img, seg, sp_params, sp_helper,
-    //                    prior_params, prior_map, npix,
-    //                    nspix_buffer, nbatch, width, nftrs);
+    // -- Update Parameters with Previous SuperpixelParams as Prior --
+    update_params(img, seg, sp_params, sp_helper,
+                  npix, nspix_buffer, nbatch, width, nftrs);
 
-    // CudaFindBorderPixels_end(seg, border, npix, nbatch, width, height);
-
+    CudaFindBorderPixels_end(seg, border, npix, nbatch, width, height);
 }
 
 
@@ -154,8 +153,7 @@ run_refine_missing(const torch::Tensor img_rgb,
     rescale.y = rescales[1].item<int>();
     rescale.z = rescales[2].item<int>();
     rescale.w = rescales[3].item<int>();
-    init_sp_params_from_past(sp_params,prior_sp_params,rescale,nspix,nspix_buffer,npix);
-    // init_sp_params_from_past(sp_params,prior_sp_params,nspix,nspix_buffer,npix);
+    //init_sp_params_from_past(sp_params,prior_sp_params,rescale,nspix,nspix_buffer,npix);
 
     // -- compute pixel (inverse) variance info --
     float pix_half = float(pix_var_i/2) * float(pix_var_i/2);
@@ -181,6 +179,15 @@ run_refine_missing(const torch::Tensor img_rgb,
     cudaMemcpy(prior_map_ptr,prior_map_r_ptr,
                init_map_size*sizeof(int),cudaMemcpyDeviceToDevice);
 
+
+    // -- init superpixel params --
+    float prior_sigma_app = float(pix_var_i/2) * float(pix_var_i/2);
+    // init_sp_params(sp_params,prior_sigma_app,img_ptr,filled_spix_ptr,
+    //                sp_helper,npix,nspix,nspix_buffer,nbatch,width,nftrs);
+    init_sp_params_from_past(sp_params,prior_sp_params,rescale,nspix,nspix_buffer,npix);
+    // init_sp_params_from_past(sp_params,prior_sp_params,nspix,nspix_buffer,npix);
+
+
     // -- run fill --
     if (nmissing>0){
       refine_missing(img_ptr, filled_spix_ptr, sp_params,
@@ -193,7 +200,6 @@ run_refine_missing(const torch::Tensor img_rgb,
     auto unique_ids = std::get<0>(at::_unique(filled_spix));
     auto ids = unique_ids.data<int>();
     int nspix_post = unique_ids.sizes()[0];
-
     PySuperpixelParams params = get_params_as_tensors(sp_params,ids,nspix_post);
 
     // -- free --

@@ -159,14 +159,11 @@ __device__ float2 calc_joint(float* imgC, int* seg, int width_index, int height_
     const float x0 = __ldg(&imgC[0])-__ldg(&sp_params[seg_idx].mu_app.x);
     const float x1 = __ldg(&imgC[1])-__ldg(&sp_params[seg_idx].mu_app.y);
     const float x2 = __ldg(&imgC[2])-__ldg(&sp_params[seg_idx].mu_app.z);
-    /* const float sigma_a_x = __ldg(&sp_params[seg_idx].sigma_app.x); */
-    /* const float sigma_a_y = __ldg(&sp_params[seg_idx].sigma_app.y); */
-    /* const float sigma_a_z = __ldg(&sp_params[seg_idx].sigma_app.z); */
-    const float sigma_a_x = 1./pix_var.x;
-    const float sigma_a_y = 1./pix_var.y;
-    const float sigma_a_z = 1./pix_var.z;
-    /* const float logdet_sigma_app = __ldg(&sp_params[seg_idx].logdet_sigma_app); */
-    const float logdet_sigma_app = 3.*log(sigma_a_x);
+    const float sigma_a_x = __ldg(&sp_params[seg_idx].sigma_app.x);
+    const float sigma_a_y = __ldg(&sp_params[seg_idx].sigma_app.y);
+    const float sigma_a_z = __ldg(&sp_params[seg_idx].sigma_app.z);
+    const float logdet_sigma_app = __ldg(&sp_params[seg_idx].logdet_sigma_app);
+    // const float logdet_sigma_app = 3.*log(sigma_a_x);
 
     // -- shape --
     const int d0 = width_index - __ldg(&sp_params[seg_idx].mu_shape.x);

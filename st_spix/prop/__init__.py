@@ -152,6 +152,12 @@ def run_prop(img,flow,spix_tm1,params_tm1,
     # if missing.numel() == 0:
     #     return spix_prop,means,cov,counts
 
+    # params_tm1.sigma_app[...] = pix_var**2/4.
+    # curr_params[k].prior_mu_app = prev_params[k].mu_app;
+    # curr_params[k].prior_sigma_app = prev_params[k].sigma_app;
+    # curr_params[k].prior_mu_app_count = max(rescale_mu_app * count,1.0);
+    # curr_params[k].prior_sigma_app_count = max(rescale_sigma_app * count,1.0);
+
     # print(means_tm1[0,60,-2:])
     # print(means_shift[0,60,-2:])
     # print(flow_sp.shape)
@@ -201,13 +207,20 @@ def run_prop(img,flow,spix_tm1,params_tm1,
     # print(img)
     # print(spix_prop)
     # exit()
-    rescales = th.tensor([1.,1.,1.,1.])
+
+    # -- try different variations --
+    print(params_tm1.ids)
+    device = params_tm1.ids.device
+    params_tm1.ids[...] = th.arange(len(params_tm1.ids)).to(device)
+    params_tm1.sigma_app[...] = pix_var**2/4.
+    # print(params_tm1.sigma_app)
+    rescales = th.tensor([0.,0.,0.,0.])
     spix_t,params_t = prop_cuda.refine_missing(img,spix_prop,missing_mask,
                                                params_tm1,prior_map,rescales,
                                                nspix_t,niters,niters_seg,
                                                sp_size,pix_var,potts)
-    # print("py b.")
 
+    # print("py b.")
     # nspix_t = spix_t.max().item()+1
     # print("nspix_t: ",spix_t.max().item()+1,spix_t.min().item())
 
