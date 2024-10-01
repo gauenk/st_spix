@@ -9,11 +9,18 @@ import numpy as np
 
 import glob
 from pathlib import Path
+from easydict import EasyDict as edict
+from einops import rearrange,repeat
+from spix_paper import metrics
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+
+# -- dnd dataset --
+import scipy.io as sio
+
 
 def get_ckpt_root(uuid,base_path,resume_uuid=None,resume_flag=True):
     resume_uuid = uuid if resume_uuid is None else resume_uuid
@@ -42,8 +49,44 @@ def get_checkpoint(root):
     if len(chkpt_files) == 0: return None,""
     chkpt_files = sorted(chkpt_files, key=lambda
                          x: int(x.replace('.ckpt','').split('=')[-1]))
-    chkpt = torch.load(chkpt_files[-1])
+    chkpt = torch.load(chkpt_files[-1],weights_only=False)
     return chkpt,chkpt_files[-1]
+
+def load_old_model(fn,model):
+
+    # -- init load --
+    old_state = torch.load(fn)['model_state_dict']
+    N=len("module.")
+    old_state = {k[N:]:v for k,v in old_state.items()}
+
+    # -- pairs --
+    pairs = {"first_conv.weight":"lin0.weight",
+             "first_conv.bias":"lin0.bias",
+             "last_conv.weight":"lin1.weight",
+             "last_conv.bias":"lin1.bias",
+             "blocks.0.nat_layer.1.qk.weight":"attn.nat_attn.qk.weight",
+             "blocks.0.nat_layer.1.v.weight":"attn.nat_agg.v.weight",
+             "blocks.0.nat_layer.1.proj.weight":"attn.nat_agg.proj.weight",
+             "blocks.0.nat_layer.1.proj.bias":"attn.nat_agg.proj.bias"}
+
+    # -- copy weights --
+    state = {}
+    for old,new in pairs.items():
+        state[new] = old_state[old]
+        if old.startswith("first_conv"):
+            state[new] = state[new].squeeze()
+        if old.startswith("last_conv"):
+            state[new] = state[new].squeeze()
+
+    # -- copy attn scale net --
+    # "blocks.0.nat_layer.1.attn_scale_net":"attn.nat_attn.attn_scale_net"
+    for key in old_state:
+        if key.startswith("blocks.0.nat_layer.1.attn_scale_net"):
+            new_key = key.replace("blocks.0.nat_layer.1.attn_scale_net","attn.nat_attn.attn_scale_net")
+            state[new_key] = old_state[key]
+
+    # print(list(state.keys()))
+    model.load_state_dict(state)
 
 def load_checkpoint(chkpt,model,optimizer=None,weights_only=False,skip_module=True):
     start_epoch = 0
@@ -599,7 +642,7 @@ def epoch_from_chkpt(ckpt_dir):
     if len(chkpt_files) == 0: return -1
     chkpt_files = sorted(chkpt_files,
                          key=lambda x: int(x.replace('.ckpt','').split('=')[-1]))
-    chkpt = torch.load(chkpt_files[-1])
+    chkpt = torch.load(chkpt_files[-1],weights_only=False)
     prev_epoch = chkpt['epoch']
     return prev_epoch
 
@@ -616,6 +659,126 @@ def get_grad_norm_(parameters, norm_type: float = 2.0) -> torch.Tensor:
     else:
         total_norm = torch.norm(torch.stack([torch.norm(p.grad.detach(), norm_type).to(device) for p in parameters]), norm_type)
     return total_norm
+
+
+def view_buff(buff):
+    # -- print buffer --
+    # print(buff['br'])
+    for k,v in buff.items():
+        args = np.where(~np.isnan(v))[0]
+        print("%s: %2.4f" % (k,np.mean(np.array(v)[args])))
+
+def update_agg(info,buff,epoch,nframes=5):
+    for key in buff:
+        if not(key in info): info[key] = []
+        val = buff[key]
+        if key in ["psnr","ssim"]:
+            mean = np.array(val).mean(0)
+        else:
+            args = np.where(~np.isnan(val))[0]
+            mean = np.mean(np.array(val)[args])
+        info[key].append(mean)
+    if not("epoch" in info): info['epoch'] = []
+    info['epoch'].append(epoch)
+
+def init_metrics_buffer():
+    pairs = {"psnr","ssim","asa","br","bp"}
+    cfg = edict({k:[] for k in pairs})
+    return cfg
+
+def update_metrics_buffer(buff,img,seg,deno,sims):
+    # print("img.shape: ",img.shape)
+    # print("sims.shape: ",sims.shape)
+    # print("seg.shape: ",seg.shape)
+    if not(sims is None) and sims.ndim == 5:
+        sims = rearrange(sims,'b h w sh sw -> b h w (sh sw)')
+    B,F,H,W = img.shape
+    psnr = metrics.compute_psnrs(img,deno,div=1.).tolist()
+    ssim = metrics.compute_ssims(img,deno,div=1.).tolist()
+    asa,br,bp = -1,-1,-1
+    if not(sims is None):
+        spix = sims.argmax(-1).reshape(B,H,W)
+        asa = metrics.compute_asa(spix[0],seg[0,0])
+        br = metrics.compute_br(spix[0],seg[0,0],r=1)
+        bp = metrics.compute_bp(spix[0],seg[0,0],r=1)
+    pairs = {"psnr":psnr,"ssim":ssim,"asa":asa,"br":br,"bp":bp}
+    for k,v in pairs.items(): buff[k].append(v)
+    # print("psnr: "+str(psnr))
+    # print("ssim: "+str(ssim))
+    # print("asa: " + str(asa))
+    # print("br: " + str(br))
+    # print("asa: " + str(bp))
+
+"""
+
+   Helper functions for DND dataset
+
+"""
+
+def read_dnd(noisy,bayer_pattern,info,boxes,k):
+    # Crops the image to this bounding box.
+    idx = [
+        int(boxes[k, 0] - 1),
+        int(boxes[k, 2]),
+        int(boxes[k, 1] - 1),
+        int(boxes[k, 3])
+    ]
+    noisy_crop = noisy[idx[0]:idx[1], idx[2]:idx[3]].copy()
+
+    # Flips the raw image to ensure RGGB Bayer color pattern.
+    if (bayer_pattern == [[1, 2], [2, 3]]):
+      pass
+    elif (bayer_pattern == [[2, 1], [3, 2]]):
+      noisy_crop = np.fliplr(noisy_crop)
+    elif (bayer_pattern == [[2, 3], [1, 2]]):
+      noisy_crop = np.flipud(noisy_crop)
+    else:
+      print('Warning: assuming unknown Bayer pattern is RGGB.')
+
+    # Loads shot and read noise factors.
+    nlf_h5 = info[info['nlf'][0][i]]
+    shot_noise = nlf_h5['a'][0][0]
+    read_noise = nlf_h5['b'][0][0]
+
+    # Extracts each Bayer image plane.
+    denoised_crop = noisy_crop.copy()
+    height, width = noisy_crop.shape
+    channels = []
+    for yy in range(2):
+      for xx in range(2):
+        noisy_crop_c = noisy_crop[yy:height:2, xx:width:2].copy()
+        channels.append(noisy_crop_c)
+    channels = np.stack(channels, axis=-1)
+    return channels
+
+def format_return_info(info,nframes):
+    fields = ['psnr','ssim']
+    for field in fields:
+        for t in range(nframes):
+            finfo_t = [info[field][i][t] for i in range(len(info[field]))]
+            info['%s_%d'%(field,t)]=finfo_t
+        del info[field]
+    return info
+
+def save_dnd(denoised_crop,output,height,width):
+
+    # Copies denoised results to output denoised array.
+    for yy in range(2):
+      for xx in range(2):
+        denoised_crop[yy:height:2, xx:width:2] = output[:, :, 2 * yy + xx]
+
+    # Flips denoised image back to original Bayer color pattern.
+    if (bayer_pattern == [[1, 2], [2, 3]]):
+      pass
+    elif (bayer_pattern == [[2, 1], [3, 2]]):
+      denoised_crop = np.fliplr(denoised_crop)
+    elif (bayer_pattern == [[2, 3], [1, 2]]):
+      denoised_crop = np.flipud(denoised_crop)
+
+    # Saves denoised image crop.
+    denoised_crop = np.clip(np.float32(denoised_crop), 0.0, 1.0)
+    save_file = os.path.join(output_dir, '%04d_%02d.mat' % (i + 1, k + 1))
+    sio.savemat(save_file, {'denoised_crop': denoised_crop})
 
 
 if __name__ == '__main__':

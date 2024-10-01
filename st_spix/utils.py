@@ -154,3 +154,60 @@ def rgb2lab(image: torch.Tensor) -> torch.Tensor:
 
 
 
+
+import copy
+dcopy = copy.deepcopy
+import torch
+import torch as th
+import numpy as np
+from einops import rearrange,repeat
+from skimage import io, color
+from easydict import EasyDict as edict
+
+def seed_everything(seed: int):
+    import random, os
+    import numpy as np
+    import torch
+
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+
+def set_gpus(ids_str): # example: [0,1,2]
+    gpu_ids_str = str(gpu_ids).replace('[','').replace(']','')
+    # print("gpu_ids_str: ",gpu_ids_str)
+    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '{}'.format(gpu_ids_str)
+
+def add_noise(lr,args):
+    if "sigma" in args:
+        sigma = args.sigma
+    else:
+        sigma = 0.
+    # print("lr[max,min]: ",lr.max().item(),lr.min().item())
+    lr = lr + sigma*th.randn_like(lr)
+    return lr
+
+def extract_self(self,kwargs,defs):
+    for k in defs:
+        setattr(self,k,optional(kwargs,k,defs[k]))
+
+def extract(_cfg,defs):
+    return extract_defaults(_cfg,defs)
+
+def extract_defaults(_cfg,defs):
+    cfg = edict(dcopy(_cfg))
+    for k in defs: cfg[k] = optional(cfg,k,defs[k])
+    return cfg
+
+def extract_defaults_new(cfg,defs):
+    _cfg = edict()
+    for k in defs: _cfg[k] = optional(cfg,k,defs[k])
+    return _cfg
+
+
+
+
+

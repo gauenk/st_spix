@@ -453,7 +453,7 @@ __device__ double3 calc_shape_sigma_mode_simp(longlong3 sq_sum, double2 mu,
 // Compute the posterior mode of the covariance matrix_
 __device__ double3 calc_shape_sigma_mode(longlong3 sq_sum, double2 mu,
                                          double3 prior_sigma, double2 prior_mu,
-                                         int count, int lam, int df) {
+                                         int count, int lam, int prior_count) {
 
     // -- prior sigma_s --
     double3 sigma_opt = outer_product_term(prior_mu, mu, lam, count);
@@ -470,7 +470,7 @@ __device__ double3 calc_shape_sigma_mode(longlong3 sq_sum, double2 mu,
       sigma_mode.z = sq_sum.z;
     }
 
-	double tcount = (double) count + df;
+	double tcount = (double) count + prior_count;
     // -- compute cov matrix [.x = dx*dx   .y = dx*dy    .z = dy*dy] --
     sigma_mode.x = (prior_sigma.x + sigma_mode.x + sigma_opt.x) / (tcount + 3.0);
     sigma_mode.y = (prior_sigma.y + sigma_mode.y + sigma_opt.y) / (tcount + 3.0);

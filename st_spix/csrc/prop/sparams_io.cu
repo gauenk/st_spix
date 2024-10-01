@@ -231,7 +231,6 @@ __host__ void tensors_to_params(PySuperpixelParams sp_params_py, spix_params* sp
   auto prior_sigma_app = sp_params_py.prior_sigma_app.data<float>();
   auto prior_mu_app_count = sp_params_py.prior_mu_app_count.data<int>();
   auto prior_sigma_app_count = sp_params_py.prior_sigma_app_count.data<int>();
-
   auto mu_shape = sp_params_py.mu_shape.data<float>();
   auto sigma_shape = sp_params_py.sigma_shape.data<float>();
   auto logdet_sigma_shape = sp_params_py.logdet_sigma_shape.data<float>();
@@ -297,48 +296,49 @@ void write_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
     int* prior_counts_ix = prior_counts + ix;
 
     // -- read spix --
-    int sp_index = ids[ix];
+    // int sp_index = ids[ix];
+    int sp_index = ix;
     if (sp_index < 0) return;
     auto params_ix = sp_params[sp_index];
 
     // -- write params from spix_params into the tensors --
 
     // -- appearance [est] --
-    params_ix.mu_app.x = mu_app_ix[0];
-    params_ix.mu_app.y = mu_app_ix[1];
-    params_ix.mu_app.z = mu_app_ix[2];
-    params_ix.sigma_app.x = sigma_app_ix[0];
-    params_ix.sigma_app.y = sigma_app_ix[1];
-    params_ix.sigma_app.z = sigma_app_ix[2];
-    params_ix.logdet_sigma_app = logdet_sigma_app_ix[0];
+    sp_params[sp_index].mu_app.x = mu_app_ix[0];
+    sp_params[sp_index].mu_app.y = mu_app_ix[1];
+    sp_params[sp_index].mu_app.z = mu_app_ix[2];
+    sp_params[sp_index].sigma_app.x = sigma_app_ix[0];
+    sp_params[sp_index].sigma_app.y = sigma_app_ix[1];
+    sp_params[sp_index].sigma_app.z = sigma_app_ix[2];
+    sp_params[sp_index].logdet_sigma_app = logdet_sigma_app_ix[0];
 
     // -- appearance [prior] --
-    params_ix.prior_mu_app.x = prior_mu_app_ix[0];
-    params_ix.prior_mu_app.y = prior_mu_app_ix[1];
-    params_ix.prior_mu_app.z = prior_mu_app_ix[2];
-    params_ix.prior_sigma_app.x = prior_sigma_app_ix[0];
-    params_ix.prior_sigma_app.y = prior_sigma_app_ix[1];
-    params_ix.prior_sigma_app.z = prior_sigma_app_ix[2];
-    params_ix.prior_mu_app_count = prior_mu_app_count_ix[0];
-    params_ix.prior_sigma_app_count = prior_sigma_app_count_ix[0];
+    sp_params[sp_index].prior_mu_app.x = prior_mu_app_ix[0];
+    sp_params[sp_index].prior_mu_app.y = prior_mu_app_ix[1];
+    sp_params[sp_index].prior_mu_app.z = prior_mu_app_ix[2];
+    sp_params[sp_index].prior_sigma_app.x = prior_sigma_app_ix[0];
+    sp_params[sp_index].prior_sigma_app.y = prior_sigma_app_ix[1];
+    sp_params[sp_index].prior_sigma_app.z = prior_sigma_app_ix[2];
+    sp_params[sp_index].prior_mu_app_count = prior_mu_app_count_ix[0];
+    sp_params[sp_index].prior_sigma_app_count = prior_sigma_app_count_ix[0];
 
     // -- shape [est] --
-    params_ix.mu_shape.x = mu_shape_ix[0];
-    params_ix.mu_shape.y = mu_shape_ix[1];
-    params_ix.sigma_shape.x = sigma_shape_ix[0];
-    params_ix.sigma_shape.y = sigma_shape_ix[1];
-    params_ix.sigma_shape.z = sigma_shape_ix[2];
-    params_ix.logdet_sigma_shape = logdet_sigma_shape_ix[0];
+    sp_params[sp_index].mu_shape.x = mu_shape_ix[0];
+    sp_params[sp_index].mu_shape.y = mu_shape_ix[1];
+    sp_params[sp_index].sigma_shape.x = sigma_shape_ix[0];
+    sp_params[sp_index].sigma_shape.y = sigma_shape_ix[1];
+    sp_params[sp_index].sigma_shape.z = sigma_shape_ix[2];
+    sp_params[sp_index].logdet_sigma_shape = logdet_sigma_shape_ix[0];
 
     // -- shape [prior] --
-    params_ix.prior_mu_shape.x = prior_mu_shape_ix[0];
-    params_ix.prior_mu_shape.y = prior_mu_shape_ix[1];
-    params_ix.prior_sigma_shape.x = prior_sigma_shape_ix[0];
-    params_ix.prior_sigma_shape.y = prior_sigma_shape_ix[1];
-    params_ix.prior_mu_shape_count = prior_mu_shape_count_ix[0];
-    params_ix.prior_sigma_shape_count = prior_sigma_shape_count_ix[0];
+    sp_params[sp_index].prior_mu_shape.x = prior_mu_shape_ix[0];
+    sp_params[sp_index].prior_mu_shape.y = prior_mu_shape_ix[1];
+    sp_params[sp_index].prior_sigma_shape.x = prior_sigma_shape_ix[0];
+    sp_params[sp_index].prior_sigma_shape.y = prior_sigma_shape_ix[1];
+    sp_params[sp_index].prior_mu_shape_count = prior_mu_shape_count_ix[0];
+    sp_params[sp_index].prior_sigma_shape_count = prior_sigma_shape_count_ix[0];
 
     // -- misc --
-    params_ix.count = counts_ix[0];
-    params_ix.prior_count = prior_counts_ix[0];
+    sp_params[sp_index].count = counts_ix[0];
+    sp_params[sp_index].prior_count = prior_counts_ix[0];
 }

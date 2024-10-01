@@ -85,13 +85,41 @@ def run_raft(vid):
             "mixed_precision":False, "alternate_corr":False}
     args = edict(args)
     model = torch.nn.DataParallel(RAFT(args))
-    model.load_state_dict(torch.load(args.model))
+    model.load_state_dict(torch.load(args.model,weights_only=False))
     model = model.module
     model.to(vid.device)
     model.eval()
+    fflow,bflow = run_raft_on_video(vid,model)
+    return fflow,bflow
 
-    # -- viz --
-    # print("vid.min().item(),vid.max().item(): ",vid.min().item(),vid.max().item())
+def load_raft():
+    # -- raft imports --
+    import torch
+    import torch as th
+    from raft.raft import RAFT
+    from raft.utils.utils import InputPadder
+    from easydict import EasyDict as edict
+
+    # -- load model --
+    model_fn = "/home/gauenk/Documents/packages/RAFT/models/raft-kitti.pth"
+    args = {"model":model_fn, "small":False,
+            "mixed_precision":False, "alternate_corr":False}
+    args = edict(args)
+    model = torch.nn.DataParallel(RAFT(args))
+    model.load_state_dict(torch.load(args.model,weights_only=False))
+    model = model.module
+    # model.to(vid.device)
+    model.eval()
+    return model
+
+def run_raft_on_video(vid,model):
+
+    # -- raft imports --
+    import torch
+    import torch as th
+    from raft.raft import RAFT
+    from raft.utils.utils import InputPadder
+    from easydict import EasyDict as edict
 
     # -- run/collect flow --
     fflow,bflow = [],[]
@@ -104,14 +132,27 @@ def run_raft(vid):
         # img1 = (img1*255.)
         # img2 = (img2*255.)
 
-        # -- padding --
-        padder = InputPadder(img1.shape)
-        img1, img2 = padder.pad(img1, img2)
+        if "RAFT" in model.__class__.__name__:
 
-        # -- compute padding --
-        _, fflow_ti = model(img1, img2, iters=20, test_mode=True)
-        _, bflow_ti = model(img2, img1, iters=20, test_mode=True)
-        # print("flow_low.shape,flow_up.shape: ",flow_low.shape,flow_up.shape)
+            # -- padding --
+            padder = InputPadder(img1.shape)
+            img1, img2 = padder.pad(img1, img2)
+            # print(img1.shape,img2.shape)
+
+            # -- compute padding --
+            _, fflow_ti = model(img1, img2, iters=20, test_mode=True)
+            _, bflow_ti = model(img2, img1, iters=20, test_mode=True)
+            # print("flow_low.shape,flow_up.shape: ",flow_low.shape,flow_up.shape)
+
+        else:
+
+            # -- compute padding --
+            fflow_ti = model(img1, img2)
+            bflow_ti = model(img2, img1)
+            # print("fflow_ti.shape: ",fflow_ti.shape)
+            # print("bflow_ti.shape: ",bflow_ti.shape)
+            # exit()
+
         fflow.append(fflow_ti)
         bflow.append(bflow_ti)
 

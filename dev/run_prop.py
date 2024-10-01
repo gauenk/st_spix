@@ -177,7 +177,7 @@ def main():
     niters_seg = 4
     sm_start = 10
     sp_size = 15
-    alpha_hastings,potts = 1.,10.
+    alpha_hastings,potts = 1.,8.
     pix_var = 0.09
 
     # -- read img/flow --

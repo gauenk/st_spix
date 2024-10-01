@@ -21,11 +21,9 @@ from ..utils import extract
 from .sp_net import SuperpixelNetwork
 from ..attn import SuperpixelAttention
 
-class ConvDenoiser(nn.Module):
+class ConvOnlyDenoiser(nn.Module):
 
-    defs = dict(SuperpixelNetwork.defs)
-    defs.update(SuperpixelAttention.defs)
-    defs.update({"lname":"deno","net_depth":1,"conv_kernel_size":3})
+    defs = {"lname":"deno","net_depth":1,"conv_kernel_size":3}
 
     def __init__(self, in_dim, dim, **kwargs):
         super().__init__()
@@ -43,13 +41,6 @@ class ConvDenoiser(nn.Module):
 
         # -- learn attn scale --
         self.mid = nn.ModuleList([init_conv(dim,dim,conv_ksize[d+1]) for d in range(D-1)])
-        akwargs = extract(kwargs,SuperpixelNetwork.defs)
-        self.attn = nn.ModuleList([SuperpixelAttention(dim,**akwargs) for _ in range(D)])
-
-        # -- superpixel network --
-        self.use_sp_net = not(kwargs['attn_type'] == "na" and kwargs['lname'] == "deno")
-        spix_kwargs = extract(kwargs,SuperpixelNetwork.defs)
-        self.spix_net = SuperpixelNetwork(dim,**spix_kwargs) if self.use_sp_net else None
 
     def unpack_conv_ksize(self,ksize,depth):
         if hasattr(ksize,"__len__"):
@@ -61,7 +52,7 @@ class ConvDenoiser(nn.Module):
         else:
             return [ksize,]*(depth+1)
 
-    def forward(self, x, flows, noise_info=None):
+    def forward(self, x, noise_info=None):
         """
 
         Forward function.
@@ -73,17 +64,12 @@ class ConvDenoiser(nn.Module):
 
         # -- first features --
         ftrs = self.conv0(x)
-        if self.use_sp_net: sims = self.spix_net(ftrs)[0]
-        else: sims = None
 
         # -- depth --
-        if self.net_depth >=1 :
-            ftrs = ftrs+self.attn[0](ftrs,sims,flows)
         for d in range(self.net_depth-1):
-            ftrs = self.mid[d](ftrs)
-            ftrs = ftrs+self.attn[d+1](ftrs,sims,flows)
+            ftrs = ftrs + self.mid[d](ftrs)
 
         # -- output --
         deno = x + self.conv1(ftrs)
 
-        return {"deno":deno,"sims":sims}
+        return {"deno":deno,"sims":None}

@@ -26,33 +26,75 @@ from einops import rearrange,repeat
 from dev_basics.utils.timer import ExpTimer
 
 # -- project imports --
-from spix_paper.data import load_data
-from spix_paper.losses import load_loss
-from spix_paper.models import load_model
-import spix_paper.trte_utils as utils
-import spix_paper.utils as base_utils
-from spix_paper import metrics
-from spix_paper import isp
+from st_spix.data import load_data
+from st_spix.losses import load_loss
+from st_spix.models import load_model
+import st_spix.trte_utils as utils
+import st_spix.utils as base_utils
+from st_spix import metrics
+# from st_spix import isp
 
 
 # -- fill missing with defaults --
 tr_defs = {"dim":12,"qk_dim":6,"mlp_dim":6,"stoken_size":[8],"block_num":1,
-        "heads":1,"M":0.,"use_local":False,"use_inter":False,
-        "use_intra":True,"use_ffn":False,"use_nat":False,"nat_ksize":9,
-        "affinity_softmax":1.,"topk":100,"intra_version":"v1",
-        "data_path":"./data/","data_augment":False,
-        "patch_size":128,"data_repeat":1,
-        "gpu_ids":"[1]","num_workers":4,
-        "model":"model","model_name":"simple",
-        "decays":[],"gamma":0.5,"lr":0.0002,"resume":None,
-        "log_name":"default_log","exp_name":"default_exp",
-        "epochs":50,"log_every":100,"test_every":1,"batch_size":8,"colors":3,
-        "base_path":"output/default_basepath/train/",
-        "resume_uuid":None,"resume_flag":True,
-        "spatial_chunk_size":256,"spatial_chunk_overlap":0.25,
-        "gradient_clip":0.,"spix_loss_target":"seg",
-        "resume_weights_only":False,
-        "save_every_n_epochs":5,"noise_type":"gaussian"}
+           "heads":1,"M":0.,"use_local":False,"use_inter":False,
+           "use_intra":True,"use_ffn":False,"use_nat":False,"nat_ksize":9,
+           "affinity_softmax":1.,"topk":100,"intra_version":"v1",
+           "data_path":"./data/","data_augment":False,
+           "patch_size":128,"data_repeat":1,
+           "gpu_ids":"[1]","num_workers":4,
+           "model":"model","model_name":"simple",
+           "decays":[],"gamma":0.5,"lr":0.0002,"resume":None,
+           "log_name":"default_log","exp_name":"default_exp",
+           "epochs":50,"log_every":100,"test_every":1,"batch_size":8,"colors":3,
+           "base_path":"output/default_basepath/train/",
+           "resume_uuid":None,"resume_flag":False,
+           "spatial_chunk_size":256,"spatial_chunk_overlap":0.25,
+           "gradient_clip":0.,"spix_loss_target":"seg",
+           "resume_weights_only":False,
+           "save_every_n_epochs":5,"noise_type":"gaussian",
+           "nframes":3,"flow_method":"spynet","flow_wt":1}
+
+def load_flow_fxn(cfg,device):
+    import stnls
+    from dev_basics import flow as flow_pkg
+    from ..spynet import SpyNet
+    from ..flow_utils import load_raft,run_raft_on_video
+
+    wt = cfg.flow_wt
+    if cfg.flow_method == "raft":
+        model = load_raft().to(device)
+        def forward(video):
+            video = th.clip(255.*video,0.,255.)
+            fflow,bflow = run_raft_on_video(video,model)
+            # print(fflow.max(),fflow.min())
+            # print(bflow.max(),bflow.min())
+            # exit()
+            flows = stnls.nn.search_flow(fflow[None,:],bflow[None,:],wt,1)
+            return flows
+    elif cfg.flow_method == "spynet":
+        model = SpyNet().to(device)
+        def forward(video):
+            fflow,bflow = run_raft_on_video(video,model)
+            # print(fflow.max(),fflow.min())
+            # print(bflow.max(),bflow.min())
+            # print("fflow.shape: ",fflow.shape)
+            # exit()
+            flows = stnls.nn.search_flow(fflow[None,:],bflow[None,:],wt,1)
+            # print("flows.shape: ",flows.shape)
+            # # B,HD,T,W_t,_,fH,fW = flows.shape
+            # exit()
+            return flows
+    elif cfg.flow_method == "cv2":
+        def forward(video):
+            flows = flow_pkg.run(video.cpu().numpy(),sigma=0.0,ftype="cv2")
+            # fflow,bflow = flows.fflow[0,0][None,:],flows.bflow[0,0][None,:]
+            fflow,bflow = flows.fflow[None,:],flows.bflow[None,:]
+            print("fflow.shape,bflow.shape: ",fflow.shape,bflow.shape)
+            flows = stnls.nn.search_flow(fflow,bflow,wt,1)
+            return flows
+    return forward
+
 
 def run(cfg):
 
@@ -67,6 +109,7 @@ def run(cfg):
 
     # -- model, loss, data --
     model = load_model(cfg)
+    model = model.to(device)
     loss_fxn = load_loss(cfg)
     train_dataloader, valid_dataloaders = load_data(cfg)
 
@@ -93,7 +136,7 @@ def run(cfg):
     # -- info & parallel --
     num_parameters = sum(map(lambda x: x.numel(), model.parameters()))
     print('#Params : {:<.4f} [K]'.format(num_parameters / 10 ** 3))
-    model = nn.DataParallel(model).to(device)
+    # model = nn.DataParallel(model).to(device)
 
     # -- optim and sched --
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr)
@@ -109,6 +152,9 @@ def run(cfg):
     if cfg.resume_flag and start_epoch > 0:
         print("Resuming from ",chkpt_fn)
         print('select {}, resume training from epoch {}.'.format(chkpt_fn, start_epoch))
+
+    # -- load flow function --
+    flow_fxn = load_flow_fxn(cfg,device)
 
     # -- init stat dict --
     stat_dict = utils.init_stat_dict(chkpt,reset=cfg.resume_weights_only)
@@ -129,6 +175,7 @@ def run(cfg):
     info = {}
     buff = utils.init_metrics_buffer()
     timer_start = time.time()
+    debug_niters = 30
     for epoch in range(start_epoch, cfg.nepochs+1):
         epoch_loss = 0.0
         stat_dict['epochs'] = epoch
@@ -137,7 +184,7 @@ def run(cfg):
         print('##==========={}-training, Epoch: {}, lr: {} =============##'\
               .format('fp32', epoch, opt_lr))
         th.manual_seed(int(cfg.seed)+epoch)
-        for iter, (img,seg) in enumerate(train_dataloader):
+        for iter, batch in enumerate(train_dataloader):
 
             # -- timing --
             timer = ExpTimer(False)
@@ -146,14 +193,22 @@ def run(cfg):
             optimizer.zero_grad()
             # img = batch['img']
             # seg = utils.optional(batch,'seg',None)
-            img, seg = img.to(device)/255., seg[:,None].to(device)
+            # if isinstance(batch,tuple): (img,seg) = batch
+            # else: img,seg = batch['clean'],batch['seg']
+            img,seg = batch['clean'][0],batch['seg'][0]
+            img,seg = img.to(device)/255.,seg.to(device)
 
             # -- optional noise --
             noisy,ninfo = pre_process(img)
 
+            # -- compute flows --
+            flows = flow_fxn(noisy)
+            # print("flows.shape: ",flows.shape)
+            # exit()
+
             # -- forward --
             timer.sync_start("fwd")
-            output = model(noisy,ninfo)
+            output = model(noisy,flows,ninfo)
             timer.sync_stop("fwd")
 
             # -- unpack --
@@ -206,6 +261,7 @@ def run(cfg):
                 print('Epoch:{}, {}/{}, loss: {:.4f}, time: {:.3f}'.\
                       format(cur_epoch, cur_steps, total_steps, avg_loss, duration))
             sys.stdout.flush()
+            # if iter > debug_niters: break
 
         # -- compute metrics --
         utils.update_agg(info,buff,epoch)
@@ -235,6 +291,9 @@ def run(cfg):
 
         # -- update scheduler --
         scheduler.step()
+
+    # -- unpack psnrs/ssims into each frame --
+    info = utils.format_return_info(info,cfg.nframes)
 
     return info
 

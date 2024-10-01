@@ -212,9 +212,13 @@ def run_prop(img,flow,spix_tm1,params_tm1,
     print(params_tm1.ids)
     device = params_tm1.ids.device
     params_tm1.ids[...] = th.arange(len(params_tm1.ids)).to(device)
-    params_tm1.sigma_app[...] = pix_var**2/4.
+    print(params_tm1.ids)
+    # params_tm1.sigma_app[...] /=
+    # params_tm1.prior_sigma_app[...] = pix_var**2/4.
     # print(params_tm1.sigma_app)
-    rescales = th.tensor([0.,0.,0.,0.])
+    niters = 30
+    rescales = th.tensor([1.,1.,1.,1.])
+    # print("niters: ",niters)
     spix_t,params_t = prop_cuda.refine_missing(img,spix_prop,missing_mask,
                                                params_tm1,prior_map,rescales,
                                                nspix_t,niters,niters_seg,
@@ -263,6 +267,7 @@ def run_fwd_bwd(vid,spix,params,pmaps,sp_size,pix_var,potts,niters_fwd_bwd,niter
     spix = spix.clone()
     params = [copy_spix_params(p) for p in params]
     niters_seg = 1
+    device = vid.device
     T,F,H,W = vid.shape
     nomissing = th.ones((T,H,W)).bool().to(vid.device)
     # flow_sp,means_shift = fxn(flow,params_tm1.mu_s[None,:],spix_tm1)
@@ -272,8 +277,16 @@ def run_fwd_bwd(vid,spix,params,pmaps,sp_size,pix_var,potts,niters_fwd_bwd,niter
             nspix_t = spix[t].max().item()+1
             tp = (t+1) % T
             rescales = th.tensor([1.,1.,1.,1.])
+
+
+            params_adj = copy_spix_params(params[tp])
+            params_adj.ids[...] = th.arange(len(params_adj.ids)).to(device)
+            params_adj.sigma_app[...] = pix_var**2/4.
+            params_adj.prior_sigma_app[...] = pix_var**2/4.
+            rescales = th.tensor([0.,0.,0.,0.])
             spix[t],params[t] = prop_cuda.refine_missing(img_t,spix[[t]],nomissing,
-                                                         params[tp],pmaps[tp],rescales,
+                                                         params_adj,#params[tp],
+                                                         pmaps[tp],rescales,
                                                          nspix_t,niters_ref,niters_seg,
                                                          sp_size,pix_var,potts)
     return spix,params

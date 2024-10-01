@@ -179,7 +179,6 @@ run_refine_missing(const torch::Tensor img_rgb,
     cudaMemcpy(prior_map_ptr,prior_map_r_ptr,
                init_map_size*sizeof(int),cudaMemcpyDeviceToDevice);
 
-
     // -- init superpixel params --
     float prior_sigma_app = float(pix_var_i/2) * float(pix_var_i/2);
     // init_sp_params(sp_params,prior_sigma_app,img_ptr,filled_spix_ptr,

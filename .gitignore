@@ -13,6 +13,8 @@ cmake/*
 data/*
 output/*
 weights/*
+st_spix/models_old
+st_spix/losses_old
 lib/*egg-info/
 .cache_io/*
 *.py[co]

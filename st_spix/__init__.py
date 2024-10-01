@@ -5,6 +5,7 @@ from . import scatter
 from . import utils
 from . import deform
 from . import prop
+from .spynet import SpyNet
 from .prop.param_utils import copy_spix_params
 from .slic_img_iter import run_slic
 from .slic_img_iter import compute_slic_params

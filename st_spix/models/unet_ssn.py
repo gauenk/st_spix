@@ -4,7 +4,7 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 from collections import OrderedDict
-from st_spix.slic_img_iter import run_slic
+from spix_paper.spix_utils.slic_img_iter import run_slic
 
 class UNetSsnNet(nn.Module):
 
@@ -37,7 +37,7 @@ class UNetSsnNet(nn.Module):
                          stoken_size=stride,n_iter=self.slic_iters,
                          sm_scale=self.slic_scale,grad_type=self.slic_grad)
         sims = _slic[1]
-        return sims
+        return {"sims":sims}
 
     def get_superpixel_probs(self, x):
         return self(x)

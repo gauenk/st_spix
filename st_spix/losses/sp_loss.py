@@ -4,9 +4,10 @@ import torch.nn as nn
 import torchvision
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
+import stnls
 from einops import rearrange
 from easydict import EasyDict as edict
-from st_spix.utils import append_grid
+from spix_paper.utils import append_grid
 from torch.nn.functional import one_hot
 
 class SuperpixelLoss(nn.Module):
@@ -19,6 +20,10 @@ class SuperpixelLoss(nn.Module):
 
     def forward(self,labels,sims):
         assert self.loss_type in ["cross","mse"]
+
+        # -- reshape sims --
+        if sims.ndim == 5:
+            sims = rearrange(sims,'b h w hs ws -> b (hs ws) (h w)')
 
         # -- alloc [compact loss] --
         B,F,H,W = labels.shape
