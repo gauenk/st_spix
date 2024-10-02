@@ -1,3 +1,4 @@
+
 # -- basic --
 import os
 import sys
@@ -36,18 +37,17 @@ from st_spix import metrics
 
 
 # -- fill missing with defaults --
-tr_defs = {"dim":12,"qk_dim":6,"mlp_dim":6,"stoken_size":[8],"block_num":1,
-           "heads":1,"M":0.,"use_local":False,"use_inter":False,
-           "use_intra":True,"use_ffn":False,"use_nat":False,"nat_ksize":9,
-           "affinity_softmax":1.,"topk":100,"intra_version":"v1",
-           "data_path":"./data/","data_augment":False,
-           "patch_size":128,"data_repeat":1,
-           "gpu_ids":"[1]","num_workers":4,
-           "model":"model","model_name":"simple",
-           "decays":[],"gamma":0.5,"lr":0.0002,"resume":None,
-           "log_name":"default_log","exp_name":"default_exp",
-           "epochs":50,"log_every":100,"test_every":1,"batch_size":8,"colors":3,
-           "base_path":"output/default_basepath/train/",
+tr_defs = {"dim":12,"qk_dim":6,"mlp_dim":6,"stoken_size":[8],
+           "block_num":1,"heads":1,"M":0.,"use_local":False,
+           "use_inter":False,"use_intra":True,"use_ffn":False,
+           "use_nat":False,"nat_ksize":9,"affinity_softmax":1.,
+           "topk":100,"intra_version":"v1","data_path":"./data/",
+           "data_augment":False,"patch_size":128,"data_repeat":1,
+           "gpu_ids":"[1]","num_workers":4,"model":"model",
+           "model_name":"simple","decays":[],"gamma":0.5,"lr":0.0002,
+           "resume":None,"log_name":"default_log","exp_name":"default_exp",
+           "epochs":50,"log_every":100,"test_every":1,"batch_size":8,
+           "colors":3,"base_path":"output/default_basepath/train/",
            "resume_uuid":None,"resume_flag":False,
            "spatial_chunk_size":256,"spatial_chunk_overlap":0.25,
            "gradient_clip":0.,"spix_loss_target":"seg",
@@ -71,7 +71,7 @@ def load_flow_fxn(cfg,device):
             # print(bflow.max(),bflow.min())
             # exit()
             flows = stnls.nn.search_flow(fflow[None,:],bflow[None,:],wt,1)
-            return flows
+            return flows,fflow
     elif cfg.flow_method == "spynet":
         model = SpyNet().to(device)
         def forward(video):
@@ -84,15 +84,15 @@ def load_flow_fxn(cfg,device):
             # print("flows.shape: ",flows.shape)
             # # B,HD,T,W_t,_,fH,fW = flows.shape
             # exit()
-            return flows
+            return flows,fflow
     elif cfg.flow_method == "cv2":
         def forward(video):
             flows = flow_pkg.run(video.cpu().numpy(),sigma=0.0,ftype="cv2")
             # fflow,bflow = flows.fflow[0,0][None,:],flows.bflow[0,0][None,:]
             fflow,bflow = flows.fflow[None,:],flows.bflow[None,:]
-            print("fflow.shape,bflow.shape: ",fflow.shape,bflow.shape)
+            # print("fflow.shape,bflow.shape: ",fflow.shape,bflow.shape)
             flows = stnls.nn.search_flow(fflow,bflow,wt,1)
-            return flows
+            return flows,fflow
     return forward
 
 
@@ -191,10 +191,6 @@ def run(cfg):
 
             # -- unpack --
             optimizer.zero_grad()
-            # img = batch['img']
-            # seg = utils.optional(batch,'seg',None)
-            # if isinstance(batch,tuple): (img,seg) = batch
-            # else: img,seg = batch['clean'],batch['seg']
             img,seg = batch['clean'][0],batch['seg'][0]
             img,seg = img.to(device)/255.,seg.to(device)
 
@@ -202,13 +198,13 @@ def run(cfg):
             noisy,ninfo = pre_process(img)
 
             # -- compute flows --
-            flows = flow_fxn(noisy)
+            flows,fflow = flow_fxn(noisy)
             # print("flows.shape: ",flows.shape)
             # exit()
 
             # -- forward --
             timer.sync_start("fwd")
-            output = model(noisy,flows,ninfo)
+            output = model(noisy,flows,fflow,ninfo)
             timer.sync_stop("fwd")
 
             # -- unpack --

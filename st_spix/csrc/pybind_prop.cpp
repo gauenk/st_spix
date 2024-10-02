@@ -11,6 +11,7 @@ namespace py = pybind11;
 // -- fxns --
 void init_rgb2lab(py::module &m);
 void init_split_disconnected(py::module &m);
+void init_sp_video_pooling(py::module &m);
 void init_fill_missing(py::module &);
 void init_refine_missing(py::module &m);
 void init_simple_refine_missing(py::module &m);
@@ -28,6 +29,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_seg_utils(m);
   init_prop_bass(m);
   init_bass(m);
+  init_sp_video_pooling(m);
 
   // -- nicer superpixel parameter IO --
   py::class_<PySuperpixelParams>(m, "SuperpixelParams")

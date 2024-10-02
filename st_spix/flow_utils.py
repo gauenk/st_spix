@@ -92,6 +92,12 @@ def run_raft(vid):
     fflow,bflow = run_raft_on_video(vid,model)
     return fflow,bflow
 
+def run_spynet(vid):
+    from .spynet import SpyNet
+    model = SpyNet().to(vid.device).eval()
+    fflow,bflow = run_raft_on_video(vid,model)
+    return fflow,bflow
+
 def load_raft():
     # -- raft imports --
     import torch

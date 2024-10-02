@@ -18,16 +18,19 @@ from spix_paper.utils import extract_self
 from spix_paper.spix_utils import run_slic,sparse_to_full
 from spix_paper.spix_utils import compute_slic_params
 
-
 # -- superpixel --
 from .ssn_net import SsnUNet
 from .attn_scale_net import AttnScaleNet
+from .bass import run_bass,get_bass_sims,bass_kwargs
 from spix_paper.pwd.pair_wise_distance import PairwiseDistFunction
+
+
 
 class SuperpixelNetwork(nn.Module):
     defs = {"sp_type":None,"sp_niters":2,"sp_m":0.,"sp_stride":8,
             "sp_scale":1.,"sp_grad_type":"full","sp_nftrs":9,"unet_sm":True,
-            "attn_type":None}
+            "attn_type":None,"use_bass_prop":True}
+    defs.update(bass_kwargs)
 
     def __init__(self, dim, **kwargs):
 
@@ -37,7 +40,8 @@ class SuperpixelNetwork(nn.Module):
         extract_self(self,kwargs,self.defs)
 
         # -- check network types --
-        assert self.sp_type in ["slic","slic+lrn","ssn"]
+        assert self.sp_type in ["bass","slic","slic+lrn","ssn"]
+        self.use_bass = "bass" in self.sp_type
         self.use_slic = "slic" in self.sp_type
         self.use_ssn = "ssn" in self.sp_type
         self.use_lmodel = "lrn" in self.sp_type
@@ -61,12 +65,13 @@ class SuperpixelNetwork(nn.Module):
         else:
             return self.sp_stride
 
-    def forward(self, x):
+    def forward(self, x, fflow=None):
 
         # -- unpack --
         B,F,H,W = x.shape
         sp_stride = self._get_stride()
         sH = H//sp_stride
+        sims,num_spixels,ftrs,s_sims = None,None,None,None
 
         if self.use_slic:
 
@@ -84,6 +89,14 @@ class SuperpixelNetwork(nn.Module):
                               m_est, temp_est, self.sp_grad_type)
             s_sims, sims, num_spixels, ftrs = output
             sims = self._reshape_sims(x,sims)
+
+        elif self.use_bass:
+
+            kwargs = {"use_bass_prop":False,"niters":30,"niters_seg":4,
+                      "sp_size":25,"pix_var":0.1,"alpha_hastings":0.01,
+                      "potts":10.,"sm_start":0}
+            spix = run_bass(x,fflow,kwargs)
+            sims = get_bass_sims(x,spix)
 
         else:
 

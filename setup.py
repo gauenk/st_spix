@@ -107,6 +107,7 @@ setup(
             "st_spix/csrc/prop/pch.cu",
             "st_spix/csrc/bass/relabel.cu",
             "st_spix/csrc/prop/sparams_io.cu",
+            "st_spix/csrc/prop/sp_video_pooling.cu",
             "st_spix/csrc/prop/simple_sparams_io.cu",
             # -- prop utils --
             "st_spix/csrc/prop/rgb2lab.cu",

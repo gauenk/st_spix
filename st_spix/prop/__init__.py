@@ -209,10 +209,10 @@ def run_prop(img,flow,spix_tm1,params_tm1,
     # exit()
 
     # -- try different variations --
-    print(params_tm1.ids)
+    # print(params_tm1.ids)
     device = params_tm1.ids.device
     params_tm1.ids[...] = th.arange(len(params_tm1.ids)).to(device)
-    print(params_tm1.ids)
+    # print(params_tm1.ids)
     # params_tm1.sigma_app[...] /=
     # params_tm1.prior_sigma_app[...] = pix_var**2/4.
     # print(params_tm1.sigma_app)

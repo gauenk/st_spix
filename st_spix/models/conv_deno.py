@@ -61,7 +61,7 @@ class ConvDenoiser(nn.Module):
         else:
             return [ksize,]*(depth+1)
 
-    def forward(self, x, flows, noise_info=None):
+    def forward(self, x, flows, fflow=None, noise_info=None):
         """
 
         Forward function.
@@ -73,7 +73,7 @@ class ConvDenoiser(nn.Module):
 
         # -- first features --
         ftrs = self.conv0(x)
-        if self.use_sp_net: sims = self.spix_net(ftrs)[0]
+        if self.use_sp_net: sims = self.spix_net(ftrs,fflow)[0]
         else: sims = None
 
         # -- depth --
