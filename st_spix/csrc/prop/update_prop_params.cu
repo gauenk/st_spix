@@ -24,6 +24,7 @@ __host__ void update_prop_params(const float* img, const int* spix,
 	int num_block2 = ceil( double(nspix_buffer) / double(THREADS_PER_BLOCK) );
     dim3 BlockPerGrid1(num_block1,nbatch);
     dim3 BlockPerGrid2(num_block2,nbatch);
+    assert(nbatch==1);
     prop_clear_fields<<<BlockPerGrid2,ThreadPerBlock>>>(sp_params,sp_helper,
                                                    nspix_buffer,nftrs);
 	cudaMemset(sp_helper, 0, nspix_buffer*sizeof(superpixel_GPU_helper));

@@ -217,6 +217,7 @@ __host__ void update_seg(float* img, int* seg, bool* border,
     int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
     dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
     dim3 BlockPerGrid(num_block,nbatch);
+    assert(nbatch==1);
     for (int iter = 0 ; iter < niters; iter++){
         cudaMemset(border, 0, npix*sizeof(bool));
         find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(seg,border,npix,xdim,ydim);

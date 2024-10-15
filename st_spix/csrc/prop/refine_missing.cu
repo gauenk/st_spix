@@ -1,19 +1,20 @@
 
-/*******************************************************
+/*********************************************************************************
 
-      - This finds a likely superpixel state
-      after missing pixels are filled-in using "filled.cu",
-      and after splitting with "split_disconnected.du".
+     - This finds a likely superpixel state
+     after missing pixels are filled-in using "filled.cu",
+     and after splitting with "split_disconnected.du".
 
-      - This is necessary, because the "filled" superpixels are
-      not in a likely state after the shift. The missing pixels have
-      merely been assigned their spatial neighbor. This section of
-      code actually runs BASS using the posterior of the parameter estimates.
+     - This is necessary, because the "filled" superpixels are
+     not in a likely state after the shift. The missing pixels have
+     merely been assigned their spatial neighbor. This section of
+     code actually runs BASS using the posterior of the parameter estimates.
 
-      - This section of the code is different from "XXXX.cu"
-      because updates can only effect the "missing" region.
+     - This section of the code is different from "XXXX.cu"
+     because updates can only effect the "missing" region.
 
-*******************************************************/
+*********************************************************************************/
+
 
 // -- cpp imports --
 #include <stdio.h>
@@ -56,7 +57,8 @@ __host__ void refine_missing(float* img, int* seg, spix_params* sp_params,
                              bool* missing, bool* border, spix_helper* sp_helper,
                              int niters, int niters_seg,
                              float3 pix_ivar,float logdet_pix_var,float potts,
-                             int nspix, int nbatch, int width, int height, int nftrs){
+                             int nspix, int nbatch, int width, int height, int nftrs,
+                             double* logging_aprior){
 
     // -- init --
     int npix = height * width;
@@ -71,6 +73,10 @@ __host__ void refine_missing(float* img, int* seg, spix_params* sp_params,
       update_seg(img, seg, border, sp_params,
                  niters_seg, pix_ivar, logdet_pix_var, potts,
                  npix, nbatch, width, height, nftrs);
+
+      // -- logging --
+      cudaMemcpy(logging_aprior+i,&(sp_params[10].prior_lprob),sizeof(double),
+                 cudaMemcpyDeviceToDevice);
 
     }
 
@@ -89,18 +95,18 @@ __host__ void refine_missing(float* img, int* seg, spix_params* sp_params,
 ***********************************************************/
 
 // torch::Tensor
-std::tuple<torch::Tensor,PySuperpixelParams>
-run_refine_missing(const torch::Tensor img_rgb,
+std::tuple<torch::Tensor,PySuperpixelParams,torch::Tensor>
+run_refine_missing(const torch::Tensor img,
                    const torch::Tensor spix,
                    const torch::Tensor missing,
                    const PySuperpixelParams prior_params,
                    const torch::Tensor prior_map,
-                   const torch::Tensor rescales, // a CPU tensor
+                   const torch::Tensor rescales,
                    int nspix, int niters, int niters_seg,
                    int sp_size, float pix_var_i, float potts){
 
     // -- check --
-    CHECK_INPUT(img_rgb);
+    CHECK_INPUT(img);
     CHECK_INPUT(spix);
     CHECK_INPUT(missing);
     CHECK_INPUT(prior_params.mu_app);
@@ -111,18 +117,19 @@ run_refine_missing(const torch::Tensor img_rgb,
     CHECK_INPUT(prior_params.prior_counts);
     CHECK_INPUT(prior_map);
 
-
     // -- unpack --
     int nbatch = spix.size(0);
     int height = spix.size(1);
     int width = spix.size(2);
-    int nftrs = img_rgb.size(3);
+    int nftrs = img.size(3);
     int npix = height*width;
     int nmissing = missing.sum().item<int>();
     int init_map_size = prior_map.size(0);
     
     // -- allocate filled spix --
     auto options_i32 = torch::TensorOptions().dtype(torch::kInt32)
+      .layout(torch::kStrided).device(spix.device());
+    auto options_f64 = torch::TensorOptions().dtype(torch::kFloat64)
       .layout(torch::kStrided).device(spix.device());
     torch::Tensor filled_spix = spix.clone();
     assert(nbatch==1);
@@ -164,11 +171,11 @@ run_refine_missing(const torch::Tensor img_rgb,
     float logdet_pix_var = log(pix_half * pix_half * pix_half);
 
     // -- convert image color --
-    auto img_lab = img_rgb.clone();
-    rgb2lab(img_rgb.data<float>(),img_lab.data<float>(),npix,nbatch);
+    // auto img_lab = img_rgb.clone();
+    // rgb2lab(img_rgb.data<float>(),img_lab.data<float>(),npix,nbatch);
 
     // -- Get pointers --
-    float* img_ptr = img_lab.data<float>();
+    float* img_ptr = img.data<float>();
     int* filled_spix_ptr = filled_spix.data<int>();
     bool* missing_ptr = missing.data<bool>();
     int* prior_map_r_ptr = prior_map.data<int>();
@@ -183,30 +190,36 @@ run_refine_missing(const torch::Tensor img_rgb,
     float prior_sigma_app = float(pix_var_i/2) * float(pix_var_i/2);
     // init_sp_params(sp_params,prior_sigma_app,img_ptr,filled_spix_ptr,
     //                sp_helper,npix,nspix,nspix_buffer,nbatch,width,nftrs);
-    init_sp_params_from_past(sp_params,prior_sp_params,rescale,nspix,nspix_buffer,npix);
-    // init_sp_params_from_past(sp_params,prior_sp_params,nspix,nspix_buffer,npix);
+    init_sp_params_from_past(sp_params,prior_sp_params,prior_map_ptr,
+                             rescale,nspix,nspix_buffer,npix);
 
+    // -- init logging_lprior --
+    torch::Tensor logging = torch::zeros({niters,1},options_f64);
+    double* logging_ptr = logging.data<double>();
 
     // -- run fill --
     if (nmissing>0){
       refine_missing(img_ptr, filled_spix_ptr, sp_params,
                      missing_ptr, border, sp_helper,
                      niters, niters_seg, pix_var, logdet_pix_var,
-                     potts, nspix, nbatch, width, height, nftrs);
+                     potts, nspix, nbatch, width, height, nftrs,
+                     logging_ptr);
     }
 
     // -- get spixel parameters as tensors --
     auto unique_ids = std::get<0>(at::_unique(filled_spix));
     auto ids = unique_ids.data<int>();
     int nspix_post = unique_ids.sizes()[0];
+    // fprintf(stdout,"nspix_post: %d\n",nspix_post);
     PySuperpixelParams params = get_params_as_tensors(sp_params,ids,nspix_post);
 
     // -- free --
+    cudaFree(prior_map_ptr);
     cudaFree(border);
     cudaFree(sp_params);
     cudaFree(sp_helper);
 
-    return std::make_tuple(filled_spix,params);
+    return std::make_tuple(filled_spix,params,logging);
 }
 
 void init_refine_missing(py::module &m){

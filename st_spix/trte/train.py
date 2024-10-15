@@ -52,8 +52,9 @@ tr_defs = {"dim":12,"qk_dim":6,"mlp_dim":6,"stoken_size":[8],
            "spatial_chunk_size":256,"spatial_chunk_overlap":0.25,
            "gradient_clip":0.,"spix_loss_target":"seg",
            "resume_weights_only":False,
+           "nbatches_per_epoch":1000,
            "save_every_n_epochs":5,"noise_type":"gaussian",
-           "nframes":3,"flow_method":"spynet","flow_wt":1}
+           "nframes":3,"flow_method":"spynet","window_time":1}
 
 def load_flow_fxn(cfg,device):
     import stnls
@@ -61,7 +62,7 @@ def load_flow_fxn(cfg,device):
     from ..spynet import SpyNet
     from ..flow_utils import load_raft,run_raft_on_video
 
-    wt = cfg.flow_wt
+    wt = cfg.window_time
     if cfg.flow_method == "raft":
         model = load_raft().to(device)
         def forward(video):
@@ -175,22 +176,23 @@ def run(cfg):
     info = {}
     buff = utils.init_metrics_buffer()
     timer_start = time.time()
-    debug_niters = 30
     for epoch in range(start_epoch, cfg.nepochs+1):
         epoch_loss = 0.0
         stat_dict['epochs'] = epoch
         model = model.train()
         opt_lr = scheduler.get_last_lr()
+        data_iter = iter(train_dataloader)
         print('##==========={}-training, Epoch: {}, lr: {} =============##'\
               .format('fp32', epoch, opt_lr))
         th.manual_seed(int(cfg.seed)+epoch)
-        for iter, batch in enumerate(train_dataloader):
+        for idx in range(cfg.nbatches_per_epoch):
 
             # -- timing --
             timer = ExpTimer(False)
 
             # -- unpack --
             optimizer.zero_grad()
+            batch = next(data_iter)
             img,seg = batch['clean'][0],batch['seg'][0]
             img,seg = img.to(device)/255.,seg.to(device)
 
@@ -210,6 +212,7 @@ def run(cfg):
             # -- unpack --
             deno = base_utils.optional(output,'deno',None)
             sims = base_utils.optional(output,'sims',None)
+            spix = base_utils.optional(output,'spix',None)
 
             # -- optionally post-process --
             deno = post_process(deno,ninfo)
@@ -234,19 +237,20 @@ def run(cfg):
             epoch_loss += float(loss)
 
             # -- update buffer --
-            utils.update_metrics_buffer(buff,img,seg,deno,sims)
+            utils.update_metrics_buffer(buff,img,seg,deno,sims,spix)
 
             # -- logging --
-            if (iter + 1) % cfg.log_every == 0:
-                cur_steps = (iter + 1) * cfg.batch_size
-                total_steps = len(train_dataloader.dataset)
+            if (idx + 1) % cfg.log_every == 0:
+                cur_steps = (idx + 1) * cfg.batch_size
+                # total_steps = len(train_dataloader.dataset)
+                total_steps = cfg.nbatches_per_epoch
                 fill_width = math.ceil(math.log10(total_steps))
                 cur_steps = str(cur_steps).zfill(fill_width)
 
                 epoch_width = math.ceil(math.log10(cfg.nepochs))
                 cur_epoch = str(epoch).zfill(epoch_width)
 
-                avg_loss = epoch_loss / (iter + 1)
+                avg_loss = epoch_loss / (idx + 1)
                 stat_dict['losses'].append(avg_loss)
 
                 timer_end = time.time()
@@ -257,7 +261,7 @@ def run(cfg):
                 print('Epoch:{}, {}/{}, loss: {:.4f}, time: {:.3f}'.\
                       format(cur_epoch, cur_steps, total_steps, avg_loss, duration))
             sys.stdout.flush()
-            # if iter > debug_niters: break
+            # if idx > cfg.nbatches_per_epoch: break
 
         # -- compute metrics --
         utils.update_agg(info,buff,epoch)
@@ -267,10 +271,10 @@ def run(cfg):
         # -- epoch loop --
         if epoch % cfg.save_every_n_epochs == 0:
 
-
             # -- save --
             model_str = '%s-epoch=%02d.ckpt'%(cfg.uuid,epoch-1) # "start at 0"
             saved_model_path = os.path.join(chkpt_path,model_str)
+            print("Saving %s"%saved_model_path)
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),

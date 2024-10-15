@@ -4,14 +4,18 @@ from einops import rearrange
 import torch as th
 import bass_cuda
 
+def sp_pooling(tensor,spix,nspix=None):
+    return pooling(tensor,spix,nspix)
+
 def pooling(tensor,spix,nspix=None):
 
     # -- unpack --
     if nspix is None: nspix = int((spix.max()+1).item())
     dtype = tensor.dtype
     device = tensor.device
-    tensor = rearrange(tensor,'b f h w -> b h w f')
     B,H,W,F = tensor.shape
+    # tensor = rearrange(tensor,'b f h w -> b h w f')
+    # print(nspix,tensor.shape,spix.shape)
 
     # -- allocate --
     down = th.zeros((B,nspix,F),device=device,dtype=dtype)
@@ -22,6 +26,9 @@ def pooling(tensor,spix,nspix=None):
     spix = spix.reshape(B,-1).long()
     spix_e = spix[:,:,None].expand(-1,-1,F)
     assert th.all(spix>=0)
+    # print("down.shape: ",down.shape)
+    # print("spix_e.shape: ",spix_e.shape)
+    # print("tensor.shape: ",tensor.shape)
 
     # -- scatter add --
     down = th.scatter_add(down,1,spix_e,tensor)
@@ -30,12 +37,12 @@ def pooling(tensor,spix,nspix=None):
     # print(down.shape)
     # print(th.mean(1.*th.isnan(down[...,0])))
     # print(th.sum(1.*th.isnan(down[...,0])))
-    down[th.isnan(down)] = 0.
+    # down[th.isnan(down)] = 0.
     # exit()
 
     # -- gather --
     pooled = th.gather(down,1,spix_e).reshape(B,H,W,F)
-    pooled = rearrange(pooled,'b h w f -> b f h w')
+    # pooled = rearrange(pooled,'b h w f -> b f h w')
 
     return pooled,down
 
@@ -45,9 +52,9 @@ class SuperpixelPooling(torch.autograd.Function):
     def forward(ctx, tensor, spix, nspix=None):
         if nspix is None: nspix = (spix.max()+1).item()
         fwd = bass_cuda.sp_pooling_fwd
-        tensor = rearrange(tensor,'b f h w -> b h w f').contiguous()
+        # tensor = rearrange(tensor,'b f h w -> b h w f').contiguous()
         pooled,downsampled,counts = fwd(tensor.contiguous(),spix.contiguous(),nspix)
-        pooled = rearrange(pooled,'b h w f -> b f h w').contiguous()
+        # pooled = rearrange(pooled,'b h w f -> b f h w').contiguous()
         # print("tensor.shape, pooled.shape, downsampled.shape: ",
         #       tensor.shape, pooled.shape, downsampled.shape)
 

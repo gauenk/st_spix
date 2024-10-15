@@ -3,6 +3,7 @@
 # -- models --
 from . import unet_ssn
 from . import empty_net
+from .sp_net import SuperpixelNetwork
 from .simple_deno import SimpleDenoiser
 from .conv_deno import ConvDenoiser
 from .conv_only import ConvOnlyDenoiser

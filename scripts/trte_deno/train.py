@@ -5,7 +5,6 @@ Training
 
 """
 
-
 # -- sys --
 import os
 import numpy as np

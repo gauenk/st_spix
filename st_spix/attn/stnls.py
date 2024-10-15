@@ -146,6 +146,9 @@ class StnlsNeighAttnMat(nn.Module):
             .permute(3, 0, 4, 1, 2, 5)
         )
         q, k = qk[0], qk[1]
+        # print("q.shape: ",q.shape)
+        # print(B, H, W, 2, self.num_heads, self.head_dim)
+        # exit()
 
         # # -- compare --
         # diff0 = th.mean((q-x[:,None])**2).item()
@@ -158,15 +161,16 @@ class StnlsNeighAttnMat(nn.Module):
         scale = self.scale
         if self.learn_attn_scale:
             scale = self.attn_scale_net(rearrange(x,'b h w c -> b c h w'))
-            scale = rearrange(scale,'b 1 h w -> 1 1 b h w 1')
-        if self.dist_type == "prod": q = scale * q # before if "prod"
+            scale = rearrange(scale,'t 1 h w -> 1 1 t h w 1') # B,HD,T,H,W,F
+        # if self.dist_type == "prod": q = scale * q # before if "prod"
         # print(q.shape)
         attn,flows_k = run_search_fxn(q, k, flows, self.kernel_size,
                                       self.dilation, self.dist_type)
         # print(attn.shape)
         # exit()
-        # attn = scale * attn
-        if self.dist_type == "l2": attn = scale * attn # after if "l2"
+        attn = scale * attn
+        # print("attn.shape: ",attn.shape)
+        # if self.dist_type == "l2": attn = scale * attn # after if "l2"
         # attn = na2d_qk_with_bias(q, k, self.rpb, self.kernel_size, self.dilation)
         return attn,flows_k
 

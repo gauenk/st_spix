@@ -168,7 +168,8 @@ void read_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
     int* prior_sigma_shape_count_ix = prior_sigma_shape_count + ix; 
 
     // -- misc --
-    int* counts_ix = counts + ix;                                                             int* prior_counts_ix = prior_counts + ix;  
+    int* counts_ix = counts + ix;
+    int* prior_counts_ix = prior_counts + ix;  
                                                                                           
     // -- read spix --
     int sp_index = ids[ix];

@@ -26,12 +26,18 @@ class SuperpixelPooling(th.autograd.Function):
     def backward(ctx, pooled_grad, ds_grad):
         assert pooled_grad.ndim == 5,"Must be 5-dims: batch, frames, ftrs, height, width"
 
-        # -- forward --
+        # -- backward --
         spix = ctx.saved_tensors[0]
         fwd = prop_cuda.sp_video_pooling
         pooled_grad = rearrange(pooled_grad,'b t f h w -> b t h w f').contiguous()
-        pooled_grad,downsampled,counts = fwd(pooled_grad.contiguous(),spix.contiguous())
-        pooled_grad = rearrange(pooled_grad,'b t h w f -> b t f h w').contiguous()
+        img_grad,downsampled,counts = fwd(pooled_grad.contiguous(),spix.contiguous())
+        img_grad = rearrange(img_grad,'b t h w f -> b t f h w').contiguous()
 
-        return pooled_grad, None
+        # -- backward downsampled --
+        if not(ds_grad is None) or th.any(ds_grad.abs()>0):
+            fwd = prop_cuda.downsampled_video_to_pooled
+            img_grad_ds = fwd(ds_grad,spix)
+            img_grad += rearrange(img_grad_ds,'b t h w f -> b t f h w').contiguous()
+
+        return img_grad, None
 

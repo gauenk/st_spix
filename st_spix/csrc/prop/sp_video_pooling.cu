@@ -28,7 +28,7 @@ void run_sp_video_downsample(float* img, int* seg,
 
   // -- add to downsampled --
   float* imgF = img + pix_idx * nftrs;
-  float* dsF = downsampled + seg_idx * nftrs + nspix*nftrs*blockIdx.y;
+  float* dsF = downsampled + seg_idx*nftrs + nspix*nftrs*blockIdx.y;
   float* dsC = downcount + seg_idx + nspix*blockIdx.y;
   for (int fidx = 0; fidx < nftrs; fidx++){
     atomicAdd(dsF+fidx,*(imgF+fidx));
@@ -200,8 +200,62 @@ sp_video_pooling(const torch::Tensor img, const torch::Tensor seg){
 // }
 
 
+
+/********************************************
+
+           Upscale Pooled Features
+
+********************************************/
+
+torch::Tensor
+downsampled_video_to_pooled(const torch::Tensor downsampled,
+                            const torch::Tensor seg){
+
+  // -- check --
+  CHECK_INPUT(downsampled);
+  CHECK_INPUT(seg);
+
+  // -- unpack --
+  int nbatch = seg.size(0);
+  int nframes = seg.size(1);
+  int height = seg.size(2);
+  int width = seg.size(3);
+  int nftrs = downsampled.size(2);
+  int nspix = downsampled.size(1);
+  int npix = height*width;
+
+  // -- get max num of spix --
+  int _nspix = seg.max().item<int>()+1;
+  assert(_nspix <= nspix);
+
+  // -- pointers --
+  float* downsampled_ptr = downsampled.data<float>();
+  int* seg_ptr = seg.data<int>();
+
+  // -- alloc options --
+  auto options_f32 = torch::TensorOptions().dtype(torch::kFloat32)
+    .layout(torch::kStrided).device(seg.device());
+
+  // -- init pooled --
+  torch::Tensor pooled = torch::zeros({nbatch, nframes, height, width, nftrs},
+                                      options_f32);
+  float* pooled_ptr = pooled.data<float>();
+
+  // -- launch pooling --
+  int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
+  dim3 BlockPerGrid(num_block,nbatch,nframes);
+  dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
+  run_sp_video_pooling<<<BlockPerGrid,ThreadPerBlock>>>
+    (pooled_ptr, seg_ptr, downsampled_ptr, nspix, nframes, npix, nftrs);
+
+  return pooled;
+}
+
+
 void init_sp_video_pooling(py::module &m){
   m.def("sp_video_pooling", &sp_video_pooling,"superpixel pooling");
+  m.def("downsampled_video_to_pooled",
+        &downsampled_video_to_pooled,"downsampled_video_to_pooled");
   // m.def("sp_video_pooling_bwd", &sp_video_pooling_bwd,"superpixel pooling bwd");
   // m.def("downsampled_to_pooled", &downsampled_to_pooled,
   //       "upscale from downsampled features");

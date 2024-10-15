@@ -686,7 +686,7 @@ def init_metrics_buffer():
     cfg = edict({k:[] for k in pairs})
     return cfg
 
-def update_metrics_buffer(buff,img,seg,deno,sims):
+def update_metrics_buffer(buff,img,seg,deno,sims,spix):
     # print("img.shape: ",img.shape)
     # print("sims.shape: ",sims.shape)
     # print("seg.shape: ",seg.shape)
@@ -695,12 +695,14 @@ def update_metrics_buffer(buff,img,seg,deno,sims):
     B,F,H,W = img.shape
     psnr = metrics.compute_psnrs(img,deno,div=1.).tolist()
     ssim = metrics.compute_ssims(img,deno,div=1.).tolist()
-    asa,br,bp = -1,-1,-1
+    asa,br,bp = [-1,]*B,[-1,]*B,[-1,]*B
+    # print("spix.shape,seg.shape: ",spix.shape,seg.shape)
     if not(sims is None):
-        spix = sims.argmax(-1).reshape(B,H,W)
-        asa = metrics.compute_asa(spix[0],seg[0,0])
-        br = metrics.compute_br(spix[0],seg[0,0],r=1)
-        bp = metrics.compute_bp(spix[0],seg[0,0],r=1)
+        # spix = sims.argmax(-1).reshape(B,H,W)
+        for t in range(B):
+            asa.append(metrics.compute_asa(spix[t,0],seg[t,0]))
+            br.append(metrics.compute_br(spix[t,0],seg[t,0],r=1))
+            bp.append(metrics.compute_bp(spix[t,0],seg[t,0],r=1))
     pairs = {"psnr":psnr,"ssim":ssim,"asa":asa,"br":br,"bp":bp}
     for k,v in pairs.items(): buff[k].append(v)
     # print("psnr: "+str(psnr))
@@ -752,7 +754,7 @@ def read_dnd(noisy,bayer_pattern,info,boxes,k):
     return channels
 
 def format_return_info(info,nframes):
-    fields = ['psnr','ssim']
+    fields = ['psnr','ssim',"asa","br","bp"]
     for field in fields:
         for t in range(nframes):
             finfo_t = [info[field][i][t] for i in range(len(info[field]))]

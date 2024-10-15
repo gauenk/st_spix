@@ -14,7 +14,7 @@ from torch.nn.init import trunc_normal_
 from einops import rearrange
 
 try:
-    # from natten.functional import na2d_av, na2d_qk_with_bias
+    from natten.functional import na2d_av, na2d_qk_with_bias
     from ..models.attn_scale_net import AttnScaleNet
 except:
     pass
@@ -25,6 +25,7 @@ from stnls.agg import NonLocalGather
 def run_search_fxn(q, k, kernel_size, dilation, dist_type):
     if dist_type == "prod":
         attn = na2d_qk_with_bias(q, k, None, kernel_size, dilation)
+        attn = rearrange(attn,'t hd h w k -> 1 hd t h w k')
         # attn = run_stnls_search(q,k,kernel_size,dilation,dist_type)[0]
         return attn
     elif dist_type == "l2":
@@ -47,10 +48,8 @@ def run_stnls_search(q,k,kernel_size,dilation,dist_type):
                             use_adj=False, itype="int")
     q = rearrange(q,'b hd h w f -> b hd 1 f h w').contiguous()
     k = rearrange(k,'b hd h w f -> b hd 1 f h w').contiguous()
-    attn,flows = search(q,k)
-    attn = attn[:,:,0]
-    flows = flows[:,:,0]
-    # print("attn.shape: ",attn.shape)
+    attn,flows = search(q,k) # attn.shape = (B,HD,T,nH,nW,K)
+    # print("[0] attn.shape: ",attn.shape)
     return attn,flows
 
 def run_stnls_agg(v,attn,flows):
@@ -146,12 +145,14 @@ class NeighborhoodAttention2D(nn.Module):
         v = (self.v(x).reshape(B, H, W, 1, self.num_heads, self.head_dim)
              .permute(3, 0, 4, 1, 2, 5))[0]
         # print("k.shape: ",k.shape)
+        print("dont use me!")
+        exit()
 
         # -- rescaling --
         scale = self.scale
         if self.learn_attn_scale:
             scale = self.attn_scale_net(rearrange(x,'b h w c -> b c h w'))
-            scale = rearrange(scale,'b 1 h w -> b 1 h w 1')
+            scale = rearrange(scale,'t 1 h w -> 1 1 t h w 1') # B HD T H W K
             # print(scale)
             # print(scale.shape)
             # exit()
@@ -240,7 +241,7 @@ class NeighAttnMat(nn.Module):
         else:
             self.attn_scale_net = AttnScaleNet(dim, 1, sp_nftrs)
 
-    def forward(self, x):
+    def forward(self, x, flows=None):
         B, Hp, Wp, C = x.shape
         H, W = int(Hp), int(Wp)
         pad_l = pad_t = pad_r = pad_b = 0
@@ -276,23 +277,30 @@ class NeighAttnMat(nn.Module):
         scale = self.scale
         if self.learn_attn_scale:
             scale = self.attn_scale_net(rearrange(x,'b h w c -> b c h w'))
-            scale = rearrange(scale,'b 1 h w -> b 1 h w 1')
-            # print(scale)
-            # print(scale.shape)
-            # exit()
-            # if self.detach_learn_attn:
-            #     scale = scale.detach()
-            q = scale * q
-        else:
-            if self.dist_type == "prod":
-                q = scale * q
+            scale = rearrange(scale,'t 1 h w -> 1 1 t h w 1') # B HD T H W K
+        #     # print(scale)
+        #     # print(scale.shape)
+        #     # exit()
+        #     # if self.detach_learn_attn:
+        #     #     scale = scale.detach()
+        #     q = scale * q
+        #     # print("
+        #     # exit()
+        # else:
+        #     if self.dist_type == "prod":
+        #         q = scale * q
 
         # print(q.shape)
         attn = run_search_fxn(q, k, self.kernel_size, self.dilation, self.dist_type)
+        attn.shape[:-1] == scale.shape[:-1],"Equal shapes."
+        attn = scale * attn
+
+        # print(q.shape)
         # print(attn.shape)
+        # print(scale.shape)
         # exit()
-        if not self.learn_attn_scale and self.dist_type == "l2":
-            attn = scale * attn
+        # if not self.learn_attn_scale and self.dist_type == "l2":
+        #     attn = scale * attn
         # attn = scale * attn
         # if self.dist_type == "l2": attn = scale * attn # after if "l2"
         # attn = na2d_qk_with_bias(q, k, self.rpb, self.kernel_size, self.dilation)
@@ -359,8 +367,13 @@ class NeighAttnAgg(nn.Module):
         # v[...,0] = 1
         # # attn = attn.softmax(dim=-1)
         # print("[nat_spin] attn.shape: ",attn.shape,v.shape)
+
+        # -- ... --
         # print("v.shape: ",v.shape)
         # print("att.shape, v.shape: ",attn.shape,v.shape)
+        # exit()
+
+        # -- ... --
         attn = self.attn_drop(attn)
         x = na2d_av(attn, v, self.kernel_size, self.dilation)
         # x = natten2dav(attn, v, self.kernel_size, self.dilation)

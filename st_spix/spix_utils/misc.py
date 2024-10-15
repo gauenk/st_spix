@@ -43,43 +43,6 @@ def viz_spix(img_batch,spix_batch,nsp):
     # masks = masks / masks.max()
     return masks
 
-def pool_flow_and_shift_mean(flow,means,spix,version="v1"):
-    if version == "v0":
-        return pool_flow_and_shift_mean_v0(flow,means,spix)
-    elif version == "v1":
-        return pool_flow_and_shift_mean_v1(flow,means,spix)
-    else:
-        raise ValueError(f"Uknown version [{version}]")
-
-def pool_flow_and_shift_mean_v1(flow,means,spix):
-
-    # -- prepare --
-    # flow = rearrange(flow,'b f h w -> b h w f')
-    flow = flow.contiguous()
-    spix = spix.contiguous()
-    nspix = means.shape[1] #spix.max().item()+1 # or means.shape[1]
-    # print(nspix,means.shape)
-    assert means.shape[1] == nspix
-
-    # -- run --
-    # import st_spix_cuda
-    # fxn = st_spix_cuda.sp_pooling_fwd
-    # pooled,downsampled = fxn(flow,spix,nspix)
-    pooled,downsampled = pooling(flow,spix,nspix)
-    # print("flow.shape,pooled.shape,downsampled.shape: ",
-    #       flow.shape,pooled.shape,downsampled.shape)
-
-    # -- update means --
-    means[...,-2] = means[...,-2] + downsampled[...,0]
-    means[...,-1] = means[...,-1] + downsampled[...,1]
-
-    # -- [new] update means (means; WxH) --
-    # means[...,-2] = means[...,-2] + downsampled[...,1]
-    # means[...,-1] = means[...,-1] - downsampled[...,0]
-
-    # -- return --
-    # pooled = rearrange(pooled,'b h w f -> b f h w')
-    return pooled.round(),means
 
 def spix_pool_vid(vid,spix):
     # -- prepare --
@@ -97,155 +60,119 @@ def spix_pool_vid(vid,spix):
 
     return pooled,downsampled
 
+# def sp_pool_from_spix(labels,spix,version="v1",return_ds=False):
+#     if version == "v0":
+#         return sp_pool_from_spix_v0(labels,spix)
+#     elif version == "v1":
+#         return sp_pool_from_spix_v1(labels,spix,return_ds)
+#     else:
+#         raise ValueError(f"Uknown spix pooling version [{version}]")
 
-def pool_flow_and_shift_mean_v0(flow,means,spix):
-    # -- get labels --
-    K = means.shape[1]
-    sims = th_f.one_hot(spix.long(),num_classes=K)*1.
-    sims = rearrange(sims,'b h w nsp -> b nsp (h w)')
+# def sp_pool_from_spix_v0(labels,spix):
+#     sims_hard = th_f.one_hot(spix.long())*1.
+#     sims_hard = rearrange(sims_hard,'b h w nsp -> b nsp (h w)')
+#     labels_sp = sp_pool(labels,sims_hard)
+#     return labels_sp
 
-    # -- normalize across #sp for each pixel --
-    sims_nmz = sims / (1e-15+sims.sum(-1,keepdim=True))# (B,NumSpix,NumPix) -> (B,NS,NP)
-    sims = sims.transpose(-1,-2)
+# def sp_pool_from_spix_v1(labels,spix,return_ds=False):
 
-    # -- prepare flow --
-    W = flow.shape[-1]
-    flow = rearrange(flow,'b f h w -> b (h w) f')
+#     # -- prepare --
+#     # labels = rearrange(labels,'b f h w -> b h w f')
+#     labels = labels.contiguous()
+#     spix = spix.contiguous()
+#     nspix = spix.max()+1
+#     # print("labels.shape: ",labels.shape)
 
-    # -- compute "superpixel pooling" --
-    flow_tmp = sims_nmz @ flow
-    flow_sp = sims @ (flow_tmp)
+#     # -- run --
+#     # import st_spix_cuda
+#     # fxn = st_spix_cuda.sp_pooling_fwd
+#     # pooled,downsampled = fxn(labels,spix,nspix)
 
-    # -- pool means --
-    # print("tmp: ",flow_tmp.shape,means.shape,sims.shape,
-    #       flow.shape,means.shape,len(th.unique(spix)))
-    # exit()
-    means[...,-2] = means[...,-2] + flow_tmp[...,0]
-    means[...,-1] = means[...,-1] + flow_tmp[...,1]
+#     print("hey-yo.")
+#     th.cuda.synchronize()
+#     print(labels.shape,spix.shape,spix.max())
+#     pooled,downsampled = pooling(labels,spix,nspix)
+#     print("b.")
+#     th.cuda.synchronize()
+#     print("bye.")
+#     # print("labels.shape,pooled.shape,downsampled.shape: ",
+#     #       labels.shape,pooled.shape,downsampled.shape)
+#     # exit()
 
-    # print("ids.shape: ",ids.shape,means.shape)
-    # print("ids.min(),ids.max(): ",ids.min(),ids.max())
-    # _means = th.gather(means.clone(),1,ids).clone()
-    # _means = th.gather(means.clone(),1,ids).clone()
-    # print("Num previous superpixels: ",len(th.unique(spix_st[-1])))
-    # print("Previous [Min,Max]: ",spix_st[-1].min().item(),spix_st[-1].max().item())
+#     # -- return --
+#     # pooled = rearrange(pooled,'b h w f -> b f h w')
+#     if return_ds:
+#         return pooled,downsampled
+#     else:
+#         return pooled
 
-    # th.cuda.synchronize()
-    # exit()
+# def sp_pool(labels,sims,re_expand=True):
+#     assert re_expand == True,"Only true for now."
 
-    # -- reshape --
-    flow_sp = rearrange(flow_sp,'b (h w) f -> b f h w',w=W)
+#     # -- normalize across #sp for each pixel --
+#     sims_nmz = sims / (1e-15+sims.sum(-1,keepdim=True))# (B,NumSpix,NumPix) -> (B,NS,NP)
+#     sims = sims.transpose(-1,-2)
 
-    return flow_sp,means
+#     # -- prepare labels --
+#     W = labels.shape[-1]
+#     labels = rearrange(labels,'b f h w -> b (h w) f')
 
+#     # -- compute "superpixel pooling" --
+#     labels_sp = sims @ (sims_nmz @ labels)
 
-def sp_pool_from_spix(labels,spix,version="v1",return_ds=False):
-    if version == "v0":
-        return sp_pool_from_spix_v0(labels,spix)
-    elif version == "v1":
-        return sp_pool_from_spix_v1(labels,spix,return_ds)
-    else:
-        raise ValueError(f"Uknown spix pooling version [{version}]")
+#     # -- reshape --
+#     labels_sp = rearrange(labels_sp,'b (h w) f -> b f h w',w=W)
+#     # print("a: ",labels.min(),labels.max())
+#     # print("b: ",labels_sp.min(),labels_sp.max())
 
-def sp_pool_from_spix_v0(labels,spix):
-    sims_hard = th_f.one_hot(spix.long())*1.
-    sims_hard = rearrange(sims_hard,'b h w nsp -> b nsp (h w)')
-    labels_sp = sp_pool(labels,sims_hard)
-    return labels_sp
+#     return labels_sp
 
-def sp_pool_from_spix_v1(labels,spix,return_ds=False):
+# def sp_pool_v0(img_batch,spix_batch,sims,S,nsp,method):
+#     pooled = []
+#     for img, spix in zip(img_batch, spix_batch):
+#         img = rearrange(img,'f h w -> h w f')
+#         pool = sp_pool_img(img,spix,sims,S,nsp,method)
+#         pooled.append(rearrange(pool,'h w f -> f h w'))
+#     pooled = th.stack(pooled)
+#     return pooled
 
-    # -- prepare --
-    # labels = rearrange(labels,'b f h w -> b h w f')
-    labels = labels.contiguous()
-    spix = spix.contiguous()
-    nspix = spix.max()+1
-    # print("labels.shape: ",labels.shape)
+# def sp_pool_img_v0(img,spix,sims,S,nsp,method):
+#     H,W,F = img.shape
+#     if method in ["ssn","sna"]:
+#         sH,sW = (H+1)//S,(W+1)//S # add one for padding
+#     else:
+#         sH,sW = H//S,W//S # no padding needed
 
-    # -- run --
-    # import st_spix_cuda
-    # fxn = st_spix_cuda.sp_pooling_fwd
-    # pooled,downsampled = fxn(labels,spix,nspix)
+#     is_tensor = th.is_tensor(img)
+#     if not th.is_tensor(img):
+#         img = th.from_numpy(img)
+#         spix = th.from_numpy(spix)
 
-    pooled,downsampled = pooling(labels,spix,nspix)
-    # print("labels.shape,pooled.shape,downsampled.shape: ",
-    #       labels.shape,pooled.shape,downsampled.shape)
-    # exit()
+#     img = img.reshape(-1,F)
+#     spix = spix.ravel()
+#     # N = nsp
+#     N = len(th.unique(spix))
+#     assert N <= (sH*sW)
 
-    # -- return --
-    # pooled = rearrange(pooled,'b h w f -> b f h w')
-    if return_ds:
-        return pooled,downsampled
-    else:
-        return pooled
+#     # -- normalization --
+#     counts = th.zeros((sH*sW),device=spix.device)
+#     ones = th.ones_like(img[:,0])
+#     counts = counts.scatter_add_(0,spix,ones)
 
-def sp_pool(labels,sims,re_expand=True):
-    assert re_expand == True,"Only true for now."
+#     # -- pooled --
+#     pooled = th.zeros((sH*sW,F),device=spix.device)
+#     for fi in range(F):
+#         pooled[:,fi] = pooled[:,fi].scatter_add_(0,spix,img[:,fi])
 
-    # -- normalize across #sp for each pixel --
-    sims_nmz = sims / (1e-15+sims.sum(-1,keepdim=True))# (B,NumSpix,NumPix) -> (B,NS,NP)
-    sims = sims.transpose(-1,-2)
+#     # -- exec normz --
+#     pooled = pooled/counts[:,None]
 
-    # -- prepare labels --
-    W = labels.shape[-1]
-    labels = rearrange(labels,'b f h w -> b (h w) f')
+#     # -- post proc --
+#     pooled = pooled.reshape(sH,sW,F)
+#     if not is_tensor:
+#         pooled = pooled.cpu().numpy()
 
-    # -- compute "superpixel pooling" --
-    labels_sp = sims @ (sims_nmz @ labels)
-
-    # -- reshape --
-    labels_sp = rearrange(labels_sp,'b (h w) f -> b f h w',w=W)
-    # print("a: ",labels.min(),labels.max())
-    # print("b: ",labels_sp.min(),labels_sp.max())
-
-    return labels_sp
-
-def sp_pool_v0(img_batch,spix_batch,sims,S,nsp,method):
-    pooled = []
-    for img, spix in zip(img_batch, spix_batch):
-        img = rearrange(img,'f h w -> h w f')
-        pool = sp_pool_img(img,spix,sims,S,nsp,method)
-        pooled.append(rearrange(pool,'h w f -> f h w'))
-    pooled = th.stack(pooled)
-    return pooled
-
-def sp_pool_img_v0(img,spix,sims,S,nsp,method):
-    H,W,F = img.shape
-    if method in ["ssn","sna"]:
-        sH,sW = (H+1)//S,(W+1)//S # add one for padding
-    else:
-        sH,sW = H//S,W//S # no padding needed
-
-    is_tensor = th.is_tensor(img)
-    if not th.is_tensor(img):
-        img = th.from_numpy(img)
-        spix = th.from_numpy(spix)
-
-    img = img.reshape(-1,F)
-    spix = spix.ravel()
-    # N = nsp
-    N = len(th.unique(spix))
-    assert N <= (sH*sW)
-
-    # -- normalization --
-    counts = th.zeros((sH*sW),device=spix.device)
-    ones = th.ones_like(img[:,0])
-    counts = counts.scatter_add_(0,spix,ones)
-
-    # -- pooled --
-    pooled = th.zeros((sH*sW,F),device=spix.device)
-    for fi in range(F):
-        pooled[:,fi] = pooled[:,fi].scatter_add_(0,spix,img[:,fi])
-
-    # -- exec normz --
-    pooled = pooled/counts[:,None]
-
-    # -- post proc --
-    pooled = pooled.reshape(sH,sW,F)
-    if not is_tensor:
-        pooled = pooled.cpu().numpy()
-
-    return pooled
+#     return pooled
 
 def to_th(tensor):
     return th.from_numpy(tensor)

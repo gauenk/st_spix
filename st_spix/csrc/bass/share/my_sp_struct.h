@@ -67,7 +67,12 @@ struct alignas(16) superpixel_GPU_helper_sm {
     int max_sp;
 };
 
-// --- struct with prior info --
+/*********************************
+
+  -=-=-=-    Float3   -=-=-=-=-
+
+**********************************/
+
 
 struct alignas(16) spix_params{
     // -- appearance --
@@ -127,6 +132,79 @@ struct alignas(16) spix_helper_sm {
     int max_sp;
 };
 
+/*********************************
+
+  -=-=-=-    "Float6"   -=-=-=-=-
+
+**********************************/
+
+
+/* struct alignas(16) spix_params_f6{ */
+/*     // -- appearance -- */
+/*     float mu_app[6]; */
+/*     float sigma_app[6]; */
+/*     float prior_mu_app[6]; */
+/*     float prior_sigma_app[6]; */
+/*     int prior_mu_app_count; */
+/*     int prior_sigma_app_count; */
+/*     // -- shape -- */
+/*     double2 mu_shape; */
+/*     double3 sigma_shape; */
+/*     double2 prior_mu_shape; */
+/*     double3 prior_sigma_shape; */
+/*     int prior_mu_shape_count; */
+/*     int prior_sigma_shape_count; */
+/*     // -- helpers -- */
+/*     double logdet_sigma_app; */
+/*     double logdet_sigma_shape; */
+/*     double logdet_prior_sigma_shape; */
+/*     // -- priors -- */
+/*     double prior_lprob; */
+/*     /\* double prior_mu_i_lprob; *\/ */
+/*     /\* double prior_sigma_i_lprob; *\/ */
+/*     /\* double prior_mu_s_lprob; *\/ */
+/*     /\* double prior_sigma_s_lprob; *\/ */
+/*     // -- helpers -- */
+/*     int count; */
+/*     float prior_count; // df and lam for shape and appearance */
+/*     int valid; */
+/* }; */
+
+
+/* struct alignas(16) spix_helper_f6{ */
+/*     double[6] sum_app; */
+/*     double[6] sq_sum_app; */
+/*     int2 sum_shape; */
+/*     longlong3 sq_sum_shape; */
+/* }; */
+
+
+/* struct alignas(16) spix_helper_sm_f6{ */
+/*     float[6] sum_app; */
+/*     double[6] sq_sum_app; */
+/*     double2 sum_shape; */
+/*     /\* float3 squares_i; *\/ */
+/*     int count_f; */
+/*     float[6] b_n; */
+/*     float[6] b_n_f; */
+/*     float[6] numerator; */
+/*     float[6] denominator; */
+/*     float[6] numerator_f; */
+/*     float[6] denominator_f; */
+/*     float hasting; */
+/*     bool merge; // a bool */
+/*     bool remove; */
+/*     bool stop_bfs; */
+/*     int count; */
+/*     int max_sp; */
+/* }; */
+
+
+/***
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+***/
 
 /* struct alignas(16) superpixel_GPU_helper_ptrs{ */
 /*     float* mu_i_sum; */

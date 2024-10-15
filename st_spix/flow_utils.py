@@ -5,14 +5,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 from einops import rearrange
 
-def index_grid(H,W,dtype=th.float,device="cuda",normalize=False):
+def index_grid(H,W,dtype=th.float,device="cuda",normalize=False,stack_dim=0):
     # -- create mesh grid --
     grid_y, grid_x = th.meshgrid(th.arange(0, H, dtype=dtype, device=device),
                                  th.arange(0, W, dtype=dtype, device=device))
     if normalize:
         grid_x = grid_x / (W-1)
         grid_y = grid_y / (H-1)
-    grid = th.stack((grid_x, grid_y), 0).float()[None,:]  # 1, 2, W(x), H(y)
+    if stack_dim == 0:
+        grid = th.stack((grid_x, grid_y), 0).float()[None,:]  # 1, 2, W(x), H(y)
+    elif stack_dim == -1:
+        grid = th.stack((grid_x, grid_y), -1).float()[None,:]  # 1, W(x), H(y), 2
+    else:
+        raise ValueError("Dont do it.")
     grid.requires_grad = False
     return grid
 
@@ -90,6 +95,11 @@ def run_raft(vid):
     model.to(vid.device)
     model.eval()
     fflow,bflow = run_raft_on_video(vid,model)
+
+    if fflow.shape[-1] != vid.shape[-1]:
+        print("RAFT wants image size to be a multiple of 8.")
+        exit()
+
     return fflow,bflow
 
 def run_spynet(vid):

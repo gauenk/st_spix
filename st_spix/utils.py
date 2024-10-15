@@ -19,6 +19,13 @@ def vid_rgb2lab(vid,normz=True):
         vid_lab = vid_lab / vid_lab.max()
     return vid_lab
 
+def vid_rgb2lab_th(vid,normz=True):
+    vid_lab = rgb2lab(vid.contiguous())
+    if normz:
+        vid_lab = vid_lab - vid_lab.min()
+        vid_lab = vid_lab / vid_lab.max()
+    return vid_lab
+
 def seed_everything(seed: int):
     import random, os
     import numpy as np
@@ -148,10 +155,9 @@ def rgb2lab(image: torch.Tensor) -> torch.Tensor:
     L = (116.0 * y) - 16.0
     a = 500.0 * (x - y)
     _b = 200.0 * (y - z)
-    out = torch.stack([L, a, _b], dim=-3)
+    out = torch.stack([L/(-100.), a/100., _b/100.], dim=-3)
 
     return out
-
 
 
 

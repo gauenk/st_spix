@@ -6,7 +6,10 @@
 
 import torch as th
 from einops import rearrange
+import st_spix
 from st_spix.prop import stream_bass
+from st_spix.sp_video_pooling import video_pooling
+from st_spix.sp_pooling import sp_pooling
 import prop_cuda
 
 bass_kwargs = {"use_bass_prop":False,"niters":30,"niters_seg":4,
@@ -20,13 +23,21 @@ def unpack_kwargs(kwargs):
     return params
 
 def run_bass(vid,flows,kwargs):
+    assert vid.shape[1] == 3,"Must use 3 features."
     use_bass_prop = kwargs['use_bass_prop']
+    rgb2lab = kwargs['rgb2lab']
+    # kwargs['rgb2lab'] = False
     if use_bass_prop:
+        del kwargs['use_bass_prop']
         outs = stream_bass(vid,flow=flows,**kwargs)
         spix,params,children,missing,pmaps = outs
     else:
         # -- each independent spix --
         spix = []
+        if rgb2lab:
+            vid_lab = st_spix.utils.vid_rgb2lab_th(vid.clone(),normz=False)
+        else:
+            vid_lab = vid
         for img in vid:
             img_t = rearrange(img,'f h w -> 1 h w f').contiguous()
             sm_start = 0
@@ -40,12 +51,30 @@ def run_bass(vid,flows,kwargs):
         spix = th.stack(spix)
     return spix
 
-def get_bass_sims(vid,spix,kwargs):
+# def get_bass_sims(vid,spix,scale=1.):
+#     means,down = sp_pooling(vid,spix)
+#     pwd = th.cdist(down,down)
+#     sims = th.exp(-scale*pwd)
+#     return sims
 
-    # for t in range(vid.shape[0]):
-    pooled,downsampled = pooling(vid,spix,nspix)
+def get_bass_sims(vid,spix,scale=1.):
+    T,F,H,W = vid.shape
+    use_video_pooling = False
 
-    exit()
-    pass
+    if use_video_pooling:
+        means,down = video_pooling(vid[None,:],spix[None,:])
+        vid = rearrange(vid,'t f h w -> 1 (t h w) f')
+        pwd = th.cdist(vid,down)**2 # sum-of-squared differences
+        pwd = rearrange(pwd,'1 (t h w) s -> t s h w',t=T,h=H)
+    else:
+        vid = rearrange(vid,'t f h w -> t h w f')
+        means,down = sp_pooling(vid,spix)
+        vid = rearrange(vid,'t h w f -> t (h w) f')
+        pwd = th.cdist(vid,down)**2 # sum-of-squared differences
+        pwd = rearrange(pwd,'t (h w) s -> t s h w',t=T,h=H)
 
+    # -- normalize --
+    sims = th.softmax(-scale*pwd,1)
+
+    return sims
 

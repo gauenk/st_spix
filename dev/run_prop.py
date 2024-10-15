@@ -39,7 +39,10 @@ from matplotlib import colormaps
 from matplotlib import patches, pyplot as plt
 # import matplotlib.pyplot as plt
 
-from st_spix.prop import stream_bass,run_fwd_bwd
+from st_spix.prop import stream_bass,run_fwd_bwd,indepent_bass
+
+from dev_basics.utils.timer import ExpTimer,TimeIt
+from dev_basics.utils.gpu_mem import GpuMemer,MemIt
 
 def draw_spix_vid(vid,spix):
     viz_seg = []
@@ -166,75 +169,221 @@ def inspect_means(vid,spix,params,sp_size):
     print("^"*10)
     print("^"*10)
 
+def read_mnist():
+    fn = "/home/gauenk/Documents/data/mnist/train_images.npy"
+    import numpy as np
+    images = np.load(fn)>0.5
+    images = repeat(images[:3],'b h w -> b r h w',r=3)
+    images = th.from_numpy(images)
+    return images*1.
+
+def read_otter():
+    fn = "../spix_paper/data/otters.png"
+    import torchvision.io as tvio
+    img = tvio.read_image(fn)/255.
+    print("img.shape: ",img.shape)
+    img = th.stack([img,img])
+    return img
+
+def save_spix_parts(root,img,spix):
+    uniq = spix.unique()
+    nspix = len(uniq)
+    import torchvision.io as tvio
+    import torchvision.utils as tv_utils
+    # print("img.min(),img.max(): ",img.min().item(),img.max().item())
+    # exit()
+    root = root /"parts"
+    if not root.exists(): root.mkdir(parents=True)
+
+    print(spix.shape)
+    print("img.shape: ",img.shape)
+    img = th.cat([img,th.zeros_like(img[:1])],0)
+    print("[0] img.shape: ",img.shape)
+    for ix in range(nspix):
+        fn = root / ("%d.png"%ix)
+        img_ix = img.clone()
+        img[-1] = spix == uniq[ix]
+        tv_utils.save_image(img[None,].detach().cpu(),fn)
+
+        # -- shrink box to nz alpha --
+        fn = root / ("s_%d.png"%ix)
+        inds_h,inds_w = th.where(spix == uniq[ix])
+        min_h,max_h = inds_h.min().item(),inds_h.max().item()
+        min_w,max_w = inds_w.min().item(),inds_w.max().item()
+        print(img.shape,min_h,max_h,min_w,max_w)
+        crop = img[None,:,min_h:max_h,min_w:max_w].detach().cpu()
+        tv_utils.save_image(crop,fn)
+
+        # -- shrink box to nz alpha --
+        fn = root / ("b_%d.png"%ix)
+        inds_h,inds_w = th.where(spix == uniq[ix])
+        min_h,max_h = inds_h.min().item(),inds_h.max().item()
+        min_w,max_w = inds_w.min().item(),inds_w.max().item()
+        print(img.shape,min_h,max_h,min_w,max_w)
+        crop = img[None,:,min_h:max_h,min_w:max_w].detach().cpu()
+        crop[:,:3] = 0
+        crop[:,2] = 1.
+        tv_utils.save_image(crop,fn)
+
+    # exit()
+
 def main():
 
     # -- get root --
     root = Path("./output/run_prop/")
     if not root.exists(): root.mkdir()
 
+    # kwargs = {"use_bass_prop":True,"niters":15,"niters_seg":4,
+    #           "sp_size":15,"pix_var":0.01,"alpha_hastings":20.,
+    #           "potts":1.,"sm_start":0,"rgb2lab":False}
+
     # -- config --
-    niters = 80
+    niters = 15
     niters_seg = 4
     sm_start = 10
-    sp_size = 15
-    alpha_hastings,potts = 1.,8.
-    pix_var = 0.09
+    sp_size = 20
+    # alpha_hastings = 1.0
+    # alpha_hastings = 0.1
+    # alpha_hastings = 5.
+    # alpha_hastings = 5.
+    alpha_hastings = 10.
+    potts = 10.0
+    # potts = 6.0
+    # pix_var = 0.10
+    pix_var = 0.02
 
     # -- read img/flow --
     vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['tennis'])
     # vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['baseball'])
     size = 256
     # vid = vid[0,5:7,:,50:50+size,300:300+size]
-    vid = vid[0,2:4,:,50:50+size,200:200+size]
-    vid = resize(vid,(128,128))
+    vid = vid[0,5:10,:,50:50+320,:480]
+    # vid = vid[0,2:5,:,50:50+size,200:200+size]
+    # vid = read_otter().to("cuda")
+    # vid = read_mnist().to("cuda")
+    # vid = resize(vid,(128,128))
     vid_og = vid.clone()
+    print(vid.shape)
 
     # -- run flow [raft] --
-    from st_spix.flow_utils import run_raft
+    from st_spix.flow_utils import run_raft,run_spynet
     fflow,bflow = run_raft(th.clip(255.*vid,0.,255.).type(th.uint8))
-    # print(vid.shape,fflow.shape)
-    # fflow,bflow = run_raft(vid)
-    if fflow.shape[-1] != vid.shape[-1]:
-        print("RAFT wants image size to be a multiple of 8.")
-        exit()
+    # fflow,bflow = run_spynet(vid)
+    B,F,H,W = vid.shape
+    # fflow = th.zeros((B,2,H,W),device="cuda")
+    # bflow = fflow.clone()
 
     # -- resize again --
-    # vid = resize(vid,(64,64))
+    # vid = resize(vid,(56,56))
     # fflow = resize(fflow,(64,64))/2. # reduced scale by 2
-    size = 128
-    vid = resize(vid,(size,size))
-    fflow = resize(fflow,(size,size))/(128./size) # reduced scale by X
-
+    # size = 128
+    # vid = resize(vid,(size,size))
+    # fflow = resize(fflow,(size,size))/(128./size) # reduced scale by X
 
     # -- save --
     B,F,H,W = vid.shape
     tv_utils.save_image(vid,root / "vid.png")
 
     # -- propogate --
-    outs = stream_bass(vid,flow=fflow,
-                       niters=niters,niters_seg=niters_seg,
-                       sp_size=sp_size,pix_var=pix_var,
-                       alpha_hastings=alpha_hastings,
-                       potts=potts,sm_start=sm_start)
-    spix,params,children,missing,pmaps = outs
-    print("[og] 8: ",params[0].mu_app[8])
+    # outs = stream_bass(vid,flow=fflow,
+    #                    niters=niters,niters_seg=niters_seg,
+    #                    sp_size=sp_size,pix_var=pix_var,
+    #                    alpha_hastings=alpha_hastings,
+    #                    potts=potts,sm_start=sm_start)
+    # spix,params,children,missing,pmaps = outs
+    # print("[og] 8: ",params[0].mu_app[8])
+
+    # -- debug --
+    data = th.randn(5,3,100,100)
+    mask = th.randn(5,3,100,100)>0
+    data1 = th.randn(5,3,100,100)
+    mask1 = th.randn(5,3,100,100)>0
+    data1.masked_fill_(mask1,1)
+    data.masked_fill_(mask, -1)
+
+    # import time
+    # th.cuda.synchronize()
+    # start_time = time.perf_counter()
+    # # Perform the operation
+    # data.masked_fill_(mask, -1)
+
+    # # Synchronize after operation to ensure all GPU tasks are done
+    # # if th.cuda.is_available():
+    # th.cuda.synchronize()
+
+    # # End the timer
+    # end_time = time.perf_counter()
+
+    # # Calculate elapsed time
+    # elapsed_time = end_time - start_time
+
+    # # Output the elapsed time
+    # print(f"Elapsed time: {elapsed_time:.6f} seconds")
+
+
+    # # th.cuda.synchronize()
+
+    # timer = ExpTimer()
+    # memer = GpuMemer()
+
+    # with TimeIt(timer,"main"):
+    #     data.masked_fill_(mask, -1)
+    #     # print(f"Elapsed time: {elapsed_time:.6f} seconds")
+
+    # print(timer)
+    # print(memer)
+
+
+    # -- rgb 2 lab --
+    # if rgb2lab:
+    #     vid_lab = st_spix.utils.vid_rgb2lab_th(vid.clone(),normz=False)
+    # else:
+    #     vid_lab = vid
+    vid_lab = st_spix.utils.vid_rgb2lab_th(vid.clone(),normz=False)
+    vid_lab = rearrange(vid_lab,'b f h w -> b h w f').contiguous()
+    fflow = rearrange(fflow,'b f h w -> b h w f').contiguous()
+
+    th.cuda.synchronize()
+    timer = ExpTimer()
+    memer = GpuMemer()
+    with MemIt(memer,"main"):
+        with TimeIt(timer,"main"):
+            outs = stream_bass(vid_lab,flow=fflow,
+                               niters=niters,niters_seg=niters_seg,
+                               sp_size=sp_size,pix_var=pix_var,
+                               alpha_hastings=alpha_hastings,
+                               potts=potts,sm_start=sm_start,rgb2lab=False)
+            spix,params,children,missing,pmaps = outs
+            # spix = indepent_bass(vid_lab,niters=niters,niters_seg=niters_seg,
+            #                      sp_size=sp_size,pix_var=pix_var,
+            #                      alpha_hastings=alpha_hastings,
+            #                      potts=potts,sm_start=sm_start,rgb2lab=False)
+            th.cuda.synchronize()
+    print(timer)
+    print(memer)
+    # exit()
+
 
     # -- view --
     marked = mark_spix_vid(vid,spix)
     marked_m = marked.clone()
-    marked_m[1:] = (1-1.*missing.cpu())*marked_m[1:]
+    # marked_m[1:] = (1-1.*missing.cpu())*marked_m[1:]
     marked_c = color_spix(marked.clone(),spix,2,cidx=1)
     marked_c = color_spix(marked_c,spix,8,cidx=0)
     # marked_c = color_spix(marked_c,spix,9,cidx=1)
     # # marked_c = color_spix(marked_c,spix,10,cidx=0)
     # # marked_c = color_spix(marked_c,spix,11,cidx=1)
     # marked_c = color_spix(marked_c,spix,12,cidx=2)
+    # tv_utils.save_image(vid[[0],...,70:150,80:180],root / "f0.png")
 
     # -- save --
     print("saving images.")
+    # save_spix_parts(root,vid[0,...,70:150,80:180],spix[0,...,70:150,80:180])
     # viz_seg = draw_spix_vid(vid,spix)
     futils.viz_flow_quiver(root/"flow.png",fflow[[0]],step=4)
     tv_utils.save_image(marked,root / "marked_fill.png")
+    # tv_utils.save_image(marked[[0]],root / "marked0.png")
+    tv_utils.save_image(marked[[0],...,70:150,80:180],root / "marked0.png")
     tv_utils.save_image(marked_m,root / "marked_missing.png")
     tv_utils.save_image(marked_c,root / "marked_colored.png")
     # tv_utils.save_image(viz_seg,root / "viz_seg.png")
@@ -242,11 +391,11 @@ def main():
     # -- vizualize the lab values with the means --
     vid_lab = st_spix.utils.vid_rgb2lab(vid,normz=False)
     print([(vid_lab[:,i].min().item(),vid_lab[:,i].max().item()) for i in range(3)])
-    inspect_means(vid_lab,spix,params,sp_size)
+    # inspect_means(vid_lab,spix,params,sp_size)
 
     # -- copy before refinement --
     spix_og = spix.clone()
-    params_og = [st_spix.copy_spix_params(p) for p in params]
+    # params_og = [st_spix.copy_spix_params(p) for p in params]
     border_og = prop_cuda.find_border(spix_og)
 
     # -- run fwd/bwd --
@@ -266,7 +415,7 @@ def main():
     # -- view --
     marked = mark_spix_vid(vid,spix)
     marked_m = marked.clone()
-    marked_m[1:] = (1-1.*missing.cpu())*marked_m[1:]
+    # marked_m[1:] = (1-1.*missing.cpu())*marked_m[1:]
     marked_c = color_spix(marked.clone(),spix,2,cidx=0)
     marked_c = color_spix(marked_c,spix,3,cidx=2)
 
@@ -300,7 +449,7 @@ def main():
     print(vid_lab.shape,vid_lab.max(),vid_lab.min())
     marked = mark_spix_vid(vid_lab,spix)
     marked_m = marked.clone()
-    marked_m[1:] = (1-1.*missing.cpu())*marked_m[1:]
+    # marked_m[1:] = (1-1.*missing.cpu())*marked_m[1:]
     marked_c = color_spix(marked.clone(),spix,2,cidx=0)
     marked_c = color_spix(marked_c,spix,3,cidx=2)
 

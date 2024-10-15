@@ -78,6 +78,7 @@ class AttnReweightFunction(Function):
         NSP = 9
         dtype = attn_in.dtype
         device = attn_in.device
+        # print("attn_in.shape: ",attn_in.shape)
         B,HD,H,W,K = attn_in.shape
         attn_out = th.zeros((B,HD,NSP,H,W,K),device=device,dtype=dtype)
         spix_paper_cuda.reweight_forward(attn_out, attn_in, sims, sinds)

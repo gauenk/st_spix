@@ -18,6 +18,7 @@ void init_simple_refine_missing(py::module &m);
 void init_seg_utils(py::module &m);
 void init_prop_bass(py::module &m);
 void init_bass(py::module &m);
+void init_shift_labels(py::module &m);
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
@@ -30,12 +31,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_prop_bass(m);
   init_bass(m);
   init_sp_video_pooling(m);
+  init_shift_labels(m);
 
   // -- nicer superpixel parameter IO --
   py::class_<PySuperpixelParams>(m, "SuperpixelParams")
     .def(py::init<>())
-    .def(py::init<
-         torch::Tensor, torch::Tensor, torch::Tensor,
+    .def(py::init<torch::Tensor, torch::Tensor, torch::Tensor,
          torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor,
          torch::Tensor, torch::Tensor, torch::Tensor,
          torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor,

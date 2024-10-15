@@ -13,10 +13,10 @@ from einops import rearrange
 # -- slic iteration helper fxn --
 from ..pwd import PairwiseDistFunction
 from ..utils import append_grid,add_grid
-from .slic_utils import init_centroid,get_abs_indices
+from ..slic_utils import init_centroid,get_abs_indices
 
 
-def run_slic(pix_ftrs, stoken_size=[16, 16],
+def run_slic(pix_ftrs, pix_ftrs_final, stoken_size=[16, 16],
              n_iter=2, M = 0., sm_scale=1.,grad_type="full"):
     """
     computing assignment iterations
@@ -52,10 +52,17 @@ def run_slic(pix_ftrs, stoken_size=[16, 16],
     sftrs, ilabel = init_centroid(pix_ftrs, nsp_width, nsp_height)
     abs_indices = get_abs_indices(ilabel, nsp_width)
     mask = (abs_indices[1] >= 0) * (abs_indices[1] < nsp)
+    coo_inds = abs_indices[:,mask]
     pix_ftrs = pix_ftrs.reshape(*pix_ftrs.shape[:2], -1)
     permuted_pix_ftrs = pix_ftrs.permute(0, 2, 1).contiguous()
-    coo_inds = abs_indices[:,mask]
     # print(coo_inds.shape,mask.shape,permuted_pix_ftrs.shape)
+
+    # -- init final ftrs --
+    pix_ftrs_final=append_grid(pix_ftrs_final[:,None],M/stoken_size[0],normz=True)[:,0]
+    pix_ftrs_final = pix_ftrs_final.reshape(*pix_ftrs_final.shape[:2], -1)
+    permuted_pix_ftrs_final = pix_ftrs_final.permute(0, 2, 1).contiguous()
+    # pix_ftrs_final = pix_ftrs
+    # permuted_pix_ftrs_final = permuted_pix_ftrs
 
     # -- determine grad --
     with torch.set_grad_enabled(full_grad):
@@ -83,14 +90,12 @@ def run_slic(pix_ftrs, stoken_size=[16, 16],
                 sftrs = _update_sftrs(sims,permuted_pix_ftrs)
 
     # -- manage gradient; always differentiable --
+    # spix = sims.argmax(1).reshape(B,-1)
+    # return spix
+    msg = "We are using different ftrs within SLIC-loop and within output sims"
+    assert "fixed_spix" in grad_type,msg
     if "fixed" in grad_type:
         if grad_type == "fixed_spix":
-            # -- version 0 --
-            # inds = sims.view(*sims.shape[:-2],-1).argmax(-1)
-            # binary = one_hot(inds,sH*sW)
-            # _sims = binary.view(sims.shape).type(sims.dtype)
-
-            # -- version 1 --
             spix = sims.argmax(1).reshape(B,-1)
             B,NSP,NP = sims.shape
             batch_inds = th.arange(B).unsqueeze(-1)
@@ -99,25 +104,40 @@ def run_slic(pix_ftrs, stoken_size=[16, 16],
             _sims[batch_inds,spix,pix_inds] = 1.
         else:
             _sims = sims.detach()
-        sftrs = _update_sftrs(_sims,permuted_pix_ftrs)
-        sparse_sims,sims = _update_sims(pix_ftrs,sftrs,ilabel,nsp_width,
+            exit()
+        sftrs = _update_sftrs(_sims,permuted_pix_ftrs_final)
+        sparse_sims,sims = _update_sims(pix_ftrs_final,sftrs,ilabel,nsp_width,
                                         nsp_height,sm_scale,coo_inds,mask)
 
     return sparse_sims, sims, nsp, sftrs
 
-# def sims_to_spix_mat(sims):
-#     spix = sims.argmax(1).reshape(B,-1)
-#     B,NSP,NP = sims.shape
+# def spix_to_sims(spix,ftrs,M,stoken_size=[16,16]):
+
+#     # -- unpack --
+#     if not hasattr(stoken_size,"__len__"):
+#         stoken_size = [stoken_size,stoken_size]
+#     sheight, swidth = stoken_size[0],stoken_size[1]
+#     B,F,H,W = ftrs.shape
+#     nsp_height = H // sheight
+#     nsp_width = W // swidth
+#     NSP = nsp_height * nsp_width
+#     NP = H*W
+#     if th.is_tensor(M): M = M[:,None]
+
+#     # -- init sims --
 #     batch_inds = th.arange(B).unsqueeze(-1)
 #     pix_inds = th.arange(NP).unsqueeze(0)
 #     _sims = th.zeros_like(sims)
 #     _sims[batch_inds,spix,pix_inds] = 1.
-#     return _sims
 
-# def diff_sims(sims):
-#     sftrs = _update_sftrs(_sims,permuted_pix_ftrs)
-#     sparse_sims,sims = _update_sims(pix_ftrs,sftrs,ilabel,nsp_width,
-#                                     nsp_height,sm_scale,coo_inds,mask)
+#     # -- init final ftrs --
+#     pix_ftrs_final = append_grid(pix_ftrs_final[:,None],M/stoken_size[0],normz=True)[:,0]
+#     permuted_pix_ftrs_final = pix_ftrs_final.permute(0, 2, 1).contiguous()
+
+#     # -- get sims --
+#     sftrs = _update_sftrs(_sims,permuted_pix_ftrs_final)
+#     _,sims = _update_sims(pix_ftrs_final,sftrs,ilabel,nsp_width,
+#                           nsp_height,sm_scale,coo_inds,mask)
 #     return sims
 
 def _update_sftrs(sims,permuted_pix_ftrs):
@@ -144,16 +164,13 @@ def compute_slic_params(pix_ftrs, sims, stoken_size=[16, 16], M = 0., sm_scale=1
     With overhead
 
     """
+    # pix,sims,ilabel,nsp_width,nsp_height,sm_scale,coo_inds,mask):
 
     # -----------------------
     #
     #      Core Function
     #
     # -----------------------
-
-    # -- rehsape --
-    if sims.ndim == 5:
-        sims = rearrange(sims,'b h w sh sw -> b (sh sw) (h w)')
 
     # -- unpack --
     height, width = pix_ftrs.shape[-2:]
@@ -185,7 +202,8 @@ def compute_slic_params(pix_ftrs, sims, stoken_size=[16, 16], M = 0., sm_scale=1
     # -----------------------
 
     # -- compute means --
-    sftrs = torch.bmm(sims, permuted_pix_ftrs) / (sims.sum(2, keepdim=True) + 1e-16)
+    sftrs = torch.bmm(sims, permuted_pix_ftrs) \
+        / (sims.sum(2, keepdim=True) + 1e-16)
     sftrs = sftrs.permute(0, 2, 1).contiguous()
 
     # -- compute sims --

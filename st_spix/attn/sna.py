@@ -11,6 +11,9 @@ from torch.nn.functional import pad,one_hot
 from torch.nn.init import trunc_normal_
 from einops import rearrange,repeat
 
+# -- external package --
+import stnls
+
 # -- basic utils --
 from spix_paper.utils import extract_self
 
@@ -35,7 +38,7 @@ class SuperpixelAttention(nn.Module):
             "qk_layer":True,"v_layer":True,"proj_layer":True,
             "sp_nftrs":None,"proj_attn_layer":False,
             "proj_attn_bias":False,"run_attn_search":True,
-            "na_grid":"stnls"}
+            "na_grid":"stnls","sp_type":"none"}
 
     def __init__(self,dim,**kwargs):
         super().__init__()
@@ -90,8 +93,10 @@ class SuperpixelAttention(nn.Module):
         # -- unpack superpixel info --
         if self.detach_sims:
             sims = sims.detach()
+        flows = flows.int()
 
         # -- compute attn differences  --
+        ws = self.kernel_size
         wt = flows.shape[-4]//2
         x = x.permute(0,2,3,1) # t f h w -> t h w f
         attn,flows_k = self.na_search(x,flows)
@@ -104,10 +109,17 @@ class SuperpixelAttention(nn.Module):
             inds = sims.view(*sims.shape[:-2],-1).argmax(-1)
             binary = one_hot(inds,sH*sW).reshape_as(sims).type(sims.dtype)
             attn = self.attn_rw(attn,binary,self.normz_patch)
-        elif self.attn_type in ["soft","hard+grad"]:
+        elif self.attn_type in ["soft","hard+grad"] and "slic" in self.sp_type:
+            attn = rearrange(attn,'1 hd t h w k -> t hd h w k')
+            assert attn.ndim == 5,"No time dimension; b hd nh nw k"
             sims = sims.contiguous()
             attn = self.attn_rw(attn,sims,self.normz_patch)
+        elif self.attn_type in ["soft","hard+grad"]:
+            if "slic" in self.sp_type and sims.ndim==5:
+                sims = rearrange(sims,'t h w nh nw -> t (nh nw) h w')
+            attn = self.attn_rw_stnls(attn,sims,flows,ws,wt)
         elif self.attn_type == "na":
+            attn = rearrange(attn,'1 hd t h w k -> t hd h w k')
             attn = attn.softmax(-1)
         else:
             raise ValueError(f"Uknown self.attn_type [{self.attn_type}]")
@@ -130,3 +142,19 @@ class SuperpixelAttention(nn.Module):
         else:
             raise ValueError(f"Uknown dist type [{self.dist_type}]")
 
+    def attn_rw_stnls(self,attn,sims,flows,ws,wt):
+
+        # -- compute \sum_s p(s_i=s)p(s_j=s) --
+        sims = sims[None,:].contiguous()
+        search = stnls.search.NonLocalSearch(ws,wt,dist_type="prod",itype="int")
+        sim_attn = search(sims,sims,flows)[0]
+
+        # -- exp(-dists) --
+        c = th.max(attn,dim=-1,keepdim=True).values
+        attn = th.exp(attn-c)
+        # -- exp(-dists) \sum_s p(s_i=s)p(s_j=s)  --
+        attn = attn*sim_attn
+        # -- normalize --
+        attn = attn / (1e-10+attn.sum(-1,keepdim=True))
+        attn = rearrange(attn,'1 hd t h w k -> t hd h w k')
+        return attn

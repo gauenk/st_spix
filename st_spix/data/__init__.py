@@ -13,7 +13,7 @@ def load_data(cfg):
         load_test = optional(cfg,"data_load_test",False)
         return load_davis(cfg,load_test=load_test)
     else:
-        raise ValueError(f"Uknown model type [{dname}]")
+        raise ValueError(f"Uknown dname type [{dname}]")
 
 
 import data_hub
@@ -24,7 +24,7 @@ def load_davis(cfg,load_test=False):
     # -- data config --
     dcfg = edict()
     dcfg.dname = "davis"
-    dcfg.tr_set = "train-val" if load_test is False else "test"
+    dcfg.tr_set = "train-val" if load_test is False else "test-dev"
     dcfg.sigma = optional(cfg,"sigma",0.001)
     dcfg.nframes = optional(cfg,"nframes",5)
     dcfg.isize = optional(cfg,"patch_size",128)

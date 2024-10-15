@@ -102,6 +102,14 @@ setup(
         #     "st_spix/csrc/pybind_dev.cpp",
         # ],extra_compile_args={'cxx': ['-g','-w'],'nvcc': ['-w']})
 
+        CUDAExtension('st_attn_cuda', [
+            # -- superpixel attention --
+            "st_spix/csrc/attn/sim_sum.cu",
+            # -- pybind --
+            "st_spix/csrc/pybind_attn.cpp",
+        ],
+        extra_compile_args={'cxx':['-g','-w'],'nvcc':['-w']},),
+
         CUDAExtension('prop_cuda', [
             # -- shared utils --
             "st_spix/csrc/prop/pch.cu",
@@ -117,6 +125,7 @@ setup(
             "st_spix/csrc/prop/init_sparams.cu",
             "st_spix/csrc/prop/simple_init_sparams.cu",
             # -- tools --
+            "st_spix/csrc/prop/shift_labels.cu",
             "st_spix/csrc/prop/split_disconnected.cu",
             "st_spix/csrc/prop/fill_missing.cu",
             # -- standard bass --
