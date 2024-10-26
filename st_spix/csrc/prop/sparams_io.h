@@ -8,18 +8,30 @@
 #include "../bass/share/my_sp_struct.h"
 #endif
 
-__host__ PySuperpixelParams get_params_as_tensors(spix_params* sp_params,
-                                                  int* ids_ptr, int num);
+PySuperpixelParams get_params_as_tensors(spix_params* sp_params, int* ids,
+                                         int num, int max_num);
+/* __host__ */
+/* PySuperpixelParams get_params_as_tensors(spix_params* sp_params, */
+/*                                          int* ids, int num); */
 __host__
-spix_params* get_tensors_as_params(PySuperpixelParams params,
-                                   int sp_size, int npix, int nspix,
-                                   int nspix_buffer);
+spix_params* get_tensors_as_params(PySuperpixelParams params, int sp_size,
+                                   int npix, int nspix,int nspix_buffer);
+
+__host__
+void fill_params_from_params(PySuperpixelParams dest_params,
+                             PySuperpixelParams src_params);
 
 __host__
 void params_to_tensors(PySuperpixelParams sp_params_py,
-                       spix_params* sp_params, int num);
+                       spix_params* sp_params, int* ids, int num);
 __host__
-void tensors_to_params(PySuperpixelParams sp_params_py,spix_params* sp_params);
+void tensors_to_params(PySuperpixelParams sp_params_py,
+                       spix_params* sp_params);
+
+__host__
+PySuperpixelParams get_output_params(spix_params* sp_params,
+                                     PySuperpixelParams prior_params,
+                                     int* ids,int num, int max_num);
 
 __global__
 void read_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
@@ -28,8 +40,8 @@ void read_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
                  float* mu_shape, float* sigma_shape, float* logdet_sigma_shape,
                  float* prior_mu_shape, float* prior_sigma_shape,
                  int* prior_mu_shape_count, int* prior_sigma_shape_count,
-                 int* counts, int* prior_counts, int* ids,
-                 spix_params* sp_params, int spix);
+                 int* counts, int* prior_counts, spix_params* sp_params,
+                 int* ids, int spix);
 __global__
 void write_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
                   float* prior_mu_app, float* prior_sigma_app,
@@ -37,7 +49,25 @@ void write_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
                   float* mu_shape, float* sigma_shape, float* logdet_sigma_shape,
                   float* prior_mu_shape, float* prior_sigma_shape,
                   int* prior_mu_shape_count, int* prior_sigma_shape_count,
-                  int* counts, int* prior_counts, int* ids,
-                  spix_params* sp_params, int nspix);
+                  int* counts, int* prior_counts, spix_params* sp_params, int nspix);
 
+void run_update_prior(const torch::Tensor spix,PySuperpixelParams params);
+
+
+// -- compact --
+__global__
+void compact_new_spix(int* spix, int* compression_map, int* prop_ids,
+                      int num_new, int prev_max, int npix);
+__global__
+void fill_new_params_from_old(spix_params* params, spix_params*  new_params,
+                              int* compression_map, int num_new);
+__global__
+void fill_old_params_from_new(spix_params* params, spix_params*  new_params,
+                              int prev_max, int num_new);
+int compactify_new_superpixels(torch::Tensor spix,spix_params* sp_params,
+                               int prev_max_spix,int max_spix,int npix);
+
+
+
+__host__ PySuperpixelParams init_tensor_params(int size);
 

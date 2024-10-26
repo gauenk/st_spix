@@ -10,13 +10,14 @@
 __host__ void update_params(const float* img,const int* seg,
                             spix_params* sp_params,
                             spix_helper* sp_helper,
-                            const int npix, const int nspix_buffer,
+                            float sigma_app, const int npix, const int nspix_buffer,
                             const int nbatch, const int width, const int nftrs);
 
 __host__ void update_params_summ(const float* img, const int* spix,
                                  spix_params* sp_params,spix_helper* sp_helper,
-                                 const int npixels, const int nspix_buffer,
-                                 const int nbatch, const int width, const int nftrs);
+                                 float sigma_app, const int npixels,
+                                 const int nspix_buffer, const int nbatch,
+                                 const int width, const int nftrs);
 
 __global__ void clear_fields(spix_params* sp_params,
                              spix_helper* sp_helper,
@@ -31,10 +32,16 @@ __global__ void sum_by_label(const float* img, const int* seg,
 
 __global__ void calc_posterior_mode(spix_params* sp_params,
                                     spix_helper* sp_helper,
-                                    const int nspix_buffer);
+                                    float sigma_app, const int nspix_buffer);
 
-__global__ void calc_summ_stats(spix_params* sp_params,spix_helper* sp_helper,
-                                const int nspix_buffer);
+/* __global__ void calc_summ_stats(spix_params* sp_params,spix_helper* sp_helper, */
+/*                                 const int nspix_buffer); */
+
+__global__ void calc_summ_stats(spix_params*  sp_params,spix_helper* sp_helper,
+                                float sigma_app, const int nsuperpixel_buffer);
+__global__ void calc_simple_update(spix_params*  sp_params,spix_helper* sp_helper,
+                                   float sigma_app, const int nsuperpixel_buffer);
+
 /* __global__ */
 /* void calculate_mu_and_sigma(spix_params*  sp_params, */
 /*                             spix_helper* sp_helper, */
@@ -51,23 +58,28 @@ __global__ void calc_summ_stats(spix_params* sp_params,spix_helper* sp_helper,
 /*                                       int lam, int count); */
 
 // ---- Appearance [mean,cov] ---
-__device__ float3 calc_app_mean_mode(double3 sample_sum, float3 prior_mu,
+__device__ float3 calc_app_mean_mode(float3 sample_sum, float3 prior_mu,
                                      int count, int prior_count);
 __device__ float3 calc_app_sigma_mode(double3 sq_sample_sum, double3 sample_sum,
                                       int count, float3 prior_sigma, float3 prior_mu,
                                       int prior_count_sigma, int prior_count_mu);
-__device__ double calc_app_mean_ll(float3 mu_app, float3 prior_mu, float3 prior_sigma);
+__device__ double calc_app_mean_ll(float3 mu_app, float3 prior_mu, float sigma_app);
+// __device__ double calc_app_mean_ll(float3 mu_app, float3 prior_mu, float3 prior_sigma);
 __device__ double calc_app_sigma_ll(float3 sigma, float3 prior_sigma, int prior_count);
 
 // ---- Shape [mean,cov] ---
+__device__ double2 calc_shape_sample_mean(int2 sum_shape, double count);
 __device__ double2 calc_shape_mean_mode(double2& mu, double2 prior_mu,
                                         int count, int lam);
 __device__ double3 calc_shape_sigma_mode_simp(longlong3 sq_sum, double2 mu,
                                               double3 prior_sigma_s, double2 prior_mu,
                                               int count, int prior_count);
-__device__ double3 calc_shape_sigma_mode(longlong3 sigma_s_sum, double2 mu_s,
-                                       double3 prior_sigma_s, double2 prior_mu_s,
-                                       int count, int lam, int df);
+__device__ double3 calc_shape_sigma_mode(longlong3 sq_sum, double2 mu,
+                                         double3 prior_sigma, double2 prior_mu,
+                                         int count, int prior_count);
+/* __device__ double3 calc_shape_sigma_mode(longlong3 sigma_s_sum, double2 mu_s, */
+/*                                        double3 prior_sigma_s, double2 prior_mu_s, */
+/*                                        int count, int lam, int df); */
 __device__ double calc_shape_mean_ll(double2 mu, double2 prior_mu,
                                      double3 inv_prior_sigma, double det_prior);
 __device__ double calc_shape_sigma_ll(double3 sigma_s, double3 prior_sigma_s,

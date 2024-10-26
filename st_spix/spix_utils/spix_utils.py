@@ -29,7 +29,7 @@ def viz_spix(img_batch,spix_batch,nsp):
 
         img = rearrange(img,'c h w -> h w c').cpu().numpy()/255.
         spix = rearrange(spix,'(h w) -> h w',h=img.shape[0]).cpu().numpy()
-        print(img.shape,spix.shape)
+        # print(img.shape,spix.shape)
         _masks = mark_boundaries(img,spix,mode="subpixel")
         _masks = th.from_numpy(_masks)
         _masks = rearrange(_masks,'h w c -> c h w')
@@ -58,8 +58,10 @@ def pool_flow_and_shift_mean_v1(flow,means,spix,spix_ids):
     # flow = flow.contiguous()
     # spix = spix.contiguous()
     nspix = spix.max().item()+1
+    # print("spix_ids[min,max], nspix: ",spix_ids.min(),spix_ids.max(),nspix)
     # nspix = means.shape[1] #spix.max().item()+1 # or means.shape[1]
-    assert means.shape[1] <= nspix
+    print("means.shape: ",means.shape,len(spix_ids),nspix)
+    assert means.shape[1] >= nspix
     assert means.shape[0] == 1,"Batch size is 1"
 
     # -- run --
@@ -71,6 +73,11 @@ def pool_flow_and_shift_mean_v1(flow,means,spix,spix_ids):
     # -- update means --
     # means[0,spix_ids,-2] = means[0,spix_ids,-2] + downsampled[...,0]
     # means[0,spix_ids,-1] = means[0,spix_ids,-1] + downsampled[...,1]
+    # print("downsampled.shape: ",downsampled.shape)
+    # print("spix_ids.min(),spix_ids.max(): ",spix_ids.min(),spix_ids.max())
+    # print("spix_ids.shape: ",spix_ids.shape)
+    # print("means.shape: ",means.shape)
+
     means[0,:,-2] += downsampled[0,spix_ids,0]
     means[0,:,-1] += downsampled[0,spix_ids,1]
 

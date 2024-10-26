@@ -43,12 +43,12 @@
 ***********************************************************/
 
 // // fill_missing(filled_spix_ptr, centers_ptr, missing_ptr, border,
-//              nbatch, width, height, nspix, nmissing, break_iter);
+//              nbatch, width, height,  nmissing, break_iter);
 
 __host__
 void fill_missing(int* seg,  float* centers, int* missing, bool* border,
                   int nbatch, int width, int height,
-                  int nspix, int nmissing, int break_iter){
+                  int nmissing, int break_iter){
 
     // -- init launch info --
     int npix = height*width;
@@ -192,28 +192,31 @@ void update_missing_seg_nn(int* seg, float* centers, bool* border,
     // -- read neighor labels for potts term --
     // check 8 nbrs and save result if valid to change to the last place of array
     // return how many nbrs different for potts term calculation
+    int min_neigh = -1;
+    int min_count = 1000;
+    bool update_min = false;
 
     //N :
-    // set_nbrs(NW, N, NE, W, E, SW, S, SE,N, nbrs);
-    // count_diff_nbrs_N = ischangbale_by_nbrs(nbrs);
+    set_nbrs(-1, N, -1, W, E, -1, S, -1, N, nbrs);
+    count_diff_nbrs_N = ischangbale_by_nbrs(nbrs);
     // // isNvalid = nbrs[8] or (res_max.y == -1);
     // // if(!isNvalid) return;
     
-    // //E:
-    // set_nbrs(NW, N, NE, W, E, SW, S, SE,E, nbrs);
-    // count_diff_nbrs_E = ischangbale_by_nbrs(nbrs);
+    //E:
+    set_nbrs(-1, N, -1, W, E, -1, S, -1, E, nbrs);
+    count_diff_nbrs_E = ischangbale_by_nbrs(nbrs);
     // // isEvalid = nbrs[8] or (res_max.y == -1);
     // // if(!isEvalid) return;
 
     // //S :
-    // set_nbrs(NW, N, NE, W, E, SW, S, SE,S, nbrs);
-    // count_diff_nbrs_S = ischangbale_by_nbrs(nbrs);
-    // // isSvalid = nbrs[8] or (res_max.y == -1);
-    // // if(!isSvalid) return;
+    set_nbrs(-1, N, -1, W, E, -1, S, -1, S, nbrs);
+    count_diff_nbrs_S = ischangbale_by_nbrs(nbrs);
+    // isSvalid = nbrs[8] or (res_max.y == -1);
+    // if(!isSvalid) return;
 
     //W :
-    // set_nbrs(NW, N, NE, W, E, SW, S, SE,W, nbrs);
-    // count_diff_nbrs_W = ischangbale_by_nbrs(nbrs);
+    set_nbrs(-1, N, -1, W, E, -1, S, -1, W, nbrs);
+    count_diff_nbrs_W = ischangbale_by_nbrs(nbrs);
     // isWvalid = nbrs[8] or (res_max.y == -1);
     // if(!isWvalid) return;
 
@@ -223,6 +226,9 @@ void update_missing_seg_nn(int* seg, float* centers, bool* border,
     if (valid){
       res_max = isotropic_space(res_max, label_check, x, y,
                                 centers+label_check*2, height, width);
+      update_min = count_diff_nbrs_N < min_count;
+      min_count = update_min ? count_diff_nbrs_N : min_count;
+      min_neigh = update_min ? N : min_neigh;
     }
 
     valid = S>=0;
@@ -230,6 +236,9 @@ void update_missing_seg_nn(int* seg, float* centers, bool* border,
     if(valid && (label_check!=N)){
       res_max = isotropic_space(res_max, label_check, x, y,
                                 centers+label_check*2, height, width);
+      update_min = count_diff_nbrs_S < min_count;
+      min_count = update_min ? count_diff_nbrs_S : min_count;
+      min_neigh = update_min ? S : min_neigh;
     }
 
     valid = W >= 0;
@@ -237,6 +246,9 @@ void update_missing_seg_nn(int* seg, float* centers, bool* border,
     if(valid && (label_check!=S)&&(label_check!=N)) {
       res_max = isotropic_space(res_max, label_check, x, y,
                                 centers+label_check*2, height, width);
+      update_min = count_diff_nbrs_W < min_count;
+      min_count = update_min ? count_diff_nbrs_W : min_count;
+      min_neigh = update_min ? W : min_neigh;
     }
     
     valid = E >= 0;
@@ -244,9 +256,17 @@ void update_missing_seg_nn(int* seg, float* centers, bool* border,
     if(valid && (label_check!=W)&&(label_check!=S)&&(label_check!=N)){
       res_max = isotropic_space(res_max, label_check, x, y,
                                 centers+label_check*2, height,width);
+      update_min = count_diff_nbrs_E < min_count;
+      min_count = update_min ? count_diff_nbrs_E : min_count;
+      min_neigh = update_min ? E : min_neigh;
     }
 
+    // --> if we do not setting the border for a mysterious reason <--
+    //   then set it to the neighbor with the number of the same neighbors
     seg[seg_idx] = res_max.y;
+    // if (res_max.y == -1){
+    //   res_max.y = min_neigh;
+    // }
     return;
 }
 
@@ -297,7 +317,7 @@ void find_border_along_missing(const int* seg, const int* missing,
 torch::Tensor run_fill_missing(const torch::Tensor spix,
                                const torch::Tensor centers,
                                const torch::Tensor missing,
-                               int nspix, int break_iter){
+                               int break_iter){
 
     // -- check --
     CHECK_INPUT(spix);
@@ -326,7 +346,7 @@ torch::Tensor run_fill_missing(const torch::Tensor spix,
     int* missing_ptr = missing.data<int>();
     if (nmissing>0){
       fill_missing(filled_spix_ptr, centers_ptr, missing_ptr, border,
-                   nbatch, width, height, nspix, nmissing, break_iter);
+                   nbatch, width, height, nmissing, break_iter);
     }
     cudaFree(border);
 

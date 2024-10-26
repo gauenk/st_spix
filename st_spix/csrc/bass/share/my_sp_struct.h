@@ -77,20 +77,20 @@ struct alignas(16) superpixel_GPU_helper_sm {
 struct alignas(16) spix_params{
     // -- appearance --
     float3 mu_app;
-    float3 sigma_app;
+    /* float3 sigma_app; */
     float3 prior_mu_app;
-    float3 prior_sigma_app;
-    int prior_mu_app_count;
-    int prior_sigma_app_count;
+    /* float3 prior_sigma_app; */
+    int prior_mu_app_count; // kappa (kappa_app)
+    /* int prior_sigma_app_count; // nu */
     // -- shape --
     double2 mu_shape;
     double3 sigma_shape;
     double2 prior_mu_shape;
     double3 prior_sigma_shape;
-    int prior_mu_shape_count;
-    int prior_sigma_shape_count;
+    int prior_mu_shape_count; // lambda term; (prior mu count)
+    int prior_sigma_shape_count; // nu term; (prior shape count)
     // -- helpers --
-    double logdet_sigma_app;
+    /* double logdet_sigma_app; */
     double logdet_sigma_shape;
     double logdet_prior_sigma_shape;
     // -- priors --
@@ -106,24 +106,34 @@ struct alignas(16) spix_params{
 };
 
 struct alignas(16) spix_helper{
-    double3 sum_app;
+    float3 sum_app;
     double3 sq_sum_app;
     int2 sum_shape;
     longlong3 sq_sum_shape;
 };
 
 struct alignas(16) spix_helper_sm {
-    float3 sum_app;
+    double3 sum_app;
     double3 sq_sum_app;
-    double2 sum_shape;
+    int2 sum_shape;
+    longlong3 sq_sum_shape;
     /* float3 squares_i; */
     int count_f;
-    float3 b_n;
-    float3 b_n_f;
-    float3 numerator;
+    /* float3 b_n; */
+    /* float3 b_n_f; */
+    float3 b_n_app;
+    float3 b_n_f_app;
+    /* float3 b_n_shape; */
+    /* float3 b_n_shape_f; */
+    float b_n_shape_det;
+    float b_n_f_shape_det;
+    /* float3 numerator; */
+    float numerator_app;
+    float numerator_f_app;
     float3 denominator;
-    float3 numerator_f;
     float3 denominator_f;
+    float lprob_shape;
+    float lprob_f_shape;
     float hasting;
     bool merge; // a bool
     bool remove;
@@ -131,6 +141,33 @@ struct alignas(16) spix_helper_sm {
     int count;
     int max_sp;
 };
+
+struct alignas(16) spix_helper_sm_v2 {
+    double3 sum_app;
+    double3 sq_sum_app;
+    int2 sum_shape;
+    longlong3 sq_sum_shape;
+    float3 b_n_app;
+    float3 b_n_f_app;
+    /* float3 b_n_shape; */
+    /* float3 b_n_shape_f; */
+    float b_n_shape_det;
+    float b_n_f_shape_det;
+    /* float3 numerator; */
+    float numerator_app;
+    float numerator_f_app;
+    float3 denominator;
+    float3 denominator_f;
+    float lprob_shape;
+    float lprob_f_shape;
+    float hasting;
+    bool merge; // a bool
+    bool remove;
+    bool stop_bfs;
+    int count;
+    int max_sp;
+}
+
 
 /*********************************
 

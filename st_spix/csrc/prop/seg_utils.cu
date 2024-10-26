@@ -102,10 +102,10 @@ __global__  void find_border_pixels_end(const int* seg, bool* border, const int 
     int N,S,E,W; // north, south, east,west            
     N=S=W=E=OUT_OF_BOUNDS_LABEL; // init 
     
-    if (y>1){
+    if (y>0){
         N = seg[idx-xdim]; // above
     }          
-    if (x>1){
+    if (x>0){
         W = seg[idx-1];  // left
     }
     if (y<ydim-1){

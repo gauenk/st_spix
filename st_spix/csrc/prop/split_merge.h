@@ -186,6 +186,16 @@ __global__ void sum_by_label_split(const float* img, const int* seg,
                                    const int npix, const int nbatch,
                                    const int width, const int nftrs, int max_nspix);
 
+__global__
+void split_marginal_likelihood(spix_params* sp_params,
+                                 spix_helper_sm* sm_helper,
+                                 const int npix, const int nbatch,
+                                 const int width, const int nspix_buffer,
+                                 float sigma2_app, int max_nspix);
+
+__device__ double marginal_likelihood_app(double3 sum_obs,double3 sq_sum_obs,
+                                          int _num_obs, double sigma2);
+
 __global__ void calc_bn_split(int* sm_pairs,
                               spix_params* sp_params,
                               spix_helper* sp_helper,

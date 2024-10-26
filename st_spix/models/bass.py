@@ -24,6 +24,7 @@ def unpack_kwargs(kwargs):
 
 def run_bass(vid,flows,kwargs):
     assert vid.shape[1] == 3,"Must use 3 features."
+    vid = rearrange(vid,'t f h w -> t h w f').contiguous()
     use_bass_prop = kwargs['use_bass_prop']
     rgb2lab = kwargs['rgb2lab']
     # kwargs['rgb2lab'] = False
@@ -31,6 +32,7 @@ def run_bass(vid,flows,kwargs):
         del kwargs['use_bass_prop']
         outs = stream_bass(vid,flow=flows,**kwargs)
         spix,params,children,missing,pmaps = outs
+        spix = spix[:,None]
     else:
         # -- each independent spix --
         spix = []
@@ -38,8 +40,10 @@ def run_bass(vid,flows,kwargs):
             vid_lab = st_spix.utils.vid_rgb2lab_th(vid.clone(),normz=False)
         else:
             vid_lab = vid
-        for img in vid:
-            img_t = rearrange(img,'f h w -> 1 h w f').contiguous()
+        vid_lab = rearrange(vid_lab,'t f h w -> t h w f').contiguous()
+        for img_t in vid:
+            img_t = img_t[None,:]
+            # img_t = rearrange(img,'f h w -> 1 h w f').contiguous()
             sm_start = 0
             # niters,niters_seg = sp_size,4 # a fun choice from BASS authors
             outs = unpack_kwargs(kwargs)

@@ -6,7 +6,7 @@
 __host__
 void fill_missing(int* seg,  float* centers, int* missing, bool* border,
                   int nbatch, int width, int height,
-                  int nspix, int nmissing, int break_iter);
+                  int nmissing, int break_iter);
 
 __global__
 void find_border_along_missing(const int* seg, const int* missing,

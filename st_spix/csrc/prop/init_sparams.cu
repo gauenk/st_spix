@@ -26,7 +26,7 @@ __host__ void init_sp_params(spix_params* sp_params,
 
   // -- fill sp_params with summary statistics --
   update_params_summ(img, spix, sp_params, sp_helper,
-                     npix, nspix_buffer, nbatch, width, nftrs);
+                     prior_sigma_app, npix, nspix_buffer, nbatch, width, nftrs);
   int num_block = ceil( double(nspix_buffer)/double(THREADS_PER_BLOCK) );
   dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
   dim3 BlockPerGrid(num_block,1);
@@ -52,21 +52,21 @@ __global__ void init_sp_params_kernel(spix_params* sp_params,float prior_sigma_a
 
     // -- activate! --
     sp_params[k].valid = 1;
-    sp_params[k].prior_count = npix/nspix;
+    sp_params[k].prior_count = count;
 
     // -- appearance --
     sp_params[k].prior_mu_app = sp_params[k].mu_app;
-    sp_params[k].prior_sigma_app.x = prior_sigma_app;
-    sp_params[k].prior_sigma_app.y = prior_sigma_app;
-    sp_params[k].prior_sigma_app.z = prior_sigma_app;
+    // sp_params[k].prior_sigma_app.x = prior_sigma_app;
+    // sp_params[k].prior_sigma_app.y = prior_sigma_app;
+    // sp_params[k].prior_sigma_app.z = prior_sigma_app;
     sp_params[k].prior_mu_app_count = 1;
-    sp_params[k].prior_sigma_app_count = count;
+    // sp_params[k].prior_sigma_app_count = count;
     sp_params[k].mu_app.x = 0;
     sp_params[k].mu_app.y = 0;
     sp_params[k].mu_app.z = 0;
-    sp_params[k].sigma_app.x = 0;
-    sp_params[k].sigma_app.y = 0;
-    sp_params[k].sigma_app.z = 0;
+    // sp_params[k].sigma_app.x = 0;
+    // sp_params[k].sigma_app.y = 0;
+    // sp_params[k].sigma_app.z = 0;
 
     // -- shape --
     sp_params[k].prior_mu_shape = sp_params[k].mu_shape;
@@ -87,14 +87,20 @@ __global__ void init_sp_params_kernel(spix_params* sp_params,float prior_sigma_a
   }else{
     sp_params[k].count = 0;
     float3 mu_app;
-    mu_app.x = -999;
-    mu_app.y = -999;
-    mu_app.z = -999;
+    mu_app.x = 0;
+    mu_app.y = 0;
+    mu_app.z = 0;
     sp_params[k].mu_app = mu_app;
+    sp_params[k].prior_mu_app = mu_app;
+    sp_params[k].prior_mu_app_count = 1;
+
     double2 mu_shape;
-    mu_shape.x = -999;
-    mu_shape.y = -999;
+    mu_shape.x = 0;
+    mu_shape.y = 0;
     sp_params[k].mu_shape = mu_shape;
+    sp_params[k].prior_mu_shape_count = 1;
+
+
     sp_params[k].valid = 0;
 
     // -- fixed for debugging --
@@ -128,7 +134,7 @@ void init_sp_params_from_past(spix_params* curr_params,
   dim3 BlockPerGrid(num_block,1);
   init_sp_params_from_past_kernel<<<BlockPerGrid,ThreadPerBlock>>>(curr_params,
                                                                    prev_params,
-                                                                   curr2prev_map,
+                                                                   // curr2prev_map,
                                                                    rescale, nspix,
                                                                    nspix_buffer, npix);
 }
@@ -136,13 +142,14 @@ void init_sp_params_from_past(spix_params* curr_params,
 __global__
 void init_sp_params_from_past_kernel(spix_params* curr_params,
                                      spix_params* prev_params,
-                                     int* curr2prev_map,
+                                     // int* curr2prev_map,
                                      float4 rescale, int nspix,
                                      int nspix_buffer, int npix){
   // -- ... --
   int k = threadIdx.x + blockIdx.x * blockDim.x;  
   if (k>=nspix_buffer) return;
-  int pk = curr2prev_map[k]; // pk = "previous k"
+  // int pk = curr2prev_map[k]; // pk = "previous k"
+  int pk = k;
 
   int count = npix/(1.*nspix);
   if(k<nspix) {
@@ -173,30 +180,32 @@ void init_sp_params_from_past_kernel(spix_params* curr_params,
 
     int curr_count = prev_params[pk].count;
     curr_params[k].prior_mu_app = prev_params[pk].mu_app;
-    curr_params[k].prior_sigma_app.x = prev_params[pk].sigma_app.x;
-    curr_params[k].prior_sigma_app.y = prev_params[pk].sigma_app.y;
-    curr_params[k].prior_sigma_app.z = prev_params[pk].sigma_app.z;
+    // curr_params[k].prior_sigma_app.x = prev_params[pk].sigma_app.x;
+    // curr_params[k].prior_sigma_app.y = prev_params[pk].sigma_app.y;
+    // curr_params[k].prior_sigma_app.z = prev_params[pk].sigma_app.z;
     curr_params[k].prior_mu_app_count = max(rescale_mu_app * curr_count,1.0);
-    curr_params[k].prior_sigma_app_count = max(rescale_sigma_app * curr_count,1.0);
+    // curr_params[k].prior_sigma_app_count = max(rescale_sigma_app * curr_count,1.0);
     // curr_params[k].prior_mu_app_count = 1;
     // curr_params[k].prior_sigma_app_count = count;
     curr_params[k].mu_app.x = 0;
     curr_params[k].mu_app.y = 0;
     curr_params[k].mu_app.z = 0;
-    curr_params[k].sigma_app.x = 0;
-    curr_params[k].sigma_app.y = 0;
-    curr_params[k].sigma_app.z = 0;
+    // curr_params[k].sigma_app.x = 0;
+    // curr_params[k].sigma_app.y = 0;
+    // curr_params[k].sigma_app.z = 0;
 
     // -- shape --
     curr_params[k].prior_mu_shape = prev_params[pk].mu_shape;
-    double logdet_shape = prev_params[pk].logdet_sigma_shape;
-    double det = exp(logdet_shape);
+    // double logdet_shape = prev_params[pk].logdet_sigma_shape;
+    // double det = exp(logdet_shape);
     curr_params[k].prior_mu_shape_count = max(rescale_mu_shape * curr_count,1.0);
     curr_params[k].prior_sigma_shape_count = max(rescale_sigma_shape * curr_count,1.0);
-    curr_params[k].logdet_prior_sigma_shape = logdet_shape;
-    curr_params[k].prior_sigma_shape.x = prev_params[pk].sigma_shape.z*det;
-    curr_params[k].prior_sigma_shape.y = -prev_params[pk].sigma_shape.y*det;
-    curr_params[k].prior_sigma_shape.z = prev_params[pk].sigma_shape.x*det;
+    curr_params[k].prior_sigma_shape = prev_params[pk].sigma_shape; // should be inv.
+    curr_params[k].logdet_prior_sigma_shape = prev_params[pk].logdet_sigma_shape;
+
+    // curr_params[k].prior_sigma_shape.x = prev_params[pk].sigma_shape.z*det;
+    // curr_params[k].prior_sigma_shape.y = -prev_params[pk].sigma_shape.y*det;
+    // curr_params[k].prior_sigma_shape.z = prev_params[pk].sigma_shape.x*det;
 
     // curr_params[k].prior_sigma_shape.x = count*count;
     // curr_params[k].prior_sigma_shape.z = count*count;
@@ -214,15 +223,21 @@ void init_sp_params_from_past_kernel(spix_params* curr_params,
 
   }else{
     curr_params[k].count = 0;
+
     float3 mu_app;
-    mu_app.x = -999;
-    mu_app.y = -999;
-    mu_app.z = -999;
+    mu_app.x = 0;
+    mu_app.y = 0;
+    mu_app.z = 0;
     curr_params[k].mu_app = mu_app;
+    curr_params[k].prior_mu_app = mu_app;
+    curr_params[k].prior_mu_app_count = 1;
+
     double2 mu_shape;
-    mu_shape.x = -999;
-    mu_shape.y = -999;
+    mu_shape.x = 0;
+    mu_shape.y = 0;
     curr_params[k].mu_shape = mu_shape;
+    curr_params[k].prior_mu_shape_count = 1;
+
     curr_params[k].valid = 0;
   }
 

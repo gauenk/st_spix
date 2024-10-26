@@ -114,7 +114,12 @@ class SuperpixelNetwork(nn.Module):
             kwargs = {"use_bass_prop":True,"niters":15,"niters_seg":4,
                       "sp_size":15,"pix_var":0.01,"alpha_hastings":20.,
                       "potts":1.,"sm_start":0,"rgb2lab":False}
-            spix = run_bass(x_for_iters,fflow,kwargs)
+            # x_for_iters = rearrange(x_for_iters,'b f h w -> b h w f').contiguous()
+            fflow = rearrange(fflow,'b f h w -> b h w f').contiguous()
+            with th.no_grad():
+                x_for_iters = x_for_iters - x_for_iters.mean((1,2),keepdim=True)
+                x_for_iters = x_for_iters/x_for_iters.std((1,2),keepdim=True)
+                spix = run_bass(x_for_iters,fflow,kwargs)
             # sims = th.zeros(0)
             sims = get_bass_sims(x,spix,temp_est)
             # print(sims)

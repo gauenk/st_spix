@@ -19,6 +19,11 @@ void init_seg_utils(py::module &m);
 void init_prop_bass(py::module &m);
 void init_bass(py::module &m);
 void init_shift_labels(py::module &m);
+void init_shift_tensor(py::module &m);
+void init_shift_tensor_ordered(py::module &m);
+void init_shift_order(py::module &m);
+void init_sparams_io(py::module &m);
+void init_relabel(py::module &m);
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
@@ -32,6 +37,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_bass(m);
   init_sp_video_pooling(m);
   init_shift_labels(m);
+  init_shift_tensor(m);
+  init_shift_tensor_ordered(m);
+  init_shift_order(m);
+  init_sparams_io(m);
+  // init_relabel(m);
 
   // -- nicer superpixel parameter IO --
   py::class_<PySuperpixelParams>(m, "SuperpixelParams")
@@ -40,7 +50,13 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
          torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor,
          torch::Tensor, torch::Tensor, torch::Tensor,
          torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor,
-         torch::Tensor, torch::Tensor, torch::Tensor>())
+         torch::Tensor, torch::Tensor, torch::Tensor>(),
+         py::keep_alive<1, 2>(),py::keep_alive<1, 3>(),py::keep_alive<1, 4>(),
+         py::keep_alive<1, 5>(),py::keep_alive<1, 6>(),py::keep_alive<1, 7>(),
+         py::keep_alive<1, 8>(),py::keep_alive<1, 9>(),py::keep_alive<1, 10>(),
+         py::keep_alive<1, 11>(),py::keep_alive<1, 12>(),py::keep_alive<1, 13>(),
+         py::keep_alive<1, 14>(),py::keep_alive<1, 15>(),py::keep_alive<1, 16>(),
+         py::keep_alive<1, 17>())
     .def("__repr__", [](const PySuperpixelParams& d){ return "Superpixel Parameters"; })
     // -- appearance --
     .def_readwrite("mu_app", &PySuperpixelParams::mu_app)

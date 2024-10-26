@@ -156,15 +156,17 @@ def run_raft_on_video(vid,model):
             # print(img1.shape,img2.shape)
 
             # -- compute padding --
-            _, fflow_ti = model(img1, img2, iters=20, test_mode=True)
-            _, bflow_ti = model(img2, img1, iters=20, test_mode=True)
+            with th.no_grad():
+                _, fflow_ti = model(img1, img2, iters=20, test_mode=True)
+                _, bflow_ti = model(img2, img1, iters=20, test_mode=True)
             # print("flow_low.shape,flow_up.shape: ",flow_low.shape,flow_up.shape)
 
         else:
 
             # -- compute padding --
-            fflow_ti = model(img1, img2)
-            bflow_ti = model(img2, img1)
+            with th.no_grad():
+                fflow_ti = model(img1, img2)
+                bflow_ti = model(img2, img1)
             # print("fflow_ti.shape: ",fflow_ti.shape)
             # print("bflow_ti.shape: ",bflow_ti.shape)
             # exit()

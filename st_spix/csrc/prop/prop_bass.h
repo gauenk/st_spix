@@ -9,25 +9,15 @@
 #endif
 
 
-__host__ void prop_bass(float* img, int* seg,
-                        superpixel_params* sp_params,
-                        superpixel_params* prior_params,
+__host__ int prop_bass(float* img, int* seg,
+                        spix_params* sp_params,
+                        spix_params* prior_params,
                         int* prior_map, bool* border,
-                        superpixel_GPU_helper* sp_helper,
-                        superpixel_GPU_helper_sm* sm_helper,
+                        spix_helper* sp_helper,
+                        spix_helper_sm* sm_helper,
                         int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
                         int niters, int niters_seg, int sm_start,
-                        float3 pix_cov,float logdet_pix_cov,float potts,
+                        float sigma_app,float potts, float alpha_hastings,
                         int nspix, int nbatch, int width, int height, int nftrs);
-/* __host__ */
-/* int run_split_merge(const float* img, int* seg, */
-/*                     bool* border, superpixel_params* sp_params, */
-/*                     superpixel_params* prior_params, int* prior_map, */
-/*                     superpixel_GPU_helper* sp_helper, */
-/*                     superpixel_GPU_helper_sm* sm_helper, */
-/*                     int* sm_seg1 ,int* sm_seg2, int* sm_pairs, */
-/*                     float alpha_hastings, float sm_std, */
-/*                     int count, int i, int max_SP, */
-/*                     const int npix, const int nbatch, */
-/*                     const int width, const int height, */
-/*                     const int nftrs, const int nspix_buffer); */
+
+

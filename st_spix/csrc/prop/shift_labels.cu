@@ -28,8 +28,9 @@
 
 __global__
 void shift_labels_kernel(int* spix, int* flow, 
-                         int* shifted_spix, int* missing,
-                         int npix, int nspix, int nbatch, int height, int width){
+                         int* shifted_spix, int* counts,
+                         int npix, int nspix, int nbatch,
+                         int height, int width){
 
   // -- get pixel index --
   int pix_idx = threadIdx.x + blockIdx.x*blockDim.x;
@@ -43,7 +44,7 @@ void shift_labels_kernel(int* spix, int* flow,
   int spix_label = *(spix+pix_idx);
 
   // -- flow at source --
-  int flow_offset = 2*nspix*batch_idx+2*spix_label;
+  int flow_offset = 2*(nspix*batch_idx+spix_label);
   int flow_w = *(flow+flow_offset);
   int flow_h = *(flow+flow_offset+1);
 
@@ -58,22 +59,16 @@ void shift_labels_kernel(int* spix, int* flow,
   if (not valid){ return; }
 
   // -- write to destination --
-  int dest_idx = h_dest * width + w_dest;
-  int* shifted_ptr = shifted_spix+dest_idx+npix*batch_idx;
-  int* missing_ptr = missing+dest_idx+npix*batch_idx;
+  int dest_idx = h_dest * width + w_dest + npix*batch_idx;
+  int* shifted_ptr = shifted_spix+dest_idx;
+  int* counts_ptr = counts+dest_idx;
 
   // -- atomic read from mem --
+  // int prev_max = atomicMin(counts_ptr,prev_spix != -1);
+  int prev_max = atomicAdd(counts_ptr,1);
   int prev_spix = atomicMax(shifted_ptr,spix_label);
-  int prev_max = atomicMin(missing_ptr,prev_spix != -1);
-
-  // -- for some reason, modifying shifted_spix following this function is ~300ms --
-  // -- so we just modify it here instead to improve our wall-clock runtime --
-  // if (prev_max > 0){
-  //   atomicMin(shifted_ptr,-1);
-  // }
 
 }
-
 
 
 /**********************************************************
@@ -108,7 +103,7 @@ run_shift_labels(const torch::Tensor spix,
 
     // -- allocate memory --
     torch::Tensor shifted_spix = -torch::ones({nbatch,height,width},options_i32);
-    torch::Tensor missing = torch::ones({nbatch,height,width},options_i32);
+    torch::Tensor counts = torch::zeros({nbatch,height,width},options_i32);
 
     // -- init launch info --
     int nblocks_for_npix = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
@@ -119,10 +114,15 @@ run_shift_labels(const torch::Tensor spix,
     shift_labels_kernel<<<BlocksPixels,NumThreads>>>(spix.data<int>(),
                                                      flow.data<int>(),
                                                      shifted_spix.data<int>(),
-                                                     missing.data<int>(),
+                                                     counts.data<int>(),
                                                      npix,nspix,nbatch,height,width);
+    // -- fill invalid --
+    // auto condition = counts != 1;
+    // torch::Tensor inds = torch::where(condition);
+    // shifted_spix.index_put_({inds[0],inds[1],inds[2]}, -1);
+    // // shifted_spix.index_put_({inds}, -1);
 
-    return std::make_tuple(shifted_spix,missing);
+    return std::make_tuple(shifted_spix,counts);
 }
 
 void init_shift_labels(py::module &m){

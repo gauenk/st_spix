@@ -47,7 +47,7 @@ int binary_search(int A[], int val, int imin, int imax){
 
 
 template<bool mode> __global__
-void relabel_spix(int* spix, int* ids, int npix, int nspix){
+void relabel_spix(int* spix, int* ids, int npix, int num_ids){
 
   // -- filling superpixel params into image --
   // extern __shared__ int buff[];
@@ -59,7 +59,7 @@ void relabel_spix(int* spix, int* ids, int npix, int nspix){
   int new_id = -1;
 
   // -- offset of kx -- [binary search not needed]
-  for (int kx=0; kx<nspix; kx++){
+  for (int kx=0; kx<num_ids; kx++){
     if (ids[kx] == spix_ix){
       new_id = kx;
       break;

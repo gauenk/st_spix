@@ -36,5 +36,6 @@ void init_sp_params_from_past(spix_params* curr_params,
 __global__
 void init_sp_params_from_past_kernel(spix_params* curr_params,
                                      spix_params* prev_params,
-                                     int* map, float4 rescale, int nspix,
+                                     /* int* map, */
+                                     float4 rescale, int nspix,
                                      int nspix_buffer, int npix);

@@ -28,8 +28,8 @@
 
 __global__
 void update_seg_subset(float* img, int* seg, bool* border,
-                       spix_params* sp_params, const float3 pix_cov,
-                       const float logdet_pix_cov,  const float potts,
+                       spix_params* sp_params,
+                       const float sigma2_app, const float potts,
                        const int npix, const int nbatch,
                        const int xdim, const int ydim, const int nftrs,
                        const int xmod3, const int ymod3){
@@ -52,8 +52,8 @@ void update_seg_subset(float* img, int* seg, bool* border,
 
     //float beta = 4;
     //printf("(%d, %d) - %d, %d, %d \n", x,y , idx_cache,threadIdx.x );
-    const bool x_greater_than_1 = (x>1);
-    const bool y_greater_than_1 = (y>1);
+    const bool x_greater_than_1 = (x>0);
+    const bool y_greater_than_1 = (y>0);
     const bool x_smaller_than_xdim_minus_1 = x<(xdim-1);
     const bool y_smaller_than_ydim_minus_1 = y<(ydim-1);
     if ((!x_greater_than_1)||(!y_greater_than_1)||(!x_smaller_than_xdim_minus_1)||(!y_smaller_than_ydim_minus_1)) return;
@@ -118,38 +118,35 @@ void update_seg_subset(float* img, int* seg, bool* border,
     label_check = N;
     assert(label_check >= 0);
     res_max = calc_joint(imgC,seg,x,y,sp_params,label_check,
-                                  pix_cov,logdet_pix_cov,
-                                  count_diff_nbrs_N,potts,res_max);
+                         sigma2_app,count_diff_nbrs_N,potts,res_max);
     label_check = S;
     assert(label_check >= 0);
     if(label_check!=N)
       res_max = calc_joint(imgC,seg,x,y,sp_params,label_check,
-                                    pix_cov,logdet_pix_cov,
-                                    count_diff_nbrs_S,potts,res_max);
+                           sigma2_app,count_diff_nbrs_S,potts,res_max);
 
     label_check = W;
     assert(label_check >= 0);
     if ( (label_check!=S)&&(label_check!=N))
       res_max = calc_joint(imgC,seg,x,y,sp_params,label_check,
-                                    pix_cov,logdet_pix_cov,
-                                    count_diff_nbrs_W,potts,res_max);
+                           sigma2_app,count_diff_nbrs_W,potts,res_max);
     
     label_check = E;
     assert(label_check >= 0);
     if((label_check!=W)&&(label_check!=S)&&(label_check!=N))
       res_max = calc_joint(imgC,seg,x,y,sp_params,label_check,
-                                    pix_cov,logdet_pix_cov,
-                                    count_diff_nbrs_E,potts,res_max);
+                           sigma2_app,count_diff_nbrs_E,potts,res_max);
     seg[pix_idx] = res_max.y;
     return;
 }
 
 
 
-__device__ float2 calc_joint(float* imgC, int* seg, int width_index, int height_index,
+__device__ float2 calc_joint(float* imgC, int* seg,
+                             int width_index, int height_index,
                              spix_params* sp_params, int seg_idx,
-                             float3 pix_var, float logdet_pix_var,
-                             float neigh_neq, float beta, float2 res_max){
+                             float sigma2_app,  float neigh_neq,
+                             float beta, float2 res_max){
 
     // -- init res --
     float res = -1000; // some large negative number // why?
@@ -159,11 +156,13 @@ __device__ float2 calc_joint(float* imgC, int* seg, int width_index, int height_
     const float x0 = __ldg(&imgC[0])-__ldg(&sp_params[seg_idx].mu_app.x);
     const float x1 = __ldg(&imgC[1])-__ldg(&sp_params[seg_idx].mu_app.y);
     const float x2 = __ldg(&imgC[2])-__ldg(&sp_params[seg_idx].mu_app.z);
-    const float sigma_a_x = __ldg(&sp_params[seg_idx].sigma_app.x);
-    const float sigma_a_y = __ldg(&sp_params[seg_idx].sigma_app.y);
-    const float sigma_a_z = __ldg(&sp_params[seg_idx].sigma_app.z);
-    const float logdet_sigma_app = __ldg(&sp_params[seg_idx].logdet_sigma_app);
-    // const float logdet_sigma_app = 3.*log(sigma_a_x);
+    // float sigma_app;
+    // const float sigma_a = __ldg(&sp_params[seg_idx].prior_sigma_app);
+    // const float sigma_a_x = __ldg(&sp_params[seg_idx].prior_sigma_app.x);
+    // const float sigma_a_y = __ldg(&sp_params[seg_idx].prior_sigma_app.y);
+    // const float sigma_a_z = __ldg(&sp_params[seg_idx].prior_sigma_app.z);
+    // const float logdet_sigma_app = __ldg(&sp_params[seg_idx].logdet_sigma_app);
+    const float logdet_sigma_app = 3.*log(sigma2_app);
 
     // -- shape --
     const int d0 = width_index - __ldg(&sp_params[seg_idx].mu_shape.x);
@@ -174,12 +173,11 @@ __device__ float2 calc_joint(float* imgC, int* seg, int width_index, int height_
     const float logdet_sigma_shape = __ldg(&sp_params[seg_idx].logdet_sigma_shape);
 
     // -- appearance [sigma is actually \sigma^2] --
-    // res = res - x0*x0 - x1*x1 - x2*x2;
-    res = res - x0*x0/sigma_a_x - x1*x1/sigma_a_y - x2*x2/sigma_a_z;
-    res = res - logdet_sigma_app;
+    res = res - (x0*x0 + x1*x1 + x2*x2)/sigma2_app;
+    // res = res - logdet_sigma_app;
 
     // -- shape [sigma is actually \Sigma^{(-1)}, the inverse] --
-    res = res - d0*d0*sigma_s_x - d1*d1*sigma_s_z - 2*d0*d1*sigma_s_y; // sign(s_y) = -1
+    res=res - d0*d0*sigma_s_x - d1*d1*sigma_s_z - 2*d0*d1*sigma_s_y; // sign(s_y) = -1
     res = res - logdet_sigma_shape;
 
     // -- prior --
@@ -210,9 +208,8 @@ __device__ float2 calc_joint(float* imgC, int* seg, int width_index, int height_
 
 __host__ void update_seg(float* img, int* seg, bool* border,
                          spix_params* sp_params, const int niters,
-                         const float3 pix_cov, const float logdet_pix_cov,
-                         const float potts, const int npix,
-                         int nbatch, int xdim, int ydim, int nftrs){
+                         const float sigma2_app, const float potts,
+                         const int npix, int nbatch, int xdim, int ydim, int nftrs){
     
     int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
     dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
@@ -224,7 +221,7 @@ __host__ void update_seg(float* img, int* seg, bool* border,
         for (int xmod3 = 0 ; xmod3 <2; xmod3++){
             for (int ymod3 = 0; ymod3 <2; ymod3++){
                 update_seg_subset<<<BlockPerGrid,ThreadPerBlock>>>(img, seg, \
-                     border, sp_params, pix_cov, logdet_pix_cov, potts,\
+                     border, sp_params, sigma2_app, potts,\
                      npix, nbatch, xdim, ydim, nftrs, xmod3, ymod3);
             }
         }

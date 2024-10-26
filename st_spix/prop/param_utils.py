@@ -32,6 +32,10 @@ def unpack_spix_params_to_list(params):
     unpacked = [getattr(params,key) for key in KEYS]
     return unpacked
 
+def spix_dict_to_list(spix_dict):
+    unpacked = [spix_dict[k] for k in KEYS]
+    return prop_cuda.SuperpixelParams(*unpacked)
+
 def copy_spix_params(params):
     unpacked = unpack_spix_params_to_list(params)
     unpacked = [u.clone() for u in unpacked]

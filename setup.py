@@ -126,6 +126,9 @@ setup(
             "st_spix/csrc/prop/simple_init_sparams.cu",
             # -- tools --
             "st_spix/csrc/prop/shift_labels.cu",
+            "st_spix/csrc/prop/shift_tensor.cu",
+            "st_spix/csrc/prop/shift_order.cu",
+            "st_spix/csrc/prop/shift_tensor_ordered.cu",
             "st_spix/csrc/prop/split_disconnected.cu",
             "st_spix/csrc/prop/fill_missing.cu",
             # -- standard bass --
@@ -141,10 +144,16 @@ setup(
             "st_spix/csrc/prop/update_prop_params.cu",
             "st_spix/csrc/prop/update_missing_seg.cu",
             "st_spix/csrc/prop/update_prop_seg.cu",
+            "st_spix/csrc/prop/split_merge_prop.cu",
+            "st_spix/csrc/prop/relabel.cu",
             # -- pybind --
             "st_spix/csrc/pybind_prop.cpp",
         ],
-        extra_compile_args={'cxx':['-g','-w',"-O0"],'nvcc':['-O0','-w']},)
+        extra_compile_args={'cxx':['-g','-w',"-O0"],
+                            # 'nvcc':['-w','-rdc=true']},
+                            'nvcc':["-O0",'-w']},
+        )
+
         # 'nvcc':['-w','-G']},)
         #extra_compile_args={'cxx':['-g','-w',"-O0","-include","st_spix/csrc/prop/pch.h"],
         #                     'nvcc':['-w','-G',"-include", "st_spix/csrc/prop/pch.h"]},

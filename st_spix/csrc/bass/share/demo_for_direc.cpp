@@ -20,7 +20,8 @@ static void show_usage(std::string name){
 }
 
 // Set Configuration
-static superpixel_options get_sp_options(int nPixels_in_square_side, float i_std,float beta, float alpha_hasting){
+static superpixel_options get_sp_options(int nPixels_in_square_side,
+                                         float i_std,float beta, float alpha_hasting){
     superpixel_options opt;
     opt.nPixels_in_square_side = nPixels_in_square_side;
     opt.i_std = i_std;

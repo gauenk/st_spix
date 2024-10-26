@@ -117,7 +117,7 @@ __host__ void CudaCalcMergeCandidate(const float* image_gpu_double,
     init_sm<<<BlockPerGrid2,ThreadPerBlock>>>(image_gpu_double,seg,sp_params,
                                               sp_gpu_helper_sm, nSPs_buffer,
                                               nbatch, xdim, nftrs, split_merge_pairs);
-    fprintf(stdout,"change: %d\n",change);
+    // fprintf(stdout,"change: %d\n",change);
     calc_merge_candidate<<<BlockPerGrid,ThreadPerBlock>>>(seg,border,
                                                           split_merge_pairs,nPixels,
                                                           nbatch, xdim, ydim, change); 
@@ -273,9 +273,9 @@ __host__ int CudaCalcSplitCandidate(const float* image_gpu_double, int* split_me
     // std::string fname_prev = "seg_prev";
     // write_tensor_to_file_v2(seg,ydim,xdim,fname_prev);
 
-    // split_sp<<<BlockPerGrid,ThreadPerBlock>>>(seg,seg_split1, split_merge_pairs,
-    //                                           sp_params, sp_gpu_helper_sm, nPixels,
-    //                                           nbatch, xdim, ydim, max_SP);
+    split_sp<<<BlockPerGrid,ThreadPerBlock>>>(seg,seg_split1, split_merge_pairs,
+                                              sp_params, sp_gpu_helper_sm, nPixels,
+                                              nbatch, xdim, ydim, max_SP);
     // std::string fname_post = "seg_post";
     // write_tensor_to_file_v2(seg,ydim,xdim,fname_post);
 
@@ -596,29 +596,20 @@ __global__ void calc_bn(int* seg, int* split_merge_pairs,
     int count_fk = count_f + count_k;
     sp_gpu_helper_sm[k].count_f = count_fk;
     //sp_gpu_helper_sm[k].count_f = sp_params[k].count + sp_params[f].count;
-    sp_gpu_helper_sm[k].b_n.x = b_0 + 0.5 * ((squares_k_x) -
-                                ( mu_k_x*mu_k_x/
-                                count_k));
+    sp_gpu_helper_sm[k].b_n.x = b_0 + 0.5 * ((squares_k_x) - (mu_k_x*mu_k_x/count_k));
     
-    sp_gpu_helper_sm[k].b_n_f.x = b_0 + 0.5 *( (squares_k_x+squares_f_x) -
-                                ( (mu_f_x + mu_k_x ) * (mu_f_x + mu_k_x ) /
-                                (count_fk)));
+    sp_gpu_helper_sm[k].b_n_f.x = b_0 + \
+      0.5 *( (squares_k_x+squares_f_x) - ( (mu_f_x + mu_k_x ) * (mu_f_x + mu_k_x ) / (count_fk)));
 
-    sp_gpu_helper_sm[k].b_n.y = b_0 + 0.5 * ((squares_k_y) -
-                                ( mu_k_y*mu_k_y/
-                                count_k));
+    sp_gpu_helper_sm[k].b_n.y = b_0 + 0.5 * ((squares_k_y) - (mu_k_y*mu_k_y/count_k));
     
-    sp_gpu_helper_sm[k].b_n_f.y = b_0 + 0.5 *( (squares_k_y+squares_f_y) -
-                                ( (mu_f_y + mu_k_y ) * (mu_f_y + mu_k_y ) /
-                                (count_fk)));
+    sp_gpu_helper_sm[k].b_n_f.y = b_0 + \
+      0.5 *( (squares_k_y+squares_f_y) - ((mu_f_y + mu_k_y ) * (mu_f_y + mu_k_y ) / (count_fk)));
 
-    sp_gpu_helper_sm[k].b_n.z = b_0 + 0.5 * ((squares_k_z) -
-                                ( mu_k_z*mu_k_z/
-                                count_k));
+    sp_gpu_helper_sm[k].b_n.z = b_0 + 0.5 * ((squares_k_z) - (mu_k_z*mu_k_z/count_k));
     
-    sp_gpu_helper_sm[k].b_n_f.z = b_0 + 0.5 *( (squares_k_z+squares_f_z) -
-                                ( (mu_f_z + mu_k_z ) * (mu_f_z + mu_k_z ) /
-                                (count_fk)));
+    sp_gpu_helper_sm[k].b_n_f.z = b_0 + \
+      0.5 *( (squares_k_z+squares_f_z) - ( (mu_f_z + mu_k_z ) * (mu_f_z + mu_k_z ) / (count_fk)));
 
     if(  sp_gpu_helper_sm[k].b_n.x<0)   sp_gpu_helper_sm[k].b_n.x = 0.1;
     if(  sp_gpu_helper_sm[k].b_n.y<0)   sp_gpu_helper_sm[k].b_n.y = 0.1;
