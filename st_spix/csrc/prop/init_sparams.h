@@ -21,6 +21,14 @@
 
 **************************************************/
 
+__global__ void mark_inactive_kernel(spix_params* params,int nspix,int*nvalid);
+__global__ void mark_active_kernel(spix_params* params, int* ids, int nactive,
+                                   int nspix, int spix_buffer, int*nvalid);
+__host__ void mark_active(spix_params* params, int* ids, int nactive,
+                          int nspix, int nspix_buffer);
+__host__ void mark_active_contiguous(spix_params* params, int nspix, int nspix_buffer);
+
+
 __host__ void init_sp_params(spix_params* sp_params, float prior_sigma_app,
                              float* img, int* spix, spix_helper* sp_helper,
                              int npix, int nspix, int nspix_buffer,

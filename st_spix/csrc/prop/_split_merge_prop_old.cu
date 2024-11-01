@@ -293,3 +293,141 @@ __global__ void calc_bn_split_p(int* sm_pairs,
 }
 
 
+
+__global__
+void split_likelihood_p(const float* img, int* sm_pairs,
+                      spix_params* sp_params,
+                      spix_helper* sp_helper,
+                      spix_helper_sm_v2* sm_helper,
+                      const int npix, const int nbatch,
+                      const int width, const int nftrs,
+                      const int nspix_buffer,
+                      float a_0, float b_0, int max_nspix) {
+  // todo -- add nbatch
+	// getting the index of the pixel
+	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
+    if (k>=nspix_buffer) return;
+	if (sp_params[k].valid == 0) return;
+
+
+    int s = k + max_nspix;
+    if (s>=nspix_buffer) return;
+    float pr_count = __ldg(&sp_params[k].prior_count);
+    float count_f = __ldg(&sp_params[k].count);
+    float count_k= __ldg(&sm_helper[k].count);
+    float count_s = __ldg(&sm_helper[s].count);
+
+    if((count_f<1)||( count_k<1)||(count_s<1)) return;
+    if (count_f!=count_k+count_s) return;
+    // TODO: check if there is no neigh
+    // TODO: check if num is the same
+	//get the label
+    //a_0 = 1100*(count_f);
+
+    float a_n_k = a_0+float(count_k)/2;
+    float a_n_s = a_0+float(count_s)/2;
+    float a_n_f = a_0+float(count_f)/2;
+
+    // float v_n_k = 1/float(count_k);
+    // float v_n_s = 1/float(count_s);
+    // float v_n_f = 1/float(count_f);
+    float v_n_k = 1 + pr_count/count_k;
+    float v_n_s = 1 + pr_count/count_s;
+    float v_n_f = 1 + pr_count/count_f;
+
+    float b_n_k_x = __ldg(&sm_helper[k].b_n_app.x);
+    float b_n_k_y = __ldg(&sm_helper[k].b_n_app.y);
+    float b_n_k_z = __ldg(&sm_helper[k].b_n_app.z);
+
+    float b_n_s_x = __ldg(&sm_helper[s].b_n_app.x);
+    float b_n_s_y = __ldg(&sm_helper[s].b_n_app.y);
+    float b_n_s_z = __ldg(&sm_helper[s].b_n_app.z);
+
+    float b_n_f_x = __ldg(&sm_helper[k].b_n_f_app.x);
+    float b_n_f_y = __ldg(&sm_helper[k].b_n_f_app.y);
+    float b_n_f_z = __ldg(&sm_helper[k].b_n_f_app.z);
+
+    /********************
+  
+          Appearance
+   
+    **********************/
+
+    a_0 = a_n_k;
+    // sm_helper[k].numerator_app = a_0*__logf(b_0) + lgammaf(a_n_k)+ 0.5*__logf(v_n_k);
+
+    // sm_helper[k].denominator.x = a_n_k * __logf (b_n_k_x) + \
+    //   0.5 * count_k * __logf (M_PI) + count_k * __logf (2) + lgammaf(a_0);
+    // sm_helper[k].denominator.y = a_n_k * __logf (b_n_k_y) + \
+    //   0.5 * count_k * __logf (M_PI) + count_k * __logf (2) + lgammaf(a_0);
+    // sm_helper[k].denominator.z = a_n_k * __logf (b_n_k_z) + \
+    //   0.5 * count_k * __logf (M_PI) + count_k * __logf (2) + lgammaf(a_0);
+
+    a_0 = a_n_s;
+    // sm_helper[s].numerator_app = a_0*__logf(b_0) + lgammaf(a_n_s)+0.5*__logf(v_n_s);
+
+    // sm_helper[s].denominator.x = a_n_s * __logf (b_n_s_x) + \
+    //   0.5 * count_s * __logf (M_PI) + count_s * __logf (2) + lgammaf(a_0);
+    // sm_helper[s].denominator.y = a_n_s * __logf (b_n_s_y) + \
+    //   0.5 * count_s * __logf (M_PI) + count_s * __logf (2) + lgammaf(a_0);
+    // sm_helper[s].denominator.z = a_n_s * __logf (b_n_s_z) + \
+    //   0.5 * count_s * __logf (M_PI) + count_s * __logf (2) + lgammaf(a_0);      
+
+    // a_0 =a_n_f;
+    // sm_helper[k].numerator_f_app =a_0*__logf(b_0)+lgammaf(a_n_f)+0.5*__logf(v_n_f);
+    // sm_helper[k].denominator_f.x = a_n_f * __logf (b_n_f_x) + \
+    //   0.5 * count_f * __logf (M_PI) + count_f * __logf (2) + lgammaf(a_0);
+    // sm_helper[k].denominator_f.y = a_n_f * __logf (b_n_f_y) + \
+    //   0.5 * count_f * __logf (M_PI) + count_f * __logf (2) + lgammaf(a_0);
+    // sm_helper[k].denominator_f.z = a_n_f * __logf (b_n_f_z) + \
+    //   0.5 * count_f * __logf (M_PI) + count_f * __logf (2) + lgammaf(a_0);        
+
+    a_0 =a_n_f;
+    // sm_helper[k].numerator_f_app =a_0*__logf(b_0)+lgammaf(a_n_f)+0.5*__logf(v_n_f);
+
+    // sm_helper[k].denominator_f.x = a_n_f * __logf (b_n_f_x) + \
+    // //   0.5 * count_f * __logf (M_PI) + count_f * __logf (2) + lgammaf(a_0);
+    // sm_helper[k].denominator_f.y = a_n_f * __logf (b_n_f_y) + \
+    // //   0.5 * count_f * __logf (M_PI) + count_f * __logf (2) + lgammaf(a_0);
+    // sm_helper[k].denominator_f.z = a_n_f * __logf (b_n_f_z) + \
+    // //   0.5 * count_f * __logf (M_PI) + count_f * __logf (2) + lgammaf(a_0);        
+
+
+    /********************
+  
+            Shape
+   
+    **********************/
+
+    int prior_mu_shape_count = sp_params[k].prior_mu_shape_count;
+    int prior_sigma_shape_count = sp_params[k].prior_sigma_shape_count;
+    double3 prior_sigma_shape = sp_params[k].prior_sigma_shape;
+    double2 prior_mu_shape = sp_params[k].prior_mu_shape;
+    int nu_prior = prior_sigma_shape_count;
+    int nu_post_k = nu_prior + count_k;
+    int nu_post_s = nu_prior + count_s;
+    int nu_post_f = nu_prior + count_f;
+
+    float det_prior = 1;
+    float det_k = 1;
+    float det_s = 1;
+    float det_f = 1;
+    
+    float lprob_const =-lgamma(nu_prior/2)-lgamma((nu_prior-1)/2.)  \
+      +(nu_prior/2.)*__logf(det_prior); 
+    float lprob_k = lgamma(nu_post_k/2)+ lgamma((nu_post_k-1)/2.) \
+      - count_k *__logf(M_PI) - (nu_post_k/2.) * __logf(det_k) \
+      - __logf(nu_prior/nu_post_k);
+    float lprob_s = lgamma(nu_post_s/2)+ lgamma((nu_post_s-1)/2.) \
+      - count_s *__logf(M_PI) - (nu_post_s/2.) * __logf(det_s) \
+      - __logf(nu_prior/nu_post_s);
+    float lprob_f = lgamma(nu_post_f/2)+ lgamma((nu_post_f-1)/2.) \
+      - count_f *__logf(M_PI) - (nu_post_f/2.) * __logf(det_f) \
+      - __logf(nu_prior/nu_post_f);
+    
+    // -- write marginal likelihood of data for shape [p(D)] --
+    sm_helper[k].lprob_shape = lprob_k + lprob_const;
+    sm_helper[s].lprob_shape = lprob_s + lprob_const;
+    sm_helper[k].lprob_f_shape = lprob_f + lprob_const;
+}   
+

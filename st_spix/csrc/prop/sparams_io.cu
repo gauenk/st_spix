@@ -137,7 +137,7 @@ PySuperpixelParams init_tensor_params(int size){
 
   // -- helpers --
   sp_params_py.counts = torch::zeros({size},options_i32);
-  sp_params_py.prior_counts = torch::zeros({size},options_i32);
+  sp_params_py.prior_counts = torch::zeros({size},options_f32);
   sp_params_py.ids = torch::zeros({size},options_i32); // i think ".ids" should be deleted
   // sp_params_py.ids = torch::from_blob(ids,{size},options_i32); // I think this is a bad idea
 
@@ -200,7 +200,7 @@ __host__ void params_to_tensors(PySuperpixelParams sp_params_py,
 
   // -- misc --
   auto counts = sp_params_py.counts.data<int>();
-  auto prior_counts = sp_params_py.prior_counts.data<int>();
+  auto prior_counts = sp_params_py.prior_counts.data<float>();
   // auto ids = sp_params_py.ids.data<int>();
   // int max_num = sp_params_py.ids.size(0);
   // assert(num <= max_num);
@@ -227,7 +227,7 @@ void read_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
                  float* mu_shape, float* sigma_shape, float* logdet_sigma_shape,
                  float* prior_mu_shape, float* prior_sigma_shape,
                  int* prior_mu_shape_count, int* prior_sigma_shape_count,
-                 int* counts, int* prior_counts, 
+                 int* counts, float* prior_counts, 
                  spix_params* sp_params, int* ids, int num_spix){
 
     // -- filling superpixel params into image --
@@ -258,7 +258,7 @@ void read_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
 
     // -- misc --
     int* counts_ix = counts + ix;
-    int* prior_counts_ix = prior_counts + ix;  
+    float* prior_counts_ix = prior_counts + ix;  
                                                                                           
     // -- read spix --
     auto params_ix = sp_params[sp_index];
@@ -299,6 +299,7 @@ void read_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
     prior_mu_shape_ix[1] = params_ix.prior_mu_shape.y;                                    
     prior_sigma_shape_ix[0] = params_ix.prior_sigma_shape.x;  // Fill prior_sigma_shape
     prior_sigma_shape_ix[1] = params_ix.prior_sigma_shape.y;
+    prior_sigma_shape_ix[2] = params_ix.prior_sigma_shape.z;
     prior_mu_shape_count_ix[0] = params_ix.prior_mu_shape_count;
     prior_sigma_shape_count_ix[0] = params_ix.prior_sigma_shape_count;
 
@@ -329,7 +330,7 @@ __host__ void tensors_to_params(PySuperpixelParams sp_params_py,
   auto prior_sigma_shape_count = sp_params_py.prior_sigma_shape_count.data<int>();
 
   auto counts = sp_params_py.counts.data<int>();
-  auto prior_counts = sp_params_py.prior_counts.data<int>();
+  auto prior_counts = sp_params_py.prior_counts.data<float>();
   // auto ids = sp_params_py.ids.data<int>();
   int max_num = sp_params_py.ids.size(0); // keep this for now
   // remove "ids" when we are more sure we won't want it
@@ -349,6 +350,30 @@ __host__ void tensors_to_params(PySuperpixelParams sp_params_py,
 }
 
 
+__host__
+void write_prior_counts(PySuperpixelParams src_params,spix_params* dest_params,
+                        int* ids, int nactive){
+  float* prior_counts = src_params.prior_counts.data<float>();
+  int num_blocks = ceil( double(nactive) / double(THREADS_PER_BLOCK) ); 
+  dim3 nblocks(num_blocks);
+  dim3 nthreads(THREADS_PER_BLOCK);
+  write_prior_counts_kernel<<<nblocks,nthreads>>>(prior_counts, dest_params,
+                                                  ids, nactive);
+}
+
+__global__
+void write_prior_counts_kernel(float* prior_counts, spix_params* sp_params,
+                               int* ids, int nactive) {
+    // -- filling superpixel params into image --
+    int ix = threadIdx.x + blockIdx.x * blockDim.x;
+    // if (ix >= nspix) return;
+    if (ix >= nactive) return;
+    int spix_id = ids[ix];
+    // printf("[%d]: %d,%f\n",ix,prior_counts[ix],sp_params[ix].prior_count);
+    sp_params[spix_id].prior_count = prior_counts[spix_id];
+}
+
+
 __global__
 void write_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
                   float* prior_mu_app, float* prior_sigma_app,
@@ -356,7 +381,7 @@ void write_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
                   float* mu_shape, float* sigma_shape, float* logdet_sigma_shape,
                   float* prior_mu_shape, float* prior_sigma_shape,
                   int* prior_mu_shape_count, int* prior_sigma_shape_count,
-                  int* counts, int* prior_counts, spix_params* sp_params, int nspix) {
+                  int* counts, float* prior_counts, spix_params* sp_params, int nspix) {
 
    /**********************************************************************
 
@@ -393,13 +418,12 @@ void write_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
 
     // -- misc --
     int* counts_ix = counts + ix;
-    int* prior_counts_ix = prior_counts + ix;
+    float* prior_counts_ix = prior_counts + ix;
 
     // -- read spix --
     // int sp_index = ids[ix];
     int sp_index = ix;
     if (sp_index < 0) return;
-    auto params_ix = sp_params[sp_index];
 
     // -- write params from spix_params into the tensors --
 
@@ -435,12 +459,14 @@ void write_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
     sp_params[sp_index].prior_mu_shape.y = prior_mu_shape_ix[1];
     sp_params[sp_index].prior_sigma_shape.x = prior_sigma_shape_ix[0];
     sp_params[sp_index].prior_sigma_shape.y = prior_sigma_shape_ix[1];
+    sp_params[sp_index].prior_sigma_shape.z = prior_sigma_shape_ix[2];
     sp_params[sp_index].prior_mu_shape_count = prior_mu_shape_count_ix[0];
     sp_params[sp_index].prior_sigma_shape_count = prior_sigma_shape_count_ix[0];
 
     // -- misc --
     sp_params[sp_index].count = counts_ix[0];
     sp_params[sp_index].prior_count = prior_counts_ix[0];
+    sp_params[sp_index].is_cond = true;
 }
 
 
@@ -465,7 +491,7 @@ void write_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
 
 __global__ 
 void compact_new_spix(int* spix, int* compression_map, int* prop_ids,
-                      int num_new, int prev_max, int npix){
+                      int num_new, int prev_nspix, int npix){
 
   // -- indexing pixel indices --
   int ix = threadIdx.x + blockIdx.x * blockDim.x;
@@ -473,14 +499,14 @@ void compact_new_spix(int* spix, int* compression_map, int* prop_ids,
 
   // -- read current id --
   int spix_id = spix[ix];
-  if (spix_id < prev_max){ return; }
+  if (spix_id < prev_nspix){ return; } // numbering starts @ 0; so "=prev_nspix" is new
 
   // -- update to compact index if "new" --
-  int shift_ix = spix_id - prev_max;
+  // int shift_ix = spix_id - prev_nspix;
   for (int jx=0; jx < num_new; jx++){
     if (spix_id == prop_ids[jx]){
-      int new_spix_id = jx+prev_max;
-      spix[ix] = jx+prev_max; // update to "index" within "prop_ids" offset by prev max
+      int new_spix_id = jx+prev_nspix;
+      spix[ix] = jx+prev_nspix; // update to "index" within "prop_ids" offset by prev max
       compression_map[jx] = spix_id; // for updating spix_params
       break;
     }
@@ -551,19 +577,20 @@ void fill_old_params_from_new(spix_params* params, spix_params*  new_params,
 }
 
 int compactify_new_superpixels(torch::Tensor spix,spix_params* sp_params,
-                               int prev_max_spix,int max_spix,int npix){
+                               int prev_nspix,int max_spix,int npix){
 
   // -- get new ids --
   auto unique_ids = std::get<0>(at::_unique(spix));
   auto ids = unique_ids.data<int>();
   int num_ids = unique_ids.sizes()[0];
-  auto mask = unique_ids >= prev_max_spix;
+  auto mask = unique_ids >= prev_nspix;
   auto prop_ids = unique_ids.masked_select(mask); // uncompressed and alive
 
   // -- update maximum number of superpixels --
   int num_new = prop_ids.size(0);
-  int compact_max_spix = prev_max_spix + num_new;
+  int compact_nspix = prev_nspix + num_new;
   fprintf(stdout,"num_new: %d\n",num_new);
+  if (num_new == 0) {return compact_nspix;}
 
   // -- allocate spix for storing --
   spix_params* new_params=(spix_params*)easy_allocate(num_new,sizeof(spix_params));
@@ -576,7 +603,7 @@ int compactify_new_superpixels(torch::Tensor spix,spix_params* sp_params,
   dim3 nblocks(num_blocks);
   dim3 nthreads(THREADS_PER_BLOCK);
   compact_new_spix<<<nblocks,nthreads>>>(spix_ptr,compression_map,
-                                         prop_ids_ptr,num_new,prev_max_spix,npix);
+                                         prop_ids_ptr,num_new,prev_nspix,npix);
 
   // -- shift params into correct location --
   int num_blocks1 = ceil( double(num_new) / double(THREADS_PER_BLOCK) ); 
@@ -585,13 +612,13 @@ int compactify_new_superpixels(torch::Tensor spix,spix_params* sp_params,
   fill_new_params_from_old<<<nblocks1,nthreads1>>>(sp_params,new_params,
                                                   compression_map,num_new);
   fill_old_params_from_new<<<nblocks1,nthreads1>>>(sp_params,new_params,
-                                                  prev_max_spix,num_new);
+                                                  prev_nspix,num_new);
 
   // -- free parameters --
   cudaFree(compression_map);
   cudaFree(new_params);
 
-  return compact_max_spix;
+  return compact_nspix;
 }
 
 
@@ -614,17 +641,25 @@ int compactify_new_superpixels(torch::Tensor spix,spix_params* sp_params,
 **********************************************************************/
 
 
+// __global__
+// void update_prior_kernel(float* mu_app, float* prior_mu_app,
+//                          float* mu_shape, float* prior_mu_shape,
+//                          float* sigma_shape, float* prior_sigma_shape,
+//                          int* ids, int nspix, int prev_max_spix);
+
+
 __global__
 void update_prior_kernel(float* mu_app, float* prior_mu_app,
                          float* mu_shape, float* prior_mu_shape,
                          float* sigma_shape, float* prior_sigma_shape,
-                         int* ids, int nspix) {
+                         int* ids, int nspix, int prev_nspix) {
 
     // -- filling superpixel params into image --
     int ix = threadIdx.x + blockIdx.x * blockDim.x;
     if (ix >= nspix) return;
     int sp_index = ids[ix];
-    if (sp_index < 0) return;
+    if (sp_index < 0){ return; } // not needed; remove me
+    if (sp_index < prev_nspix){ return; }
 
     // -- mean appearance --
     float* prior_mu_app_ptr = prior_mu_app + 3*sp_index;
@@ -642,14 +677,22 @@ void update_prior_kernel(float* mu_app, float* prior_mu_app,
     // -- cov shape --
     float* prior_sigma_shape_ptr = prior_sigma_shape + 3*sp_index;
     float* sigma_shape_ptr = sigma_shape + 3*sp_index;
-    prior_sigma_shape_ptr[0] = sigma_shape_ptr[0];
-    prior_sigma_shape_ptr[1] = sigma_shape_ptr[1];
-    prior_sigma_shape_ptr[2] = sigma_shape_ptr[2];
+    float icov_xx = sigma_shape_ptr[0];
+    float icov_xy = sigma_shape_ptr[1];
+    float icov_yy = sigma_shape_ptr[2];
+    float det = icov_xx * icov_yy - icov_xy*icov_xy;
+    if (det < 0){ det = 0.0001; }
+    prior_sigma_shape_ptr[0] = icov_yy/det;
+    prior_sigma_shape_ptr[1] = -icov_xy/det;
+    prior_sigma_shape_ptr[2] = icov_xx/det;
+    // prior_sigma_shape_ptr[0] = sigma_shape_ptr[0];
+    // prior_sigma_shape_ptr[1] = sigma_shape_ptr[1];
+    // prior_sigma_shape_ptr[2] = sigma_shape_ptr[2];
 
 }
 
 
-void run_update_prior(const torch::Tensor spix,PySuperpixelParams params){
+void run_update_prior(const torch::Tensor spix,PySuperpixelParams params, int max_nspix){
 
     // -- check --
     CHECK_INPUT(spix);
@@ -682,7 +725,7 @@ void run_update_prior(const torch::Tensor spix,PySuperpixelParams params){
     dim3 nthreads(THREADS_PER_BLOCK);
     update_prior_kernel<<<nblocks,nthreads>>>(mu_app, prior_mu_app, mu_shape,
                                               prior_mu_shape, sigma_shape,
-                                              prior_sigma_shape, ids, nspix);
+                                              prior_sigma_shape, ids, nspix, max_nspix);
 
 }
 

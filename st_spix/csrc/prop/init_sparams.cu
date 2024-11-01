@@ -70,10 +70,12 @@ __global__ void init_sp_params_kernel(spix_params* sp_params,float prior_sigma_a
 
     // -- shape --
     sp_params[k].prior_mu_shape = sp_params[k].mu_shape;
+    sp_params[k].prior_mu_shape.x = 0;
+    sp_params[k].prior_mu_shape.y = 0;
     // sp_params[k].prior_sigma_shape = sp_params[k].sigma_shape;
-    sp_params[k].prior_sigma_shape.x = count*count;
-    sp_params[k].prior_sigma_shape.z = count*count;
+    sp_params[k].prior_sigma_shape.x = count;
     sp_params[k].prior_sigma_shape.y = 0;
+    sp_params[k].prior_sigma_shape.z = count;
     sp_params[k].prior_mu_shape_count = 1;
     sp_params[k].prior_sigma_shape_count = count;
     sp_params[k].logdet_prior_sigma_shape = 4*log(max(count,1));
@@ -100,6 +102,21 @@ __global__ void init_sp_params_kernel(spix_params* sp_params,float prior_sigma_a
     sp_params[k].mu_shape = mu_shape;
     sp_params[k].prior_mu_shape_count = 1;
 
+    sp_params[k].prior_mu_shape = sp_params[k].mu_shape;
+    sp_params[k].prior_mu_shape.x = 0;
+    sp_params[k].prior_mu_shape.y = 0;
+    sp_params[k].prior_sigma_shape.x = count;
+    sp_params[k].prior_sigma_shape.y = 0;
+    sp_params[k].prior_sigma_shape.z = count;
+    sp_params[k].prior_mu_shape_count = 1;
+    sp_params[k].prior_sigma_shape_count = count;
+    sp_params[k].logdet_prior_sigma_shape = 4*log(max(count,1));
+    sp_params[k].mu_shape.x = 0;
+    sp_params[k].mu_shape.y = 0;
+    sp_params[k].sigma_shape.x = 0;
+    sp_params[k].sigma_shape.y = 0;
+    sp_params[k].sigma_shape.z = 0;
+    sp_params[k].logdet_sigma_shape = 0;
 
     sp_params[k].valid = 0;
 
@@ -113,6 +130,75 @@ __global__ void init_sp_params_kernel(spix_params* sp_params,float prior_sigma_a
   }
 
 }
+
+
+__global__ void mark_inactive_kernel(spix_params* params,int nspix_buffer, int* nvalid){
+  int spix_id = threadIdx.x + blockIdx.x * blockDim.x;
+  if (spix_id >= nspix_buffer){ return; }
+  atomicAdd(nvalid,1);
+  params[spix_id].valid = 0;
+}
+
+__global__ void mark_active_kernel(spix_params* params, int* ids,
+                                   int nactive, int nspix, int nspix_buffer, int* nvalid){
+  int id_index = threadIdx.x + blockIdx.x * blockDim.x;
+  if (id_index >= nactive){ return; }
+  int spix_id = ids[id_index];
+  if (spix_id >= nspix_buffer){ return; }
+  if (spix_id < 0){ return ;}
+  atomicAdd(nvalid,1);
+  params[spix_id].valid = 1;
+}
+
+__host__ void mark_active_contiguous(spix_params* params, int nspix, int nspix_buffer){
+  auto options_i32 = torch::TensorOptions().dtype(torch::kInt32)
+    .layout(torch::kStrided).device("cuda");
+  auto _grid = torch::arange(0, nspix, 1, options_i32);
+  int* ids = _grid.data<int>();
+  mark_active(params, ids, nspix, nspix, nspix_buffer);
+}
+
+
+__host__ void mark_active(spix_params* params, int* ids, int nactive,
+                          int nspix, int nspix_buffer){
+
+
+  // -- allocate --
+  int nvalid;
+  int* nvalid_gpu;
+  cudaMalloc((void **)&nvalid_gpu, sizeof(int));
+  cudaMemset(nvalid_gpu, 0,sizeof(int));
+
+  // -- mark activte/inactive --
+  dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
+  int num_block1 = ceil( double(nspix_buffer)/double(THREADS_PER_BLOCK) );
+  dim3 BlockPerGrid1(num_block1,1);
+  mark_inactive_kernel<<<BlockPerGrid1,ThreadPerBlock>>>(params,nspix_buffer,nvalid_gpu);
+
+  // -- report--
+  cudaMemcpy(&nvalid, nvalid_gpu, sizeof(int), cudaMemcpyDeviceToHost);
+  printf("[init_sparams] ninactive: %d\n",nvalid);
+  cudaMemset(nvalid_gpu, 0,sizeof(int));
+
+
+  int num_block2 = ceil( double(nactive)/double(THREADS_PER_BLOCK) );
+  dim3 BlockPerGrid2(num_block2,1);
+  mark_active_kernel<<<BlockPerGrid2,ThreadPerBlock>>>(params,ids,nactive,
+                                                       nspix,nspix_buffer,nvalid_gpu);
+
+  // -- report--
+  cudaMemcpy(&nvalid, nvalid_gpu, sizeof(int), cudaMemcpyDeviceToHost);
+  printf("[init_sparams] nvalid: %d\n",nvalid);
+
+  // -- free --
+  cudaFree(nvalid_gpu);
+
+}
+
+// __host__ void mark_active_(spix_params* params, int* ids, int nactive,
+//                           int nspix, int nspix_buffer){
+// }
+
 
 
 

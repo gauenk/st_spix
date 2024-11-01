@@ -18,7 +18,8 @@
 ************************************************/
 __host__ void update_params(const float* img, const int* spix,
                             spix_params* sp_params,spix_helper* sp_helper,
-                            float sigma2_app, const int npixels, const int nspix_buffer,
+                            float sigma2_app, const int npixels,
+                            const int sp_size, const int nspix_buffer,
                             const int nbatch, const int width, const int nftrs){
 
   	dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
@@ -31,10 +32,11 @@ __host__ void update_params(const float* img, const int* spix,
 	cudaMemset(sp_helper, 0, nspix_buffer*sizeof(spix_helper));
     sum_by_label<<<BlockPerGrid1,ThreadPerBlock>>>(img,spix,sp_params,sp_helper,
                                                    npixels,nbatch,width,nftrs);
-    calc_posterior_mode<<<BlockPerGrid2,ThreadPerBlock>>>(sp_params,sp_helper,
-                                                          sigma2_app,nspix_buffer); 
-    // calc_simple_update<<<BlockPerGrid2,ThreadPerBlock>>>(sp_params,sp_helper,
-    //                                                   sigma2_app, nspix_buffer);
+    // calc_posterior_mode<<<BlockPerGrid2,ThreadPerBlock>>>(sp_params,sp_helper,
+    //                                                       sigma2_app,nspix_buffer); 
+    calc_simple_update<<<BlockPerGrid2,ThreadPerBlock>>>(sp_params,sp_helper,
+                                                         sigma2_app, sp_size,
+                                                         nspix_buffer);
 }
 
 /*****************************************************************
@@ -73,9 +75,9 @@ void clear_fields(spix_params* sp_params,
 
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
 	if (k>=nsuperpixel_buffer) return;
-	if (sp_params[k].valid == 0) return;
+	// if (sp_params[k].valid == 0) return;
+
 	sp_params[k].count = 0;
-	
 	float3 mu_app;
 	mu_app.x = 0;
 	mu_app.y = 0;
@@ -115,7 +117,7 @@ void sum_by_label(const float* img, const int* spix,
 
 	//get the label
 	int k = spix[t];
-    if (k == -1){ return; } // invalid label
+    if (k < 0){ return; } // invalid label
 
     float3 pix = *(float3*)(img+3*t);
 	atomicAdd(&sp_params[k].count, 1);
@@ -206,7 +208,8 @@ void calc_summ_stats(spix_params*  sp_params,spix_helper* sp_helper,
 
 __global__
 void calc_simple_update(spix_params*  sp_params,spix_helper* sp_helper,
-                     float sigma_app, const int nsuperpixel_buffer) {
+                        float sigma_app, const int sp_size,
+                        const int nsuperpixel_buffer) {
 
     // -- update thread --
 	int k = threadIdx.x + blockIdx.x * blockDim.x; // the label
@@ -215,7 +218,7 @@ void calc_simple_update(spix_params*  sp_params,spix_helper* sp_helper,
     
     // -- read curr --
 	int count_int = sp_params[k].count;
-	float a_prior = sp_params[k].prior_count;
+	float a_prior = sp_params[k].prior_count; 
 	float prior_sigma_s_2 = a_prior * a_prior;
 	double count = count_int * 1.0;
     double2 mu_shape;
@@ -277,31 +280,29 @@ void calc_simple_update(spix_params*  sp_params,spix_helper* sp_helper,
 ************************************************************/
 
 __global__
-void calc_posterior_mode(spix_params*  sp_params,
-                         spix_helper* sp_helper,
+void calc_posterior_mode(spix_params*  sp_params, spix_helper* sp_helper,
                          float sigma2_app, const int nsuperpixel_buffer) {
 
     // -- update thread --
 	int k = threadIdx.x + blockIdx.x * blockDim.x; // the label
 	if (k>=nsuperpixel_buffer) return;
 	if (sp_params[k].valid == 0) return;
+	if (sp_params[k].count == 0) return;
     
     // -- read curr --
 	int count_int = sp_params[k].count;
 	// float a_prior = sp_params[k].prior_count;
-	float prior_count = 1.0*sp_params[k].prior_count;
+	float prior_count = sp_params[k].prior_count;
 	double count = count_int * 1.0;
-    // int df = sqrt(sp_params[k].prior_sigma_shape.x);
-    int lam = sqrt(sp_params[k].prior_sigma_shape.x);
-    // int lam = sqrt(prior_count);
     double lprob = 0.0;
+    bool is_cond = sp_params[k].is_cond;
 
     // -- unpack --
-    int prior_mu_app_count = sp_params[k].prior_mu_app_count;
+    // int prior_mu_app_count = sp_params[k].prior_mu_app_count;
     // int prior_sigma_app_count = sp_params[k].prior_sigma_app_count;
-    int prior_mu_shape_count = sp_params[k].prior_mu_shape_count;
-    int prior_sigma_shape_count = sp_params[k].prior_sigma_shape_count;
-    prior_mu_app_count = prior_count; // only if conditoned on something... ow 1
+    // int prior_mu_shape_count = sp_params[k].prior_mu_shape_count;
+    // int prior_sigma_shape_count = sp_params[k].prior_sigma_shape_count;
+    // prior_mu_app_count = prior_count; // only if conditoned on something... ow 1
 
     /**************************************************
    
@@ -316,10 +317,16 @@ void calc_posterior_mode(spix_params*  sp_params,
     // prior_mu_app.z = 0;
     // prior_mu_app_count = 1;
     // float3 prior_sigma_app = sp_params[k].prior_sigma_app;
-    float3 post_mu_app = calc_app_mean_mode(sp_helper[k].sum_app,prior_mu_app,
-                                            count,prior_mu_app_count);
+
+    float3 post_mu_app = calc_app_sample_mean(sp_helper[k].sum_app, count);
+    // float3 post_mu_app = calc_app_mean_mode(sp_helper[k].sum_app,prior_mu_app,
+    //                                         count,prior_mu_app_count);
+
+
+    // float3 post_mu_app = calc_app_mean_mode(sp_helper[k].sum_app,prior_mu_app,
+    //                                         count,prior_mu_app_count);
     // this shouldn't be "sigma2_app" but rather the "tau"? or sigma2_app/count?
-    lprob += calc_app_mean_ll(post_mu_app,prior_mu_app,sigma2_app);
+    // lprob += calc_app_mean_ll(post_mu_app,prior_mu_app,sigma2_app);
     // float3 post_sigma_app = calc_app_sigma_mode(sp_helper[k].sq_sum_app,
     //                                             sp_helper[k].sum_app,count,
     //                                             prior_sigma_app,prior_mu_app,
@@ -336,24 +343,27 @@ void calc_posterior_mode(spix_params*  sp_params,
 
     // -- manipulate prior cov --
     double2 prior_mu_shape = sp_params[k].prior_mu_shape;
-    prior_mu_shape.x = 0;
-    prior_mu_shape.y = 0;
+    // prior_mu_shape.x = 0;
+    // prior_mu_shape.y = 0;
     double3 prior_sigma_shape = sp_params[k].prior_sigma_shape;
-    prior_sigma_shape.x = prior_count*prior_count;
-    prior_sigma_shape.y = 0;
-    prior_sigma_shape.z = prior_count*prior_count;
+    // prior_sigma_shape.x = prior_count*prior_count;
+    // prior_sigma_shape.y = 0;
+    // prior_sigma_shape.z = prior_count*prior_count;
     double det_prior = determinant2x2(prior_sigma_shape);
     double3 prior_isigma_shape = inverse2x2(prior_sigma_shape,det_prior);
 
     // -- sample mean --
     double2 mu_shape = calc_shape_sample_mean(sp_helper[k].sum_shape,count);
     // -- sigma mode --
-    // double3 sigma_shape = calc_shape_sigma_mode_simp(sp_helper[k].sq_sum_shape,
-    //                                                  mu_shape,prior_sigma_shape,
-    //                                                  prior_mu_shape,count,prior_count);
-    double3 sigma_shape = calc_shape_sigma_mode(sp_helper[k].sq_sum_shape,mu_shape,
-                                                prior_sigma_shape,prior_mu_shape,
-                                                count,prior_count);
+    longlong3 _sq_sum = sp_helper[k].sq_sum_shape;
+    // printf("[ud] %lld,%lld,%lld|%lf,%lf\n",
+    //        _sq_sum.x,_sq_sum.y,_sq_sum.z,mu_shape.x,mu_shape.y);
+    double3 sigma_shape = calc_shape_sigma_mode_simp(sp_helper[k].sq_sum_shape,
+                                                     mu_shape,prior_sigma_shape,
+                                                     prior_mu_shape,count,prior_count);
+    // double3 sigma_shape = calc_shape_sigma_mode(sp_helper[k].sq_sum_shape,mu_shape,
+    //                                             prior_sigma_shape,prior_mu_shape,
+    //                                             count,prior_count);
     double det_sigma_shape = determinant2x2(sigma_shape);
     double3 isigma_shape = inverse2x2(sigma_shape,det_sigma_shape);
 
@@ -397,6 +407,14 @@ void calc_posterior_mode(spix_params*  sp_params,
                          Appearance
 
 ******************************************************************/
+
+__device__ float3 calc_app_sample_mean(float3 sample_sum, double count) {
+  float3 post_mu;
+  post_mu.x = (sample_sum.x)/(count);
+  post_mu.y = (sample_sum.y)/(count);
+  post_mu.z = (sample_sum.z)/(count);
+  return post_mu;
+}
 
 __device__ float3 calc_app_mean_mode(float3 sample_sum, float3 prior_mu,
                                      int count, int prior_count) {
@@ -527,7 +545,7 @@ __device__ double3 calc_shape_sigma_mode_simp(longlong3 sq_sum, double2 mu,
     }
 
     int sigma2_prior = prior_count*prior_count;
-    int total_count = count + prior_count;
+    double total_count = 1.*(count + prior_count);
     sigma_mode.x = (sigma2_prior + sigma_mode.x)/(total_count + 3.0);
     sigma_mode.y = (sigma_mode.y) / (total_count + 3.0);
     sigma_mode.z = (sigma2_prior + sigma_mode.z)/(total_count + 3.0);
@@ -542,7 +560,7 @@ __device__ double3 calc_shape_sigma_mode(longlong3 sq_sum, double2 mu,
                                          int count, int prior_count) {
 
     // -- prior sigma_s --
-    double3 sigma_opt = outer_product_term(prior_mu, mu, prior_count, count);
+    // double3 sigma_opt = outer_product_term(prior_mu, mu, prior_count, count);
 
 	// -- sample covairance --
     double3 sigma_mode;
@@ -558,12 +576,12 @@ __device__ double3 calc_shape_sigma_mode(longlong3 sq_sum, double2 mu,
 
 	double tcount = (double) count + prior_count;
     // -- compute cov matrix [.x = dx*dx   .y = dx*dy    .z = dy*dy] --
-    sigma_mode.x = (prior_sigma.x + sigma_mode.x + sigma_opt.x) / (tcount + 3.0);
-    sigma_mode.y = (prior_sigma.y + sigma_mode.y + sigma_opt.y) / (tcount + 3.0);
-    sigma_mode.z = (prior_sigma.z + sigma_mode.z + sigma_opt.z) / (tcount + 3.0);
-    // sigma_mode.x = (prior_sigma.x + sigma_mode.x) / (tcount + 3.0);
-    // sigma_mode.y = (prior_sigma.y + sigma_mode.y) / (tcount + 3.0);
-    // sigma_mode.z = (prior_sigma.z + sigma_mode.z) / (tcount + 3.0);
+    // sigma_mode.x = (prior_count*prior_sigma.x + sigma_mode.x + sigma_opt.x) / (tcount + 3.0);
+    // sigma_mode.y = (prior_count*prior_sigma.y + sigma_mode.y + sigma_opt.y) / (tcount + 3.0);
+    // sigma_mode.z = (prior_count*prior_sigma.z + sigma_mode.z + sigma_opt.z) / (tcount + 3.0);
+    sigma_mode.x = (prior_count*prior_sigma.x + sigma_mode.x) / (tcount + 3.0);
+    sigma_mode.y = (prior_count*prior_sigma.y + sigma_mode.y) / (tcount + 3.0);
+    sigma_mode.z = (prior_count*prior_sigma.z + sigma_mode.z) / (tcount + 3.0);
 
 
     return sigma_mode;
@@ -587,6 +605,7 @@ __device__ double calc_shape_sigma_ll(double3 sigma_s, double3 prior_sigma,
     // Save the computed log likelihood into the helper structure
     return lprob;
 }
+
 
 /************************************************************
 

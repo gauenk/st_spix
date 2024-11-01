@@ -7,11 +7,18 @@
 #include "../bass/share/my_sp_struct.h"
 #endif
 
-__host__ void update_params(const float* img,const int* seg,
-                            spix_params* sp_params,
-                            spix_helper* sp_helper,
-                            float sigma_app, const int npix, const int nspix_buffer,
+/* __host__ void update_params(const float* img,const int* seg, */
+/*                             spix_params* sp_params,spix_helper* sp_helper, */
+/*                             float sigma_app, const int npix, */
+/*                             const int sp_size, const int nspix_buffer, */
+/*                             const int nbatch, const int width, const int nftrs); */
+
+__host__ void update_params(const float* img, const int* spix,
+                            spix_params* sp_params,spix_helper* sp_helper,
+                            float sigma2_app, const int npixels,
+                            const int sp_size, const int nspix_buffer,
                             const int nbatch, const int width, const int nftrs);
+
 
 __host__ void update_params_summ(const float* img, const int* spix,
                                  spix_params* sp_params,spix_helper* sp_helper,
@@ -40,7 +47,8 @@ __global__ void calc_posterior_mode(spix_params* sp_params,
 __global__ void calc_summ_stats(spix_params*  sp_params,spix_helper* sp_helper,
                                 float sigma_app, const int nsuperpixel_buffer);
 __global__ void calc_simple_update(spix_params*  sp_params,spix_helper* sp_helper,
-                                   float sigma_app, const int nsuperpixel_buffer);
+                                   float sigma_app, const int sp_size,
+                                   const int nsuperpixel_buffer);
 
 /* __global__ */
 /* void calculate_mu_and_sigma(spix_params*  sp_params, */
@@ -58,6 +66,7 @@ __global__ void calc_simple_update(spix_params*  sp_params,spix_helper* sp_helpe
 /*                                       int lam, int count); */
 
 // ---- Appearance [mean,cov] ---
+__device__ float3 calc_app_sample_mean(float3 sample_sum, double count);
 __device__ float3 calc_app_mean_mode(float3 sample_sum, float3 prior_mu,
                                      int count, int prior_count);
 __device__ float3 calc_app_sigma_mode(double3 sq_sample_sum, double3 sample_sum,

@@ -32,6 +32,8 @@
 #include "init_sparams.h"
 #include "seg_utils.h"
 #include "sparams_io.h"
+#include "init_seg.h"
+
 
 // -- primary functions --
 #include "refine_missing.h"
@@ -58,7 +60,8 @@ __host__ void refine_missing(float* img, int* seg, spix_params* sp_params,
                              int niters, int niters_seg,
                              // float3 pix_ivar,float logdet_pix_var,
                              float sigma2_app, float potts,
-                             int nspix, int nbatch, int width, int height, int nftrs,
+                             int sp_size, int nspix,
+                             int nbatch, int width, int height, int nftrs,
                              double* logging_aprior){
 
     // -- init --
@@ -68,7 +71,7 @@ __host__ void refine_missing(float* img, int* seg, spix_params* sp_params,
 
       // -- Update Parameters with Previous SuperpixelParams as Prior --
       update_params(img, seg, sp_params, sp_helper, sigma2_app,
-                    npix, nspix_buffer, nbatch, width, nftrs);
+                    npix, sp_size, nspix_buffer, nbatch, width, nftrs);
 
       // -- Update Segmentation --
       update_seg(img, seg, border, sp_params, niters_seg, 
@@ -82,7 +85,7 @@ __host__ void refine_missing(float* img, int* seg, spix_params* sp_params,
 
     // -- Update Parameters with Previous SuperpixelParams as Prior --
     update_params(img, seg, sp_params, sp_helper, sigma2_app,
-                  npix, nspix_buffer, nbatch, width, nftrs);
+                  npix, sp_size, nspix_buffer, nbatch, width, nftrs);
 
     CudaFindBorderPixels_end(seg, border, npix, nbatch, width, height);
 }
@@ -102,7 +105,7 @@ run_refine_missing(const torch::Tensor img,
                    const PySuperpixelParams prior_params,
                    // const torch::Tensor prior_map,
                    int nspix, int niters, int niters_seg,
-                   int sp_size, float pix_var_i, float potts){
+                   int sp_size, float sigma2_app, float potts){
 
     // -- check --
     CHECK_INPUT(img);
@@ -164,8 +167,8 @@ run_refine_missing(const torch::Tensor img,
     //init_sp_params_from_past(sp_params,prior_sp_params,rescale,nspix,nspix_buffer,npix);
 
     // -- compute pixel (inverse) variance info --
-    float sigma_app = pix_var_i;
-    // float pix_half = float(pix_var_i/2) * float(pix_var_i/2);
+    float sigma_app = sigma2_app;
+    // float pix_half = float(sigma2_app/2) * float(sigma2_app/2);
     // float3 pix_var;
     // pix_var.x = 1.0/pix_half;
     // pix_var.y = 1.0/pix_half;
@@ -189,11 +192,22 @@ run_refine_missing(const torch::Tensor img,
     //            init_map_size*sizeof(int),cudaMemcpyDeviceToDevice);
 
     // -- init superpixel params --
-    // float prior_sigma_app = float(pix_var_i/2) * float(pix_var_i/2);
+    // float prior_sigma_app = float(sigma2_app/2) * float(sigma2_app/2);
     // init_sp_params(sp_params,sigma_app,img_ptr,filled_spix_ptr,
     //                sp_helper,npix,nspix,nspix_buffer,nbatch,width,nftrs);
     // init_sp_params_from_past(sp_params,prior_sp_params,prior_map_ptr,
     //                          rescale,nspix,nspix_buffer,npix);
+
+    // -- init superpixel params --
+    int init_nspix = nspix_from_spsize(sp_size, width, height);
+    init_sp_params(sp_params,sigma2_app,img_ptr,filled_spix_ptr,sp_helper,
+                   npix,init_nspix,nspix_buffer,nbatch,width,nftrs);
+    auto _unique_ids = std::get<0>(at::_unique(spix));
+    int nactive = _unique_ids.size(0);
+    int* _ids = _unique_ids.data<int>();
+    write_prior_counts(prior_params,sp_params,_ids,nactive);
+    mark_active(sp_params, _ids, nactive, nspix, nspix_buffer);
+
 
     // -- init logging_lprior --
     torch::Tensor logging = torch::zeros({niters,1},options_f64);
@@ -204,7 +218,7 @@ run_refine_missing(const torch::Tensor img,
       refine_missing(img_ptr, filled_spix_ptr, sp_params,
                      missing_ptr, border, sp_helper,
                      niters, niters_seg, sigma_app, potts,
-                     nspix, nbatch, width, height, nftrs, logging_ptr);
+                     sp_size, nspix, nbatch, width, height, nftrs, logging_ptr);
     }
 
     // -- get spixel parameters as tensors --

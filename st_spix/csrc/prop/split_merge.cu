@@ -25,8 +25,9 @@ int run_split(const float* img, int* seg, bool* border,
               spix_params* sp_params, spix_helper* sp_helper,
               spix_helper_sm* sm_helper,
               int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
-              float alpha_hastings, float sigma2_app,
-              int& count, int idx, int max_nspix,
+              float alpha_hastings, float sigma2_app, float sigma2_size,
+              int& count, int idx, int max_nspix, 
+              const int sp_size, 
               const int npix, const int nbatch,
               const int width, const int height,
               const int nftrs, const int nspix_buffer){
@@ -38,9 +39,10 @@ int run_split(const float* img, int* seg, bool* border,
     max_nspix = CudaCalcSplitCandidate(img, seg, border,
                                        sp_params, sp_helper, sm_helper,
                                        sm_seg1, sm_seg2, sm_pairs,
-                                       npix,nbatch,width,height,nftrs,
+                                       sp_size,npix,nbatch,width,height,nftrs,
                                        nspix_buffer, max_nspix,
-                                       direction, alpha_hastings, sigma2_app);
+                                       direction, alpha_hastings,
+                                       sigma2_app, sigma2_size);
 
   }
   return max_nspix;
@@ -51,20 +53,22 @@ void run_merge(const float* img, int* seg, bool* border,
                spix_params* sp_params, spix_helper* sp_helper,
                spix_helper_sm* sm_helper,
                int* sm_seg1, int* sm_seg2, int* sm_pairs,
-               float alpha_hastings, float sigma2_app,
+               float alpha_hastings,
+               float sigma2_app, float sigma2_size,
                int& count, int idx, int max_nspix,
-               const int npix, const int nbatch,
+               const int sp_size, const int npix, const int nbatch,
                const int width, const int height,
                const int nftrs, const int nspix_buffer){
 
   if( idx%4 == 2){
-    // fprintf(stdout,"idx,count: %d,%d\n",idx,count);
     // -- run merge --
     int direction = count%2;
+    // fprintf(stdout,"idx,count,direction: %d,%d,%d\n",idx,count,direction);
     CudaCalcMergeCandidate(img, seg, border,
                            sp_params, sp_helper, sm_helper, sm_pairs,
-                           npix,nbatch,width,height,nftrs,
-                           nspix_buffer,direction, alpha_hastings, sigma2_app);
+                           sp_size,npix,nbatch,width,height,nftrs,
+                           nspix_buffer,direction, alpha_hastings,
+                           sigma2_app, sigma2_size);
 
   }
 }
@@ -72,51 +76,71 @@ void run_merge(const float* img, int* seg, bool* border,
 __host__ void CudaCalcMergeCandidate(const float* img, int* seg, bool* border,
                                      spix_params* sp_params,spix_helper* sp_helper,
                                      spix_helper_sm* sm_helper,int* sm_pairs,
+                                     const int sp_size,
                                      const int npix, const int nbatch,
                                      const int width, const int height,
                                      const int nftrs, const int nspix_buffer,
-                                     const int direction, float alpha, float sigma2_app){
+                                     const int direction, float log_alpha,
+                                     float sigma2_app, float sigma2_size){
 
     int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
     int num_block2 = ceil( double(nspix_buffer) / double(THREADS_PER_BLOCK) );
     dim3 BlockPerGrid2(num_block2,nbatch);
     dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
     dim3 BlockPerGrid(num_block,nbatch);
-    float alpha_hasting_ratio = alpha;
-    float a_0 = 10000;
-    float b_0 = sigma2_app * (a_0) ;
+    // float alpha_hasting_ratio = alpha;
+    // float a_0 = 1e6;
+    // float b_0 = sigma2_app * (a_0) ;
+
+    int nvalid_cpu;
+    int* nvalid;
+    cudaMalloc((void **)&nvalid, sizeof(int));
+    cudaMemset(nvalid, 0,sizeof(int));
+
+    int nmerges;
+    int* nmerges_gpu;
+    cudaMalloc((void **)&nmerges_gpu, sizeof(int));
+    cudaMemset(nmerges_gpu, 0,sizeof(int));
 
     init_sm<<<BlockPerGrid2,ThreadPerBlock>>>(img,seg,sp_params,sm_helper,
                                               nspix_buffer, nbatch, width,
-                                              nftrs, sm_pairs);
+                                              nftrs, sm_pairs, nvalid);
     // fprintf(stdout,"direction: %d\n",direction);
     calc_merge_candidate<<<BlockPerGrid,ThreadPerBlock>>>(seg,border, sm_pairs,
                                                           npix, nbatch, width,
                                                           height, direction); 
     sum_by_label_merge<<<BlockPerGrid,ThreadPerBlock>>>(img,seg,sp_params,sm_helper,
                                                         npix, nbatch, width,  nftrs);
-    calc_bn_merge<<<BlockPerGrid2,ThreadPerBlock>>>(seg, sm_pairs, sp_params,
-                                                    sp_helper, sm_helper,
-                                                    npix, nbatch, width,
-                                                    nspix_buffer, b_0);
-    merge_likelihood<<<BlockPerGrid2,ThreadPerBlock>>>(img,  sm_pairs,  sp_params,
-                                                       sp_helper, sm_helper,
-                                                       npix, nbatch, width, nftrs,
-                                                       nspix_buffer, a_0, b_0);
-    calc_hasting_ratio<<<BlockPerGrid2,ThreadPerBlock>>>(img,  sm_pairs, sp_params,
-                                                         sp_helper, sm_helper,
-                                                         npix, nbatch, width,
-                                                         nftrs, nspix_buffer,
-                                                         alpha_hasting_ratio);
-    calc_hasting_ratio2<<<BlockPerGrid2,ThreadPerBlock>>>(img,  sm_pairs, sp_params,
-                                                          sp_helper, sm_helper,
-                                                          npix, nbatch, width,
-                                                          nftrs, nspix_buffer,
-                                                          alpha_hasting_ratio);
+    merge_marginal_likelihood<<<BlockPerGrid2,ThreadPerBlock>>>(sm_pairs,sp_params,
+                                                                sm_helper,
+                                                                sp_size, npix,
+                                                                nbatch, width,
+                                                                nspix_buffer,
+                                                                sigma2_app,sigma2_size);
+    merge_hastings_ratio<<<BlockPerGrid2,ThreadPerBlock>>>(img,  sm_pairs, sp_params,
+                                                           sp_helper, sm_helper,
+                                                           npix, nbatch, width,
+                                                           nftrs, nspix_buffer,
+                                                           log_alpha,nmerges_gpu);
+    // -- count number of merges --
+    cudaMemcpy(&nmerges,nmerges_gpu, sizeof(int), cudaMemcpyDeviceToHost);
+    printf("nmerges: %d\n",nmerges);
+    cudaMemset(nmerges_gpu, 0,sizeof(int));
+
+    cudaMemcpy(&nvalid_cpu, nvalid, sizeof(int), cudaMemcpyDeviceToHost);
+    printf("[merge] nvalid: %d\n",nvalid_cpu);
+
+    
+    // -- actually merge --
     remove_sp<<<BlockPerGrid2,ThreadPerBlock>>>(sm_pairs,sp_params,
                                                 sm_helper,nspix_buffer);
     merge_sp<<<BlockPerGrid,ThreadPerBlock>>>(seg,border, sm_pairs, sp_params,
                                               sm_helper, npix, nbatch, width, height);  
+
+    // -- free! --
+    cudaFree(nvalid);
+    cudaFree(nmerges_gpu);
+
 
 }
 
@@ -129,32 +153,44 @@ __host__ int CudaCalcSplitCandidate(const float* img, int* seg, bool* border,
                                     spix_helper* sp_helper,
                                     spix_helper_sm* sm_helper,
                                     int* sm_seg1, int* sm_seg2, int* sm_pairs,
+                                    const int sp_size,
                                     const int npix, const int nbatch, const int width,
                                     const int height, const int nftrs,
                                     const int nspix_buffer, int max_nspix,
-                                    int direction, float alpha, float sigma2_app){
+                                    int direction, float alpha,
+                                    float sigma2_app, float sigma2_size){
 
+    if (max_nspix>nspix_buffer/2){ return max_nspix; }
     int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
     int num_block2 = ceil( double(nspix_buffer) / double(THREADS_PER_BLOCK) );
     dim3 BlockPerGrid2(num_block2,1);
     dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
     dim3 BlockPerGrid(num_block,1);
     float alpha_hasting_ratio =  alpha;
-    float a_0 = 10000;
-    float b_0 = sigma2_app * (a_0) ;
+    // float a_0 = 1e6;
+    // float b_0 = sigma2_app * (a_0) ;
     // float b_0;
     int done = 1;
     int* done_gpu;
     int* max_sp;
+    int nvalid_cpu;
+    int* nvalid;
+    cudaMalloc((void **)&nvalid, sizeof(int));
+    cudaMemset(nvalid, 0,sizeof(int));
     cudaMalloc((void **)&max_sp, sizeof(int));
     cudaMalloc((void **)&done_gpu, sizeof(int)); 
 
     int distance = 1;
     cudaMemset(sm_seg1, 0, npix*sizeof(int));
     cudaMemset(sm_seg2, 0, npix*sizeof(int));
+
     init_sm<<<BlockPerGrid2,ThreadPerBlock>>>(img,seg,sp_params,
                                               sm_helper, nspix_buffer,
-                                              nbatch, width, nftrs, sm_pairs);
+                                              nbatch, width, nftrs, sm_pairs, nvalid);
+    cudaMemcpy(&nvalid_cpu, nvalid, sizeof(int), cudaMemcpyDeviceToHost);
+    // printf("[split] nvalid: %d\n",nvalid_cpu);
+    cudaMemset(nvalid, 0,sizeof(int));
+
     init_split<<<BlockPerGrid2,ThreadPerBlock>>>(border,sm_seg1,sp_params,
                                                  sm_helper, nspix_buffer,
                                                  nbatch, width, height, direction,
@@ -225,8 +261,8 @@ __host__ int CudaCalcSplitCandidate(const float* img, int* seg, bool* border,
     //                                                    b_0, max_nspix);
 
     split_marginal_likelihood<<<BlockPerGrid2,ThreadPerBlock>>>(\
-        sp_params,sm_helper,npix,nbatch,width,nspix_buffer,
-        sigma2_app, max_nspix);
+        sp_params,sm_helper,sp_size,npix,nbatch,width,nspix_buffer,
+        sigma2_app, sigma2_size, max_nspix);
 
     // calc_marginal_likelihood<<<BlockPerGrid2,ThreadPerBlock>>>(\
     //     sp_params,sm_helper,npix,nbatch,width,nspix_buffer,
@@ -251,8 +287,13 @@ __host__ int CudaCalcSplitCandidate(const float* img, int* seg, bool* border,
 
     // gpuErrchk( cudaPeekAtLastError() );
     // gpuErrchk( cudaDeviceSynchronize() );
-
+    // -- nvalid --
+    int prev_max_sp = max_nspix;
     cudaMemcpy(&max_nspix, max_sp, sizeof(int), cudaMemcpyDeviceToHost);
+    printf("[split] nsplits: %d\n",max_nspix-prev_max_sp);
+
+    // -- free --
+    cudaFree(nvalid);
     cudaFree(max_sp);
     cudaFree(done_gpu);
 
@@ -265,10 +306,18 @@ __global__ void init_sm(const float* img, const int* seg_gpu,
                         spix_params* sp_params,
                         spix_helper_sm* sm_helper,
                         const int nspix_buffer, const int nbatch,
-                        const int width,const int nftrs,int* sm_pairs) {
+                        const int width,const int nftrs,
+                        int* sm_pairs, int* nvalid) {
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
 	if (k>=nspix_buffer) return;
-	//if (sp_params[k].valid == 0) return;
+	// if (sp_params[k].valid == 0) return;
+    // atomicAdd(nvalid,1); // update valid
+
+	if (sp_params[k].valid != 0) {
+      atomicAdd(nvalid,1); // update valid
+    }
+
+
     sm_helper[k].b_n_app.x = 0;
     sm_helper[k].b_n_app.y = 0;
     sm_helper[k].b_n_app.z = 0;
@@ -286,18 +335,155 @@ __global__ void init_sm(const float* img, const int* seg_gpu,
 
     sm_helper[k].merge = false;
     sm_helper[k].remove = false;
-    sm_pairs[k*2+1] = 0;
-    sm_pairs[k*2] = 0;
+    sm_pairs[k*2+1] = -1;
+    sm_pairs[k*2] = -1;
    
 
 }
+__global__
+void merge_marginal_likelihood(int* sm_pairs, spix_params* sp_params,
+                               spix_helper_sm* sm_helper,
+                               const int sp_size,
+                               const int npix, const int nbatch,
+                               const int width, const int nspix_buffer,
+                               float sigma2_app, float sigma2_size){
+
+    /********************
+           Init
+    **********************/
+
+    // -- init --
+	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
+	if (k>=nspix_buffer) return;
+	if (sp_params[k].valid == 0) return;
+    int s = sm_pairs[2*k+1];
+    if (s < 0){ return; }
+    float count_s = __ldg(&sp_params[s].count);
+    float count_k = __ldg(&sp_params[k].count);
+    float count_f = count_s + count_k;
+
+    if((count_f<1)||( count_k<1)||(count_s<1)) return;
+
+    /********************
+  
+          Appearance
+   
+    **********************/
+
+    double3 sum_s = sm_helper[s].sum_app;
+    double3 sum_k = sm_helper[k].sum_app;
+    double3 sum_f;
+    sum_f.x = sum_s.x + sum_k.x;
+    sum_f.y = sum_s.y + sum_k.y;
+    sum_f.z = sum_s.z + sum_k.z;
+
+    double3 sq_sum_s = sm_helper[s].sq_sum_app;
+    double3 sq_sum_k = sm_helper[k].sq_sum_app;
+    double3 sq_sum_f;
+    sq_sum_f.x = sq_sum_s.x + sq_sum_k.x;
+    sq_sum_f.y = sq_sum_s.y + sq_sum_k.y;
+    sq_sum_f.z = sq_sum_s.z + sq_sum_k.z;
+
+    // -- appearance --
+    // double lprob_k = marginal_likelihood_app(sum_k,sq_sum_k,count_k,sigma2_app);
+    // double lprob_s = marginal_likelihood_app(sum_s,sq_sum_s,count_s,sigma2_app);
+    // double lprob_f = marginal_likelihood_app(sum_f,sq_sum_f,count_f,sigma2_app);
+    double sigma2_prior_var = 1.;
+    double lprob_k = appearance_variance(sum_k,sq_sum_k,count_k,sigma2_prior_var);
+    double lprob_s = appearance_variance(sum_s,sq_sum_s,count_s,sigma2_prior_var);
+    double lprob_f = appearance_variance(sum_f,sq_sum_f,count_f,sigma2_prior_var);
+
+
+    // -- include size term --
+    // int sp_size2 = sp_size*sp_size;
+    // lprob_k += size_likelihood(count_k,sp_size,sigma2_size);
+    // lprob_s += size_likelihood(count_s,sp_size,sigma2_size);
+    // lprob_f += size_likelihood(count_f,sp_size,sigma2_size);
+
+    // -- include size term --
+    lprob_k += size_beta_likelihood(count_k,sp_size,sigma2_size,npix);
+    lprob_s += size_beta_likelihood(count_s,sp_size,sigma2_size,npix);
+    lprob_f += size_beta_likelihood(count_f,sp_size,sigma2_size,npix);
+
+    // -- write --
+    sm_helper[k].numerator_app = lprob_k;
+    sm_helper[s].numerator_app = lprob_s;
+    sm_helper[k].numerator_f_app = lprob_f;
+
+
+}
+
+__global__ void merge_hastings_ratio(const float* img, int* sm_pairs,
+                                    spix_params* sp_params,
+                                    spix_helper* sp_helper,
+                                    spix_helper_sm* sm_helper,
+                                    const int npix, const int nbatch, const int width,
+                                    const int nftrs, const int nspix_buffer,
+                                     float log_alpha, int* nmerges) {
+
+	// getting the index of the pixel
+	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
+	if (k>=nspix_buffer) return;
+	if (sp_params[k].valid == 0) return;
+    int s = sm_pairs[2*k+1];
+    if(s<0) return;
+	if (sp_params[s].valid == 0) return;
+    // if(s<=0) return;
+
+    // -- unpack --
+    float count_s = __ldg(&sp_params[s].count);
+    float count_k = __ldg(&sp_params[k].count);
+    float count_f = count_s + count_k;
+    if((count_f<1)||(count_k<1)||(count_s<1)) return;
+    float lprob_k = __ldg(&sm_helper[k].numerator_app);
+    float lprob_s = __ldg(&sm_helper[s].numerator_app);
+    float lprob_f = __ldg(&sm_helper[k].numerator_f_app);
+
+    // -- compute hastings --
+    double alpha = exp(log_alpha);
+    // double log_const = lgammaf(count_f) + lgammaf(alpha) \
+    //   + lgammaf(alpha / 2 + count_k) + lgammaf(alpha / 2 + count_s)\
+    //   - lgammaf(count_s) - lgammaf(count_k) - lgammaf(alpha+count_f)-2*lgamma(alpha/2);
+    double log_const = 0;
+    double hastings = log_const + lprob_f - lprob_k - lprob_s - log_alpha;
+    // double hastings = lprob_f - lprob_k - lprob_s - log_alpha;
+    sm_helper[k].hasting = hastings;
+    // sm_helper[k].merge = hastings > 0;
+    // sm_helper[s].merge = hastings > 0;
+
+    // printf("info[%d,%d] %f,%f,%f|%lf,%f,%f,%f,%lf|\n",k,s,
+    //        count_s,count_k,count_f,
+    //        log_const,lprob_f,lprob_k,lprob_s,hastings);
+
+    // -- Check hastings and update --
+    if(hastings > 0){
+
+      // printf("info[%d,%d] %f,%f,%f|%lf,%f,%f,%f,%lf|\n",k,s,
+      //        count_s,count_k,count_f,
+      //        log_const,lprob_f,lprob_k,lprob_s,hastings);
+
+      // printf("info[%d,%d] %lf,%f,%f,%f\n",k,s,log_const,lprob_f,lprob_k,lprob_s);
+      int curr_max = atomicMax(&sm_pairs[2*s],k);
+      if( curr_max == -1){
+        atomicAdd(nmerges,1);
+        sm_helper[k].merge = true;
+      }else{
+        sm_pairs[2*s] = curr_max;
+      }
+    }
+    return;
+}
+
+
+
 
 __global__
 void split_marginal_likelihood(spix_params* sp_params,
                                spix_helper_sm* sm_helper,
+                               const int sp_size,
                                const int npix, const int nbatch,
                                const int width, const int nspix_buffer,
-                               float sigma2_app, int max_nspix){
+                               float sigma2_app, float sigma2_size, int max_nspix){
 
     /********************
            Init
@@ -324,17 +510,17 @@ void split_marginal_likelihood(spix_params* sp_params,
    
     **********************/
 
-    float3 mu_pr_k = sp_params[k].prior_mu_app;
-    float3 mu_pr_f = mu_pr_k;
-    sp_params[s].prior_mu_app.x = 0;
-    sp_params[s].prior_mu_app.y = 0;
-    sp_params[s].prior_mu_app.z = 0;
-    float3 mu_pr_s = sp_params[s].prior_mu_app;
+    // float3 mu_pr_k = sp_params[k].prior_mu_app;
+    // float3 mu_pr_f = mu_pr_k;
+    // sp_params[s].prior_mu_app.x = 0;
+    // sp_params[s].prior_mu_app.y = 0;
+    // sp_params[s].prior_mu_app.z = 0;
+    // float3 mu_pr_s = sp_params[s].prior_mu_app;
 
-    sp_params[s].prior_mu_app_count = 1;
-    int prior_mu_app_count_s = sp_params[s].prior_mu_app_count;
-    int prior_mu_app_count_k = sp_params[k].prior_mu_app_count;
-    int prior_mu_app_count_f = prior_mu_app_count_k;
+    // sp_params[s].prior_mu_app_count = 1;
+    // int prior_mu_app_count_s = sp_params[s].prior_mu_app_count;
+    // int prior_mu_app_count_k = sp_params[k].prior_mu_app_count;
+    // int prior_mu_app_count_f = prior_mu_app_count_k;
 
     double3 sum_s = sm_helper[s].sum_app;
     double3 sum_k = sm_helper[k].sum_app;
@@ -343,16 +529,33 @@ void split_marginal_likelihood(spix_params* sp_params,
     sum_f.y = sum_s.y + sum_k.y;
     sum_f.z = sum_s.z + sum_k.z;
 
-    double3 sq_sum_s = sm_helper[s].sum_app;
-    double3 sq_sum_k = sm_helper[k].sum_app;
+    double3 sq_sum_s = sm_helper[s].sq_sum_app;
+    double3 sq_sum_k = sm_helper[k].sq_sum_app;
     double3 sq_sum_f;
     sq_sum_f.x = sq_sum_s.x + sq_sum_k.x;
     sq_sum_f.y = sq_sum_s.y + sq_sum_k.y;
     sq_sum_f.z = sq_sum_s.z + sq_sum_k.z;
 
-    double lprob_k = marginal_likelihood_app(sum_k,sq_sum_k,count_k,sigma2_app);
-    double lprob_s = marginal_likelihood_app(sum_s,sq_sum_s,count_s,sigma2_app);
-    double lprob_f = marginal_likelihood_app(sum_f,sq_sum_f,count_f,sigma2_app);
+    // -- marginal likelihood --
+    // double lprob_k = marginal_likelihood_app(sum_k,sq_sum_k,count_k,sigma2_app);
+    // double lprob_s = marginal_likelihood_app(sum_s,sq_sum_s,count_s,sigma2_app);
+    // double lprob_f = marginal_likelihood_app(sum_f,sq_sum_f,count_f,sigma2_app);
+    double sigma2_prior_var = 1.;
+    double lprob_k = appearance_variance(sum_k,sq_sum_k,count_k,sigma2_prior_var);
+    double lprob_s = appearance_variance(sum_s,sq_sum_s,count_s,sigma2_prior_var);
+    double lprob_f = appearance_variance(sum_f,sq_sum_f,count_f,sigma2_prior_var);
+
+
+    // -- include size term --
+    // int sp_size2 = sp_size*sp_size;
+    // lprob_k += size_likelihood(count_k,sp_size,sigma2_size);
+    // lprob_s += size_likelihood(count_s,sp_size,sigma2_size);
+    // lprob_f += size_likelihood(count_f,sp_size,sigma2_size);
+
+    // -- include size term --
+    lprob_k += size_beta_likelihood(count_k,sp_size,sigma2_size,npix);
+    lprob_s += size_beta_likelihood(count_s,sp_size,sigma2_size,npix);
+    lprob_f += size_beta_likelihood(count_f,sp_size,sigma2_size,npix);
 
     // -- write --
     sm_helper[k].numerator_app = lprob_k;
@@ -360,14 +563,50 @@ void split_marginal_likelihood(spix_params* sp_params,
     sm_helper[k].numerator_f_app = lprob_f;
 
 
+
+
+}
+
+__device__ double size_likelihood(int curr_count, int tgt_count, double sigma2) {
+  double delta = 1.*(sqrt(1.*curr_count) - tgt_count);
+  double lprob = - log(2*M_PI*sigma2)/2. - delta*delta/(2*sigma2);
+  return lprob;
+}
+
+__device__ double size_beta_likelihood(int _count, int _tgt_count,
+                                       double alpha, const int _npix) {
+  double count = 1.*_count;
+  double npix = 1.*_npix;
+  double tgt_count = 1*_tgt_count*_tgt_count;
+  double beta = alpha*(npix-tgt_count)/(tgt_count+1e-10); // just in case...
+  // double beta = alpha;
+  double lprob = (alpha-1)*log(count/npix) + (beta-1)*log(1-count/npix);
+  // lprob += lgammaf(npix*alpha/tgt_count) - lgammaf(alpha) - lgammaf(beta);
+  lprob += lgamma(alpha+beta) - lgamma(alpha) - lgamma(beta);
+  return lprob;
+}
+
+__device__ double appearance_variance(double3 sum_obs,double3 sq_sum_obs,
+                                      int _num_obs, double sigma2) {
+  double num_obs = 1.*_num_obs;
+  double sample_var = (sq_sum_obs.x  - sum_obs.x*sum_obs.x);
+  sample_var += (sq_sum_obs.y  - sum_obs.y*sum_obs.y);
+  sample_var += (sq_sum_obs.z  - sum_obs.z*sum_obs.z);
+  sample_var = sample_var/(3.*num_obs); // estimate sigma2
+  // sample_var = sample_var/3.; // estimate sigma2
+  double lprob = -sample_var/sigma2;
+  return lprob;
 }
 
 __device__ double marginal_likelihood_app(double3 sum_obs,double3 sq_sum_obs,
                                           int _num_obs, double sigma2) {
   // ref: from https://www.cs.ubc.ca/~murphyk/Papers/bayesGauss.pdf
   // Equation 55 with modifications from Eq 57 where kappa = 1
-  double tau2 = 2; // ~= mean has 95% prob to be within (-1,1)
+  // -- silly; we should just replace forumla with tau2 -> infty limit --
+  double tau2 = 1000.; // ~= mean has 95% prob to be within (-1,1)
   float num_obs = (float)_num_obs;
+
+  // float3 mu_prior;
 
   double lprob_num = 1/2. * log(sigma2) - num_obs/2.0 * log(2*M_PI*sigma2) \
     - log(num_obs * tau2 + sigma2)/2.;
@@ -417,7 +656,7 @@ __global__  void calc_merge_candidate(int* seg, bool* border, int* sm_pairs,
         
     // If the nbr is different from the central pixel and is not out-of-bounds,
     // then it is a border pixel.
-    if (W>0 && C!=W){
+    if (W>=0 && C!=W){
       atomicMax(&sm_pairs[C*2+1],W);
     }
 
@@ -479,7 +718,8 @@ __global__ void init_split(const bool* border, int* seg_gpu,
 
     // todo: add batch -- no nftrs
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
-    *max_sp = max_nspix+1;
+    // *max_sp = max_nspix+1;
+    *max_sp = max_nspix; // MAX number -> MAX label
 	if (k>=nspix_buffer) return;
 	if (sp_params[k].valid == 0) return;
     int x;
@@ -534,9 +774,19 @@ __global__ void sum_by_label_merge(const float* img, const int* seg_gpu,
     float a = __ldg(& img[3*t+1]);
     float b = __ldg(& img[3*t+2]);
 	//atomicAdd(&sp_params[k].count, 1); //TODO: Time it
+	// atomicAdd(&sm_helper[k].count, 1); 
 	atomicAdd(&sm_helper[k].sq_sum_app.x, l*l);
 	atomicAdd(&sm_helper[k].sq_sum_app.y, a*a);
 	atomicAdd(&sm_helper[k].sq_sum_app.z,b*b);
+    atomicAdd(&sm_helper[k].sum_app.x, l);
+	atomicAdd(&sm_helper[k].sum_app.y, a);
+	atomicAdd(&sm_helper[k].sum_app.z, b);
+    
+	int x = t % width;
+	int y = t / width; 
+    atomicAdd(&sm_helper[k].sum_shape.x, x);
+    atomicAdd(&sm_helper[k].sum_shape.y, y);
+
 }
 
 __global__ void sum_by_label_split(const float* img, const int* seg,
@@ -570,370 +820,8 @@ __global__ void sum_by_label_split(const float* img, const int* seg,
     return;
 }
 
-__global__ void calc_bn_merge(int* seg, int* sm_pairs,
-                              spix_params* sp_params,
-                              spix_helper* sp_helper,
-                              spix_helper_sm* sm_helper,
-                              const int npix, const int nbatch,
-                              const int width, const int nspix_buffer, float b_0) {
 
-    // todo -- add nbatch
-	// getting the index of the pixel
-	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
-	if (k>=nspix_buffer) return;
-	if (sp_params[k].valid == 0) return;
 
-    // TODO: check if there is no neigh
-    //get the label of neigh
-    int f = sm_pairs[2*k+1];
-	//if (sp_params[f].valid == 0) return;
-    //if (f<=0) return;
-
-    float count_f = __ldg(&sp_params[f].count);
-    float count_k = __ldg(&sp_params[k].count);
-
-    // float squares_f_x = __ldg(&sm_helper[f].sq_sum_app.x);
-    // float squares_f_y = __ldg(&sm_helper[f].sq_sum_app.y);
-    // float squares_f_z = __ldg(&sm_helper[f].sq_sum_app.z);
-   
-    // float squares_k_x = __ldg(&sm_helper[k].sq_sum_app.x);
-    // float squares_k_y = __ldg(&sm_helper[k].sq_sum_app.y);
-    // float squares_k_z = __ldg(&sm_helper[k].sq_sum_app.z);
-   
-    float squares_f_x = __ldg(&sp_helper[f].sq_sum_app.x);
-    float squares_f_y = __ldg(&sp_helper[f].sq_sum_app.y);
-    float squares_f_z = __ldg(&sp_helper[f].sq_sum_app.z);
-   
-    float squares_k_x = __ldg(&sp_helper[k].sq_sum_app.x);
-    float squares_k_y = __ldg(&sp_helper[k].sq_sum_app.y);
-    float squares_k_z = __ldg(&sp_helper[k].sq_sum_app.z);
-
-    float mu_f_x = __ldg(&sp_helper[f].sum_app.x);
-    float mu_f_y = __ldg(&sp_helper[f].sum_app.y);
-    float mu_f_z = __ldg(&sp_helper[f].sum_app.z);
-   
-    float mu_k_x = __ldg(&sp_helper[k].sum_app.x);
-    float mu_k_y = __ldg(&sp_helper[k].sum_app.y);
-    float mu_k_z = __ldg(&sp_helper[k].sum_app.z);
-    //if ((k==105)||(k==42)) printf("Merger:  %d, %d ,sq_x: %f , sq_y: %f , sq_z: %f\n", k, f,squares_k_x, squares_k_y, squares_k_z) ;   
-
-
-    int count_fk = count_f + count_k;
-    sm_helper[k].count_f = count_fk;
-    sm_helper[k].b_n_app.x = b_0 + 0.5 * ((squares_k_x) -( mu_k_x*mu_k_x/count_k));
-    sm_helper[k].b_n_f_app.x = b_0 + 0.5 *( (squares_k_x+squares_f_x) -
-                                        ( (mu_f_x + mu_k_x ) * (mu_f_x + mu_k_x ) /
-                                          (count_fk)));
-    sm_helper[k].b_n_app.y = b_0 + 0.5 * ((squares_k_y) -( mu_k_y*mu_k_y/count_k));
-    sm_helper[k].b_n_f_app.y = b_0 + 0.5 *( (squares_k_y+squares_f_y) -
-                                ( (mu_f_y + mu_k_y ) * (mu_f_y + mu_k_y ) /
-                                (count_fk)));
-    sm_helper[k].b_n_app.z = b_0 + 0.5 * ((squares_k_z) -( mu_k_z*mu_k_z/count_k));
-    sm_helper[k].b_n_f_app.z = b_0 + 0.5 *( (squares_k_z+squares_f_z) -
-                                        ( (mu_f_z + mu_k_z ) * (mu_f_z + mu_k_z ) /
-                                          (count_fk)));
-
-    if(  sm_helper[k].b_n_app.x<0)   sm_helper[k].b_n_app.x = 0.1;
-    if(  sm_helper[k].b_n_app.y<0)   sm_helper[k].b_n_app.y = 0.1;
-    if(  sm_helper[k].b_n_app.z<0)   sm_helper[k].b_n_app.z = 0.1;
-
-    if(  sm_helper[k].b_n_f_app.x<0)   sm_helper[k].b_n_f_app.x = 0.1;
-    if(  sm_helper[k].b_n_f_app.y<0)   sm_helper[k].b_n_f_app.y = 0.1;
-    if(  sm_helper[k].b_n_f_app.z<0)   sm_helper[k].b_n_f_app.z = 0.1;
-
-}
-
-__global__ void calc_bn_split(int* sm_pairs,
-                              spix_params* sp_params,
-                              spix_helper* sp_helper,
-                              spix_helper_sm* sm_helper,
-                              const int npix, const int nbatch,
-                              const int width, const int nspix_buffer,
-                              float b_0, int max_nspix) {
-  // todo; -- add nbatch
-	// getting the index of the pixel
-	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
-	if (k>=nspix_buffer) return;
-	if (sp_params[k].valid == 0) return;
-    // TODO: check if there is no neigh
-    //get the label of neigh
-    int s = k + max_nspix;
-	if (s>=nspix_buffer) return;
-    float count_f = __ldg(&sp_params[k].count);
-    float count_k = __ldg(&sm_helper[k].count);
-    float count_s = __ldg(&sm_helper[s].count);
-    if((count_f<1)||( count_k<1)||(count_s<1)) return;
-
-    float squares_s_x = __ldg(&sm_helper[s].sq_sum_app.x);
-    float squares_s_y = __ldg(&sm_helper[s].sq_sum_app.y);
-    float squares_s_z = __ldg(&sm_helper[s].sq_sum_app.z);
-   
-    float squares_k_x = __ldg(&sm_helper[k].sq_sum_app.x);
-    float squares_k_y = __ldg(&sm_helper[k].sq_sum_app.y);
-    float squares_k_z = __ldg(&sm_helper[k].sq_sum_app.z);
-   
-    float mu_s_x = __ldg(&sm_helper[s].sum_app.x);
-    float mu_s_y = __ldg(&sm_helper[s].sum_app.y);
-    float mu_s_z = __ldg(&sm_helper[s].sum_app.z);
-
-    float mu_k_x = __ldg(&sm_helper[k].sum_app.x);
-    float mu_k_y = __ldg(&sm_helper[k].sum_app.y);
-    float mu_k_z = __ldg(&sm_helper[k].sum_app.z);
-
-    // -- this is correct; its the "helper" associated with "sp_params" --
-    float mu_f_x =__ldg(&sp_helper[k].sum_app.x);
-    float mu_f_y = __ldg(&sp_helper[k].sum_app.y);
-    float mu_f_z = __ldg(&sp_helper[k].sum_app.z);
-
-    // -- update b_n = b_0 + ... in Supp. --
-    sm_helper[k].b_n_app.x = b_0 + 0.5 * ((squares_k_x) - ( mu_k_x*mu_k_x/ count_k));
-    sm_helper[k].b_n_app.y = b_0 + 0.5 * ((squares_k_y) - ( mu_k_y*mu_k_y/ count_k));
-    sm_helper[k].b_n_app.z = b_0 + 0.5 * ((squares_k_z) - ( mu_k_z*mu_k_z/ count_k));
-    sm_helper[s].b_n_app.x = b_0 + 0.5 * ((squares_s_x) - ( mu_s_x*mu_s_x/ count_s));
-    sm_helper[s].b_n_app.y = b_0 + 0.5 * ((squares_s_y) - ( mu_s_y*mu_s_y/ count_s));
-    sm_helper[s].b_n_app.z = b_0 + 0.5 * ((squares_s_z) - ( mu_s_z*mu_s_z/ count_s));
-    sm_helper[k].b_n_f_app.x=b_0+0.5*((squares_k_x+squares_s_x)-(mu_f_x*mu_f_x/count_f)); 
-    sm_helper[k].b_n_f_app.y =b_0+0.5*((squares_k_y+squares_s_y)-(mu_f_y*mu_f_y/count_f)); 
-    sm_helper[k].b_n_f_app.z =b_0+0.5 * ((squares_k_z+squares_s_z) -
-                                ( mu_f_z*mu_f_z/ count_f));
-
-}
-
-
-
-
-__global__
-void split_likelihood(const float* img, int* sm_pairs,
-                      spix_params* sp_params,
-                      spix_helper* sp_helper,
-                      spix_helper_sm* sm_helper,
-                      const int npix, const int nbatch,
-                      const int width, const int nftrs,
-                      const int nspix_buffer,
-                      float a_0, float b_0, int max_nspix) {
-  // todo -- add nbatch
-	// getting the index of the pixel
-	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
-    if (k>=nspix_buffer) return;
-	if (sp_params[k].valid == 0) return;
-
-
-    int s = k + max_nspix;
-    if (s>=nspix_buffer) return;
-    float count_f = __ldg(&sp_params[k].count);
-    float count_k = __ldg(&sm_helper[k].count);
-    float count_s = __ldg(&sm_helper[s].count);
-
-    if((count_f<1)||( count_k<1)||(count_s<1)) return;
-    if (count_f!=count_k+count_s) return;
-    // TODO: check if there is no neigh
-    // TODO: check if num is the same
-	//get the label
-    //a_0 = 1100*(count_f);
-
-    float a_n_k = a_0+float(count_k)/2;
-    float a_n_s = a_0+float(count_s)/2;
-    float a_n_f = a_0+float(count_f)/2;
-
-    float v_n_k = 1/float(count_k);
-    float v_n_s = 1/float(count_s);
-    float v_n_f = 1/float(count_f);
-
-    float b_n_k_x = __ldg(&sm_helper[k].b_n_app.x);
-    float b_n_k_y = __ldg(&sm_helper[k].b_n_app.y);
-    float b_n_k_z = __ldg(&sm_helper[k].b_n_app.z);
-
-    float b_n_s_x = __ldg(&sm_helper[s].b_n_app.x);
-    float b_n_s_y = __ldg(&sm_helper[s].b_n_app.y);
-    float b_n_s_z = __ldg(&sm_helper[s].b_n_app.z);
-
-    float b_n_f_x = __ldg(&sm_helper[k].b_n_f_app.x);
-    float b_n_f_y = __ldg(&sm_helper[k].b_n_f_app.y);
-    float b_n_f_z = __ldg(&sm_helper[k].b_n_f_app.z);
-
-    // why use this as a_0? This seems wrong.
-    a_0 = a_n_k;
-    // sm_helper[k].numerator.x = a_0 * __logf(b_0) + lgammaf(a_n_k)+ 0.5*__logf(v_n_k);
-    //sm_helper[k].numerator_app=a_0 * __logf(b_0) + lgammaf(a_n_k)+ 0.5*__logf(count_k);
-    sm_helper[k].numerator_app = a_0 * __logf(b_0) + lgammaf(a_n_k)+ 0.5*__logf(v_n_k);
-
-    sm_helper[k].denominator.x = a_n_k * __logf (b_n_k_x) + \
-      0.5 * count_k * __logf (M_PI) + count_k * __logf (2) + lgammaf(a_0);
-
-    sm_helper[k].denominator.y = a_n_k * __logf (b_n_k_y) + \
-      0.5 * count_k * __logf (M_PI) + count_k * __logf (2) + lgammaf(a_0);
-
-    sm_helper[k].denominator.z = a_n_k * __logf (b_n_k_z) + \
-      0.5 * count_k * __logf (M_PI) + count_k * __logf (2) + lgammaf(a_0);
-
-
-    a_0 = a_n_s;
-    // sm_helper[s].numerator.x = a_0 * __logf(b_0) + lgammaf(a_n_s)+0.5*__logf(v_n_s);
-    // sm_helper[s].numerator_app=a_0 * __logf(b_0) + lgammaf(a_n_s)+0.5*__logf(count_s);
-    sm_helper[s].numerator_app=a_0 * __logf(b_0) + lgammaf(a_n_s)+0.5*__logf(v_n_s);
-    sm_helper[s].denominator.x = a_n_s * __logf (b_n_s_x) + \
-      0.5 * count_s * __logf (M_PI) + count_s * __logf (2) + lgammaf(a_0);
-
-    sm_helper[s].denominator.y = a_n_s * __logf (b_n_s_y) + \
-      0.5 * count_s * __logf (M_PI) + count_s * __logf (2) + lgammaf(a_0);
-
-    sm_helper[s].denominator.z = a_n_s * __logf (b_n_s_z) + \
-      0.5 * count_s * __logf (M_PI) + count_s * __logf (2) + lgammaf(a_0);      
-
-
-    a_0 =a_n_f;
-    // sm_helper[k].numerator_f_app.x =a_0*__logf(b_0)+lgammaf(a_n_f)+0.5*__logf(v_n_f);
-    // sm_helper[k].numerator_f_app =a_0*__logf(b_0)+lgammaf(a_n_f)+0.5*__logf(count_f);
-    sm_helper[s].numerator_f_app=a_0 * __logf(b_0) + lgammaf(a_n_f)+0.5*__logf(v_n_f);
-    sm_helper[k].denominator_f.x = a_n_f * __logf (b_n_f_x) + \
-      0.5 * count_f * __logf (M_PI) + count_f * __logf (2) + lgammaf(a_0);
-
-    sm_helper[k].denominator_f.y = a_n_f * __logf (b_n_f_y) + \
-      0.5 * count_f * __logf (M_PI) + count_f * __logf (2) + lgammaf(a_0);
-
-    sm_helper[k].denominator_f.z = a_n_f * __logf (b_n_f_z) + \
-      0.5 * count_f * __logf (M_PI) + count_f * __logf (2) + lgammaf(a_0);        
-
-}   
-
-
-__global__
-void merge_likelihood(const float* img, int* sm_pairs,
-                      spix_params* sp_params,
-                      spix_helper* sp_helper,
-                      spix_helper_sm* sm_helper,
-                      const int npix, const int nbatch,
-                      const int width, const int nftrs,
-                      const int nspix_buffer,
-                      float a_0, float b_0) {
-
-	// -- getting the index of the pixel --
-	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
-    if (k>=nspix_buffer) return;
-	if (sp_params[k].valid == 0) return;
-
-    // -- counts --
-    float count_k = __ldg(&sp_params[k].count);
-    float count_f = __ldg(&sm_helper[k].count_f);
-
-    // -- counts --
-    float a_n = a_0 + float(count_k) / 2;
-    float a_n_f = a_0+ float(count_f) / 2;
-    // float v_n = 1 / float(num_pixels_in_sp);
-    float v_n = 1/float(count_k);
-    float v_n_f = 1/float(count_f);
-
-    // -- update numer/denom --
-    a_0 = a_n;
-    sm_helper[k].numerator_app = a_0 * __logf(b_0) + lgammaf(a_n)+0.5*__logf(v_n);
-    sm_helper[k].denominator.x = a_n* __logf ( __ldg(&sm_helper[k].b_n_app.x)) + 0.5 * count_k * __logf (M_PI) + count_k * __logf (2) + lgammaf(a_0);
-    sm_helper[k].denominator.y = a_n* __logf ( __ldg(&sm_helper[k].b_n_app.y)) + 0.5 * count_k * __logf (M_PI) + count_k * __logf (2) + lgamma(a_0);
-    sm_helper[k].denominator.z = a_n* __logf(__ldg(&sm_helper[k].b_n_app.z)) + 0.5 * count_k * __logf (M_PI) + count_k * __logf (2) + lgammaf(a_0);
-    
-    // -- update numer/denom --
-    a_0 = a_n_f;
-    sm_helper[k].numerator_f_app = a_0 * __logf (b_0) + lgammaf(a_n_f)+0.5*__logf(v_n_f);
-    sm_helper[k].denominator_f.x = a_n_f* __logf (__ldg(&sm_helper[k].b_n_f_app.x)) + 0.5 * count_f * __logf (M_PI) + count_f * __logf (2) + lgammaf(a_0);
-    sm_helper[k].denominator_f.y = a_n_f* __logf (__ldg(&sm_helper[k].b_n_f_app.y)) + 0.5 * count_f * __logf (M_PI) + count_f * __logf (2) + lgammaf(a_0);
-    sm_helper[k].denominator_f.z = a_n_f* __logf (__ldg(&sm_helper[k].b_n_f_app.z)) + 0.5 * count_f* __logf (M_PI) + count_f * __logf (2) + lgammaf(a_0);         
-
-}   
-
-
-__global__ void calc_hasting_ratio(const float* img, int* sm_pairs,
-                                   spix_params* sp_params,
-                                   spix_helper* sp_helper,
-                                   spix_helper_sm* sm_helper,
-                                   const int npix, const int nbatch, const int width,
-                                   const int nftrs, const int nspix_buffer,
-                                   float log_alpha_hasting_ratio) {
-
-	// getting the index of the pixel
-	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
-
-	if (k>=nspix_buffer) return;
-	if (sp_params[k].valid == 0) return;
-
-    int f = sm_pairs[2*k+1];
-	if (sp_params[f].valid == 0) return;
-    if(f<=0) return;
-
-    float count_k = __ldg(&sp_params[k].count);
-    float count_f = __ldg(&sm_helper[k].count_f);
-    
-    if ((count_k<1)||(count_f<1)) return;
-
-    sm_helper[k].merge = false;
-    float num_k = __ldg(&sm_helper[k].numerator_app);
-
-    float total_marginal_1 = (num_k - __ldg(&sm_helper[k].denominator.x)) + 
-      (num_k - __ldg(&sm_helper[k].denominator.y)) +
-      (num_k - __ldg(&sm_helper[k].denominator.z)); 
-
-    float num_f = __ldg(&sm_helper[f].numerator_app);
-
-    float total_marginal_2 = (num_f - __ldg(&sm_helper[f].denominator.x)) + 
-      (num_f - __ldg(&sm_helper[f].denominator.y)) +
-      (num_f - __ldg(&sm_helper[f].denominator.z));
-
-    float num_kf = __ldg(&sm_helper[k].numerator_f_app);
-
-    float total_marginal_f = (num_kf - __ldg(&sm_helper[k].denominator_f.x)) +   
-      (num_kf - __ldg(&sm_helper[k].denominator_f.y)) + 
-      (num_kf - __ldg(&sm_helper[k].denominator_f.z));
-
-    
-    double alpha_hasting_ratio = exp(log_alpha_hasting_ratio);
-    float log_nominator = lgammaf(count_f) + total_marginal_f +
-      lgammaf(alpha_hasting_ratio) + lgammaf(alpha_hasting_ratio / 2 + count_k) +
-      lgammaf(alpha_hasting_ratio / 2 + count_f -  count_k);
-
-   float log_denominator = __logf(alpha_hasting_ratio) + lgammaf(count_k) +
-     lgammaf(count_f -  count_k) + total_marginal_1 + 
-     total_marginal_2 + lgammaf(alpha_hasting_ratio + count_f) +
-     lgammaf(alpha_hasting_ratio / 2) + lgammaf(alpha_hasting_ratio / 2);
-
-    log_denominator = __logf(alpha_hasting_ratio) + total_marginal_1 + total_marginal_2;
-    log_nominator = total_marginal_f ;
-
-    sm_helper[k].hasting = log_nominator - log_denominator;
-
-    return;
-}
-
-
-__global__ void calc_hasting_ratio2(const float* img, int* sm_pairs,
-                                    spix_params* sp_params,
-                                    spix_helper* sp_helper,
-                                    spix_helper_sm* sm_helper,
-                                    const int npix, const int nbatch, const int width,
-                                    const int nftrs, const int nspix_buffer,
-                                    float alpha_hasting_ratio) {
-  // todo -- add nbatch and sftrs
-	// getting the index of the pixel
-	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
-
-	if (k>=nspix_buffer) return;
-	if (sp_params[k].valid == 0) return;
-
-    int f = sm_pairs[2*k+1];
-	if (sp_params[f].valid == 0) return;
-    if(f<=0) return;
-    if((sm_helper[k].hasting ) > -2)
-    // if((sm_helper[k].hasting ) > 0)
-    {
-      //printf("Want to merge k: %d, f: %d, splitmerge k %d, splitmerge  f %d, %d\n", k, f, sm_pairs[2*k], sm_pairs[2*f], sm_pairs[2*f+1] );
-      int curr_max = atomicMax(&sm_pairs[2*f],k);
-      if( curr_max == 0){
-        sm_helper[k].merge = true;
-      }else{
-        sm_pairs[2*f] = curr_max;
-      }
-    }
-         
-    return;
-
-}
 
 
 __global__
@@ -944,8 +832,8 @@ void split_hastings_ratio(const float* img, int* sm_pairs,
                           const int npix, const int nbatch,
                           const int width, const int nftrs,
                           const int nspix_buffer,
-                          float log_alpha_hasting_ratio,
-                          int max_nspix, int* max_sp ) {
+                          float log_alpha,
+                          int max_nspix, int* max_sp) {
   // todo -- add nbatch and nftrs
 	// getting the index of the pixel
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
@@ -958,78 +846,57 @@ void split_hastings_ratio(const float* img, int* sm_pairs,
     float count_f = __ldg(&sp_params[k].count);
     float count_k = __ldg(&sm_helper[k].count);
     float count_s = __ldg(&sm_helper[s].count);
-
     if((count_f<1)||(count_k<1)||(count_s<1)) return;
-
-    // float num_k = __ldg(&sm_helper[k].numerator_app);
-    // float num_s = __ldg(&sm_helper[s].numerator_app);
-    // float num_f = __ldg(&sm_helper[k].numerator_f_app);
-    
-    // float total_marginal_k = (num_k - __ldg(&sm_helper[k].denominator.x)) +  
-    //                      (num_k - __ldg(&sm_helper[k].denominator.y)) + 
-    //                      (num_k - __ldg(&sm_helper[k].denominator.z)); 
-
-    // float total_marginal_s = (num_s - __ldg(&sm_helper[s].denominator.x)) +  
-    //                      (num_s - __ldg(&sm_helper[s].denominator.y)) + 
-    //                      (num_s - __ldg(&sm_helper[s].denominator.z)); 
-
-    // float total_marginal_f = (num_f - __ldg(&sm_helper[k].denominator_f.x)) +  
-    //                      (num_f - __ldg(&sm_helper[k].denominator_f.y)) + 
-    //                      (num_f - __ldg(&sm_helper[k].denominator_f.z)); 
-
- 
-     //printf("hasating:x k: %d, count: %f, den: %f, %f, %f, b_n: %f, %f, %f, num: %f \n",k, count_k,  sm_helper[k].denominator.x, sm_helper[k].denominator.y,  sm_helper[k].denominator.z,   __logf (sm_helper[k].b_n_app.x) ,  __logf (sm_helper[k].b_n_app.y),   __logf (sm_helper[k].b_n_app.z), sm_helper[k].numerator.x);
-
-    // float log_nominator = __logf(alpha_hasting_ratio)+ lgammaf(count_k)\
-    //   + total_marginal_k + lgammaf(count_s) + total_marginal_s;
-    // log_nominator = total_marginal_k + total_marginal_s;
-    // float log_denominator = lgammaf(count_f) + total_marginal_f;
-    // log_denominator =total_marginal_f;
-    // sm_helper[k].hasting = log_nominator - log_denominator;
-
 
     float lprob_k = __ldg(&sm_helper[k].numerator_app);
     float lprob_s = __ldg(&sm_helper[s].numerator_app);
     float lprob_f = __ldg(&sm_helper[k].numerator_f_app);
 
-    float log_nominator = log_alpha_hasting_ratio\
-      + lgammaf(count_k) +  lgammaf(count_s) + lprob_k + lprob_s;
-    float log_denominator = lgammaf(count_f) + lprob_f;
-    sm_helper[k].hasting = log_nominator - log_denominator;
+    // -- compute hastings [old] --
+    // float log_nominator = log_alpha\
+    //   + lgammaf(count_k) +  lgammaf(count_s) + lprob_k + lprob_s;
+    // float log_denominator = lgammaf(count_f) + lprob_f;
+    // sm_helper[k].hasting = log_nominator - log_denominator;
 
-    // ".merge" is merely a bool variable; nothing about merging here. only splitting
-    // sm_helper[k].merge = (sm_helper[k].hasting > -2); // why "-2"?
-    // sm_helper[s].merge = (sm_helper[k].hasting > -2);
-
-    sm_helper[k].merge = (sm_helper[k].hasting > 0); // why "-2"?
-    sm_helper[s].merge = (sm_helper[k].hasting > 0);
-
+    // -- compute hastings --
+    double log_const = lgammaf(count_k) +  lgammaf(count_s) - lgammaf(count_f);
+    // double log_const = 0;
+    // double hastings = log_const + log_alpha + lprob_k + lprob_s - lprob_f;
+    double hastings = log_alpha + lprob_k + lprob_s - lprob_f;
+    sm_helper[k].hasting = hastings;
+    sm_helper[k].merge = (sm_helper[k].hasting > -2);
+    sm_helper[s].merge = (sm_helper[k].hasting > -2);
+    // printf("info[%d,%d] %lf,%f,%f,%f,%lf\n",
+    //        k,s,log_const,lprob_f,lprob_k,lprob_s,hastings);
 
     if((sm_helper[k].merge)) // split step
       {
 
+      // printf("info[%d,%d] %lf,%f,%f,%f\n",k,s,log_const,lprob_f,lprob_k,lprob_s);
         s = atomicAdd(max_sp,1) +1; // ? can't multiple splits happen at one time? yes :D
         sm_pairs[2*k] = s;
         // -- update shape prior --
 
-        int prior_count = sp_params[k].prior_count/2;
+        float prior_count = max(sp_params[k].prior_count/2.0,8.0);
         sp_params[k].prior_count = prior_count;
 
         // sp_params[k].prior_sigma_shape.x/=2;
         // sp_params[k].prior_sigma_shape.y/=2;
         // sp_params[k].prior_sigma_shape.z/=2;
 
-        sp_params[k].prior_sigma_shape.x = prior_count*prior_count;
-        sp_params[k].prior_sigma_shape.y = 0;
-        sp_params[k].prior_sigma_shape.z = prior_count*prior_count;
+        sp_params[s].prior_sigma_shape.x = prior_count;
+        sp_params[s].prior_sigma_shape.y = 0;
+        sp_params[s].prior_sigma_shape.z = prior_count;
 
+        sp_params[k].prior_sigma_shape.x = prior_count;
+        sp_params[k].prior_sigma_shape.y = 0;
+        sp_params[k].prior_sigma_shape.z = prior_count;
         
         double2 prior_mu_shape;
         prior_mu_shape.x = 0;
         prior_mu_shape.y = 0;
         sp_params[s].prior_mu_shape = prior_mu_shape;
         sp_params[s].prior_mu_shape_count = 1;
-
         sp_params[s].prior_count =  sp_params[k].prior_count; 
         sp_params[s].prior_sigma_shape = sp_params[k].prior_sigma_shape;
         
@@ -1048,8 +915,9 @@ __global__ void merge_sp(int* seg, bool* border, int* sm_pairs,
     int k = seg[idx]; // center 
     //if (sp_params[k].valid == 0) return;
     int f = sm_pairs[2*k+1];
-    if(sm_helper[k].remove)
-    seg[idx] =  f;
+    if(sm_helper[k].remove){
+      seg[idx] =  f;
+    }
 
     return;  
       
@@ -1066,14 +934,17 @@ __global__ void split_sp(int* seg, int* sm_seg1, int* sm_pairs,
     if (idx>=npix) return; 
     int k = seg[idx]; // center 
     int k2 = k + max_nspix;
+    if (sp_params[k].valid == 0){ return; }
     if ((sm_helper[k].merge == false)||sm_helper[k2].merge == false){
       return;
     }
 
-    if(sm_seg1[idx]==k2) seg[idx] = sm_pairs[2*k];
+    int s = sm_pairs[2*k];
+    if (s < 0){ return; }
+    if(sm_seg1[idx]==k2) seg[idx] = s;
     //seg[idx] = sm_seg1[idx];
     //printf("Add the following: %d - %d'\n", k,sm_pairs[2*k]);
-    sp_params[sm_pairs[2*k]].valid = 1;
+    sp_params[s].valid = 1;
     // sp_params[sm_pairs[2*k]].prior_count = sp_params[sm_pairs[2*k]].prior_count;
     // sp_params[k].prior_sigma_shape.x = count*count;
     // sp_params[k].prior_sigma_shape.z = count*count;
@@ -1085,7 +956,6 @@ __global__ void split_sp(int* seg, int* sm_seg1, int* sm_pairs,
 
 
 
-
 __global__ void remove_sp(int* sm_pairs, spix_params* sp_params,
                           spix_helper_sm* sm_helper,
                           const int nspix_buffer) {
@@ -1093,23 +963,21 @@ __global__ void remove_sp(int* sm_pairs, spix_params* sp_params,
 	// -- getting the index of the pixel --
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
 	if (k>=nspix_buffer) return;
-    int f = sm_pairs[2*k+1];
-    if ((sp_params[k].valid == 0)||(sp_params[f].valid == 0)) return;    
-    if(f<=0) return;
-    // if ((sm_helper[k].merge == true) && (sm_helper[f].merge == false) && (sm_pairs[2*f]==k) )
-    if ((sm_helper[k].merge == true) && (sm_helper[f].merge == false))
+    int s = sm_pairs[2*k+1];
+    if(s<0) return;
+    if ((sp_params[k].valid == 0)||(sp_params[s].valid == 0)) return;    
+    // if ((sm_helper[k].merge == true) && (sm_helper[f].merge == false) && (split_merge_pairs[2*f]==k) )
+    if ((sm_helper[k].merge==true)&&(sm_helper[s].merge==false)&&(sm_pairs[2*s]==k))
+    // if ((sm_helper[k].merge == true) && (sm_helper[s].merge == false))
       {
         sm_helper[k].remove=true;
-        sp_params[k].valid =0;
+        sp_params[k].valid = 0;
 
         // -- update priors --
-        sp_params[f].prior_count =sp_params[k].prior_count+sp_params[f].prior_count;
-        sp_params[f].prior_sigma_shape.x+= sp_params[k].prior_sigma_shape.x;
-        sp_params[f].prior_sigma_shape.y+= sp_params[k].prior_sigma_shape.y;
-        sp_params[f].prior_sigma_shape.z+= sp_params[k].prior_sigma_shape.z;
-        // sp_params[k].prior_sigma_shape.x/=2;
-        // sp_params[k].prior_sigma_shape.y/=2;
-        // sp_params[k].prior_sigma_shape.z/=2;
+        sp_params[s].prior_count =sp_params[k].prior_count+sp_params[s].prior_count;
+        sp_params[s].prior_sigma_shape.x+= sp_params[k].prior_sigma_shape.x;
+        sp_params[s].prior_sigma_shape.y+= sp_params[k].prior_sigma_shape.y;
+        sp_params[s].prior_sigma_shape.z+= sp_params[k].prior_sigma_shape.z;
 
       }
     else

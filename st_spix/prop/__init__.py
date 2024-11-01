@@ -35,7 +35,8 @@ from .param_utils import KEYS as param_names
 
 
 def indepent_bass(vid,niters=30,niters_seg=5,
-                  sp_size=25,pix_var=0.1,alpha_hastings=0.01,potts=10.,
+                  sp_size=25,sigma2_app=0.1,sigma2_size=0.1,
+                  alpha_hastings=0.01,potts=10.,
                   sm_start=0,rgb2lab=True):
 
     # # -- rgb 2 lab --
@@ -45,23 +46,21 @@ def indepent_bass(vid,niters=30,niters_seg=5,
     #     vid_lab = vid
 
     # sp_size = 20
-    # pix_var_g = [0.08,0.07,0.06]
+    # sigma2_app_g = [0.08,0.07,0.06]
     # potts = 4.
 
     # -- updated version --
     spix = []
     for ix in range(vid.shape[0]):
-        # print("ix: ",ix)
-        # pix_var = pix_var_g[ix]
+        # sigma2_app = sigma2_app_g[ix]
 
         # img_t = rearrange(vid_lab[None,ix],'b f h w -> b h w f').contiguous()
         img_t = vid[[ix]]
         sm_start = 0
         niters,niters_seg = sp_size,4 # a fun choice from BASS authors
         spix_t,params_t = prop_cuda.bass(img_t,niters,niters_seg,sm_start,
-                                         sp_size,pix_var,potts,alpha_hastings)
-
-
+                                         sp_size,sigma2_app,sigma2_size,
+                                         potts,alpha_hastings)
         # print("vid.min(),vid.max(): ",vid.min(),vid.max(),vid.shape)
         # print("img_t.shape: ",img_t.shape)
         # print("dir(bass_cuda): ",dir(bass_cuda))
@@ -71,8 +70,8 @@ def indepent_bass(vid,niters=30,niters_seg=5,
 
         # -- vanilla bass --
         # fwd = bass_cuda.bass_forward
-        # print(pix_var,alpha_hastings,potts)
-        # spix_t,params_t = fwd(img_t,sp_size,pix_var,alpha_hastings,potts)
+        # print(sigma2_app,alpha_hastings,potts)
+        # spix_t,params_t = fwd(img_t,sp_size,sigma2_app,alpha_hastings,potts)
 
         nspix_t = spix_t.max().item()+1
         spix.append(spix_t)
@@ -82,9 +81,9 @@ def indepent_bass(vid,niters=30,niters_seg=5,
 
     return th.cat(spix)
 
-def stream_bass(vid,flow=None,niters=30,niters_seg=5,
-                sp_size=25,pix_var=0.01,alpha_hastings=0.1,potts=10.,
-                sm_start=0,rgb2lab=True):
+def stream_bass(vid,flow=None,niters=30,niters_seg=4,
+                sp_size=25,sigma2_app=0.01,sigma2_size=0.1,
+                alpha_hastings=0.1,potts=10.,sm_start=0,rgb2lab=True):
 
     # -- load images --
     T,H,W,F = vid.shape
@@ -108,21 +107,21 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=5,
     # -- bass --
     # img_t = img4bass(vid[None,0])
     # bass_fwd = st_spix_cuda.bass_forward
-    # # spix_t,means_t,cov_t,counts_t,ids_t = bass_fwd(img_t,sp_size,pix_var,alpha,potts)
-    # spix_t,params_t,ids_t = bass_fwd(img_t,sp_size,pix_var,alpha,potts)
+    # # spix_t,means_t,cov_t,counts_t,ids_t = bass_fwd(img_t,sp_size,sigma2_app,alpha,potts)
+    # spix_t,params_t,ids_t = bass_fwd(img_t,sp_size,sigma2_app,alpha,potts)
 
     # bass_forward_cuda(const torch::Tensor imgs,
     #                   int nPixels_in_square_side, float i_std,
     #                   float alpha, float beta){
 
-    # print(sp_size,pix_var,alpha,potts)
+    # print(sp_size,sigma2_app,alpha,potts)
     # print(bass_cuda.__file__)
     # print(dir(bass_cuda))
     # print(bass_cuda.SuperpixelParams)
 
     # -- old version --
     # img_t = img4bass(vid[None,0])
-    # spix_t,params_t = bass_cuda.bass_forward(img_t,sp_size,pix_var,alpha_hastings,potts)
+    # spix_t,params_t = bass_cuda.bass_forward(img_t,sp_size,sigma2_app,alpha_hastings,potts)
     # nspix_t = spix_t.max().item()+1
 
     th.cuda.synchronize()
@@ -137,7 +136,10 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=5,
     sm_start = 0
     # niters,niters_seg = sp_size,4 # a fun choice from BASS authors
     spix_t,params_t = prop_cuda.bass(img_t,niters,niters_seg,sm_start,
-                                     sp_size,pix_var,potts,alpha_hastings)
+                                     sp_size,sigma2_app,sigma2_size,
+                                     potts,alpha_hastings)
+
+    print("nuniq_spix: ",len(th.unique(spix_t.ravel())))
 
     # print(spix_t.sum())
     # print("post.")
@@ -145,7 +147,7 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=5,
 
     # img_t = img4bass(vid[None,0])
     # spix_t,params_t = prop_cuda.bass(img_t,niters,niters_seg,sm_start,
-    #                                  sp_size,pix_var,potts,alpha_hastings)
+    #                                  sp_size,sigma2_app,potts,alpha_hastings)
 # bass_forward_cuda(const torch::Tensor imgs,
 #                   int nPixels_in_square_side,
 #                   float pix_cov, float alpha, float beta){
@@ -153,6 +155,13 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=5,
     params_t = edict({key:getattr(params_t,key).clone() for key in param_names})
     nspix_t = spix_t.max().item()+1
     # params_t.ids[...] = th.arange(len(params_t.ids)).to(vid.device)
+    # print(params_t.prior_sigma_shape.shape)
+    # print(nspix_t)
+    # exit()
+
+
+    # print(params_t.prior_sigma_shape)
+    # exit()
 
 
     # -- info --
@@ -173,28 +182,43 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=5,
     # -- iterations --
     spix = [spix_t]
     params = [params_t]
-    children = []
-    missing = []
     tmp = []
+    pre_fill,post_fill = [],[]
+    # children = []
+    # missing = []
     for ix in range(vid.shape[0]-1):
+
+        # print("\n\n\n\nix: ",ix,"\n\n\n\n")
 
         # -- unpack --
         img_t = vid[[ix+1]]
         flow_t = flow[[ix]]
-        spix_tm1 = spix[-1]
+        # flow_t = th.zeros_like(flow[[ix]])
+        spix_tm1 = spix[-1].clone()
         params_tm1 = params[-1]
         # print([p.ids for p in params])
         # print("a: ",params_tm1.ids)
         # print(hex(id(params_tm1)),hex(id(params_tm1.ids)))
         # print(hex(id(params_tm1.ids)),hex(id(params_tm1.ids[0])))
+        # print("[out] uniq: ",  th.unique(spix_tm1.ravel()))
+        # print("[a-out] bincount: ",  th.bincount(spix_tm1.ravel()))
 
         # -- run --
+        # alpha_hastings_t = alpha_hastings*(1+2.0*ix)
+        # alpha_hastings_t = min(alpha_hastings_t,40.)
+        alpha_hastings_t = alpha_hastings
         outs = run_prop(img_t,flow_t,spix_tm1,params_tm1,
-                        niters,niters_seg,sp_size,pix_var,potts,alpha_hastings,sm_start)
-        spix_t,params_t,children_t,missing_t = outs
+                        niters,niters_seg,sp_size,
+                        sigma2_app,sigma2_size,
+                        potts,alpha_hastings_t,sm_start)
+        # spix_t,params_t,children_t,missing_t = outs
+        spix_t,params_t,pre_fill_t,post_fill_t = outs
+        print(th.unique(spix_t.ravel()))
         # print(spix_t.shape)
         # print(spix_t.sum())
+        # if ix > 1: spix_t = spix_tm1
 
+        # print("[after] uniq: ",  th.unique(spix_t.ravel()))
         # th.cuda.synchronize()
         # print("hey: ",params_t.ids)
         # print(hex(id(params_t.ids)),hex(id(params_t.ids[0])))
@@ -204,16 +228,22 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=5,
         # -- append --
         spix.append(spix_t)
         params.append(params_t)
+        pre_fill.append(pre_fill_t)
+        post_fill.append(post_fill_t)
         # params[0] = params_t
-        children.append(children_t)
-        missing.append(missing_t)
+        # children.append(children_t)
+        # missing.append(missing_t)
+        # if ix > 0: exit()
 
     spix = th.stack(spix)[:,0]
-    missing = th.stack(missing)[:,0]
-    return spix,params,children,missing
+    pre_fill = th.stack(pre_fill)[:,0]
+    post_fill = th.stack(post_fill)[:,0]
+    # missing = th.stack(missing)[:,0]
+    # return spix,params,children,missing
+    return spix,params,pre_fill,post_fill
 
 def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
-             sp_size,pix_var,potts,alpha_hastings,sm_start):
+             sp_size,sigma2_app,sigma2_size,potts,alpha_hastings,sm_start):
 
     # return spix_tm1,params_tm1,th.tensor([[]]),th.tensor([[]]),th.tensor([[]])
 
@@ -227,10 +257,26 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
     B,H,W,F = img.shape
     # print(params_tm1.mu_s[:4]/th.tensor([[W-1,H-1]]).to(img.device))
     params_t0 = params_tm1
+    # print("[a] uniq: ",  th.unique(spix_tm1.ravel()))
     params_tm1 = copy_spix_params(params_tm1)
     # print([p.device for p in unpack_spix_params_to_list(params_tm1)])
     mu_shape_tm1 = params_tm1.mu_shape[None,:]
-    spix_ids = params_tm1.ids
+    # spix_ids = params_tm1.ids
+    spix_ids = th.unique(spix_tm1.ravel())
+
+    # -- checking prior counts -
+    # pcounts = params_tm1.prior_counts
+    # bcounts = th.bincount(spix_tm1.ravel())
+    # print(th.stack([pcounts,bcounts],-1))
+    # print(pcounts.sum(),bcounts.sum(),H*W)
+    # params_tm1.prior_counts[...] = bcounts
+    # exit()
+
+    # print(params_tm1.prior_counts)
+    # print("[b] bincount: ",  th.bincount(spix_tm1.ravel()))
+    # print("mu_shape_tm1.shape: ",mu_shape_tm1.shape)
+    # spix_ids = th.arange(len(mu_shape_tm1))
+    # exit()
 
     # print("AY")
     # print(spix_ids)
@@ -251,6 +297,7 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
     fxn = st_spix.pool_flow_and_shift_mean
     flow_sp,flow_down,means_shift = fxn(flow,mu_shape_tm1,spix_tm1,spix_ids)
     params_tm1.prior_mu_shape[...] = params_tm1.mu_shape[...]
+
     # print("OH.")
     # print(params_tm1.mu_s[:4]/th.tensor([[W-1,H-1]]).to(img.device))
 
@@ -264,9 +311,10 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
     # spix_prop,missing_mask = prop_cuda.shift_labels(spix_tm1,flow_down)
     # missing_mask = th.logical_or(missing_mask > 0,spix_prop<0)
     spix_prop,counts = prop_cuda.shift_labels(spix_tm1,flow_down)
+    args = th.where(spix_prop>=0)
+    print("[c] bincount: ",  th.bincount(spix_prop[args].ravel()))
     spix_prop[counts!=1] = -1
     missing_mask = counts != 1
-
 
     # _spix,_flow = spix0[None,:],flow_down
     # _spix_toshift = spix0[None,:,:,None].clone().float()
@@ -331,7 +379,7 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
     # if missing.numel() == 0:
     #     return spix_prop,means,cov,counts
 
-    # params_tm1.sigma_app[...] = pix_var**2/4.
+    # params_tm1.sigma_app[...] = sigma2_app**2/4.
     # curr_params[k].prior_mu_app = prev_params[k].mu_app;
     # curr_params[k].prior_sigma_app = prev_params[k].sigma_app;
     # curr_params[k].prior_mu_app_count = max(rescale_mu_app * count,1.0);
@@ -355,8 +403,9 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
 
     # th.save(spix_tm1,"spix_tm1.pth")
     # th.save(spix_prop,"spix_prop_prefill.pth")
-
+    pre_fill = spix_prop.clone()
     spix_prop = prop_cuda.fill_missing(spix_prop,params_tm1.mu_shape,missing,0)
+    post_fill = spix_prop.clone()
     # assert(spix_prop.min().item() >= 0)
     # print(spix_prop.min().item(),spix_prop.max().item())
     # exit()
@@ -407,7 +456,7 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
     # print(params_tm1.mu_app.is_contiguous())
     # print(params_tm1.mu_shape.is_contiguous(),params_tm1.mu_shape.device)
     # print(params_tm1.sigma_shape.is_contiguous(),params_tm1.sigma_shape.device)
-    th.cuda.synchronize()
+    # th.cuda.synchronize()
     # print(img)
     # print(spix_prop)
     # exit()
@@ -418,7 +467,7 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
     # params_tm1.ids[...] = th.arange(len(params_tm1.ids)).to(device)
     # # print(params_tm1.ids)
     # # params_tm1.sigma_app[...] /=
-    # # params_tm1.prior_sigma_app[...] = pix_var**2/4.
+    # # params_tm1.prior_sigma_app[...] = sigma2_app**2/4.
     # # print(params_tm1.sigma_app)
     rescales = th.tensor([1.,1.,1.,1.])
     # # print("niters: ",niters)
@@ -434,10 +483,14 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
     niters = sp_size
     if isinstance(params_tm1,edict):
         params_tm1 = spix_dict_to_list(params_tm1)
+    # spix_t = spix_prop
+    # params_t = params_tm1
     spix_t,params_t,log_t = prop_cuda.refine_missing(img,spix_prop,missing_mask,
                                                      params_tm1,
                                                      nspix_t,niters,niters_seg,
-                                                     sp_size,pix_var,potts)
+                                                     sp_size,sigma2_app,potts)
+
+    # th.save(spix_t,"spix_t.pth")
     # spix_t = spix_prop
     # params_t = params_tm1
     # log_t = None
@@ -446,6 +499,28 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
     # -- Pybind11 data-structure has problems [it was memory access error elsewhere] --
     #  -- tensor memory is randomly set of invalid values, so we copy to a dict --
     params_t = edict({key:getattr(params_t,key).clone() for key in param_names})
+    # print("[d] uniq: ",  th.bincount(spix_t.ravel()))
+
+    # old_counts = th.bincount(spix_tm1.ravel())
+    # new_counts = th.bincount(spix_t.ravel())
+
+    # print(params_tm1.prior_counts.sum())
+    # stack = []
+    # print(th.stack([old_counts,new_counts,
+    #                 params_tm1.prior_counts,
+    #                 params_tm1.prior_sigma_shape[:,0],
+    #                 # params_tm1.prior_sigma_shape[:,1],
+    #                 params_tm1.prior_sigma_shape[:,2]
+    # ],-1))
+
+    # print(new_counts)
+    # print(params_tm1.prior_counts)
+    # print(params_tm1.prior_sigma_shape[:,0])
+    # print(params_tm1.prior_sigma_shape[:,1])
+    # print(params_tm1.prior_sigma_shape[:,2])
+    # print(params_tm1.sigma_shape)
+    # params_tm1.prior_counts[...] = th.bincount(spix_t
+    # exit()
 
     # spix_t,params_t = spix_tm1,params_tm1
     # print("post.")
@@ -474,27 +549,53 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
 
     # -- bass iters --
     # niters = 10
-
-    # sm_start = 0
+    sm_start = sp_size
     # # alpha_hastings = 0.1
     # # print("alpha_hastings: ",alpha_hastings)
     # niters_prop = niters
-    niters_prop = sp_size
+    # niters_prop = 0#sp_size*4
+    niters_prop = sp_size*10
     # niters_prop = 0
-    # _alpha_hastings = 0.
     _alpha_hastings = alpha_hastings
+    # _alpha_hastings = alpha_hastings-10.-20-30.
+    # _alpha_hastings = 10.
+    # _alpha_hastings = -1000
+
+    # th.save(spix_t,"output/spix_t.pth")
+    # params_t = params_tm1
+
+    # spix_t,params_t = prop_cuda.prop_bass(img,spix_t,params_tm1,
+    #                                       niters_prop,niters_seg,sm_start,
+    #                                       sp_size,sigma2_app,potts,_alpha_hastings)
+
+    # print(spix_tm1 - spix_t)
+    # spix_delta = 1.*(spix_tm1 != spix_t)
+    # print(th.bincount(spix_tm1.int().ravel()))
+    # print(th.bincount(spix_t.int().ravel()))
+    # print(spix_delta.shape)
+    # print(th.mean(1.*(spix_tm1 - spix_t)))
+    # exit()
+    # spix_t = spix_tm1
     spix_t,params_t = prop_cuda.prop_bass(img,spix_t,params_tm1,
                                           niters_prop,niters_seg,sm_start,
-                                          sp_size,pix_var,potts,_alpha_hastings)
-    # print("nspix_t: ",spix_t.max().item()+1)
+                                          sp_size,sigma2_app,sigma2_size,
+                                          potts,_alpha_hastings)
 
+    # -- info --
+    # print("after: ",len(th.unique(spix_tm1)),len(th.unique(spix_t)))
+
+    # exit()
+    # print("nspix_t: ",spix_t.max().item()+1)
     # spix_t,params_t = prop_cuda.refine_missing(img,spix_t,missing_mask,
     #                                            params_t,prior_map,
     #                                            nspix_t,niters,niters_seg,
-    #                                            sp_size,pix_var,potts)
+    #                                            sp_size,sigma2_app,potts)
     # exit()
+    # print("[e] bincount: ",  th.bincount(spix_t.ravel()))
 
-    return spix_t,params_t,children_t,missing_copy
+
+    # return spix_t,params_t,children_t,missing_copy
+    return spix_t,params_t,pre_fill,post_fill
 
 
 
@@ -505,7 +606,7 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
 
 """
 
-def run_fwd_bwd(vid,spix,params,sp_size,pix_var,potts,niters_fwd_bwd,niters_ref):
+def run_fwd_bwd(vid,spix,params,sp_size,sigma2_app,potts,niters_fwd_bwd,niters_ref):
     spix = spix.clone()
     params = [copy_spix_params(p) for p in params]
     niters_seg = 1
@@ -521,12 +622,12 @@ def run_fwd_bwd(vid,spix,params,sp_size,pix_var,potts,niters_fwd_bwd,niters_ref)
             tp = (t+1) % T
             params_adj = copy_spix_params(params[tp])
             params_adj.ids[...] = th.arange(len(params_adj.ids)).to(device)
-            params_adj.sigma_app[...] = pix_var**2/4.
-            params_adj.prior_sigma_app[...] = pix_var**2/4.
+            params_adj.sigma_app[...] = sigma2_app**2/4.
+            params_adj.prior_sigma_app[...] = sigma2_app**2/4.
             fwd = prop_cuda.refine_missing
             spix[t],params[t],log = fwd(img_t,spix[[t]],nomissing,
                                         params_adj,nspix_t,niters_ref,
-                                        niters_seg,sp_size,pix_var,potts)
+                                        niters_seg,sp_size,sigma2_app,potts)
             # print(log)
     return spix,params
 

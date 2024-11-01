@@ -91,9 +91,9 @@ run_shift_labels(const torch::Tensor spix,
     int height = spix.size(1);
     int width = spix.size(2);
     int npix = height*width;
-    int nspix = spix.max().item<int>()+1;
-    int nspix_ = flow.size(1);
-    assert(nspix == nspix_);
+    // int nspix = spix.max().item<int>()+1;
+    int nspix = flow.size(1);
+    // assert(nspix == nspix_);
 
     // -- allocate filled spix --
     auto options_b = torch::TensorOptions().dtype(torch::kBool)

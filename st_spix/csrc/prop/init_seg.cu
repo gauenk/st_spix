@@ -8,6 +8,15 @@
 
 **************************************************/
 
+__host__ int nspix_from_spsize(int sp_size, int width, int height){
+  double H = sqrt( double(pow(sp_size, 2)) / (1.5 *sqrt(3.0)) );
+  double w = sqrt(3.0) * H;
+  int max_num_sp_x = (int) floor(double(width)/w) + 1;
+  int max_num_sp_y = (int) floor(double(height)/(1.5*H)) + 1;
+  int nspix = max_num_sp_x * max_num_sp_y * 4;
+  return nspix;
+}
+
 __host__ int init_seg(int* seg, int sp_size, int width, int height, int nbatch){
 
   // -- superpixel info --
@@ -64,7 +73,7 @@ __global__ void InitHexSeg(int* seg, double* centers,
         d2 = dx*dx + dy*dy;
         if ( d2 <= D2){
               D2 = d2;  
-              seg[idx]=j+1;
+              seg[idx]=j;
         }           
     } 
     return;	

@@ -13,8 +13,9 @@ __host__ void refine_missing(float* img, int* seg, spix_params* sp_params,
                              bool* missing, bool* border, spix_helper* sp_helper,
                              int niters, int niters_seg,
                              /* float3 pix_ivar,float logdet_pix_var, */
-                             float sigma_app, float potts,
-                             int nspix, int nbatch, int width, int height, int nftrs);
+                             float sigma2_app, float potts,
+                             int sp_size, int nspix,
+                             int nbatch, int width, int height, int nftrs);
 
 /* __global__ */
 /* void find_border_along_missing(const int* seg, const int* missing, */

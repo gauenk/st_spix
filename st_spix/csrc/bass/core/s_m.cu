@@ -1103,7 +1103,8 @@ __global__ void remove_sp(int* split_merge_pairs, superpixel_params* sp_params,
     if ((sp_params[k].valid == 0)||(sp_params[f].valid == 0)) return;    
     if(f<=0) return;
     // if ((sp_gpu_helper_sm[k].merge == true) && (sp_gpu_helper_sm[f].merge == false) && (split_merge_pairs[2*f]==k) )
-    if ((sp_gpu_helper_sm[k].merge == true) && (sp_gpu_helper_sm[f].merge == false))
+    if ((sp_gpu_helper_sm[k].merge == true) && (sp_gpu_helper_sm[f].merge == false) && (split_merge_pairs[2*f]==k) )
+    // if ((sp_gpu_helper_sm[k].merge == true) && (sp_gpu_helper_sm[f].merge == false))
       {
         sp_gpu_helper_sm[k].remove=true;
         sp_params[k].valid =0;

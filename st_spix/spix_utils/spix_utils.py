@@ -57,12 +57,14 @@ def pool_flow_and_shift_mean_v1(flow,means,spix,spix_ids):
     # flow = rearrange(flow,'b f h w -> b h w f')
     # flow = flow.contiguous()
     # spix = spix.contiguous()
-    nspix = spix.max().item()+1
+    # nspix = spix.max().item()+1
     # print("spix_ids[min,max], nspix: ",spix_ids.min(),spix_ids.max(),nspix)
     # nspix = means.shape[1] #spix.max().item()+1 # or means.shape[1]
-    print("means.shape: ",means.shape,len(spix_ids),nspix)
-    assert means.shape[1] >= nspix
+    nspix = means.shape[1]
+    # print("... means.shape: ",means.shape,len(spix_ids),nspix)
+    # assert means.shape[1] >= nspix
     assert means.shape[0] == 1,"Batch size is 1"
+    # print(spix_ids)
 
     # -- run --
     fxn = SuperpixelPooling()
@@ -78,8 +80,9 @@ def pool_flow_and_shift_mean_v1(flow,means,spix,spix_ids):
     # print("spix_ids.shape: ",spix_ids.shape)
     # print("means.shape: ",means.shape)
 
-    means[0,:,-2] += downsampled[0,spix_ids,0]
-    means[0,:,-1] += downsampled[0,spix_ids,1]
+    # print(th.cat([means[0,:10],downsampled[0,:10]],-1))
+    means[0,:,-2] += 1.*downsampled[0,...,1]
+    means[0,:,-1] += 1.*downsampled[0,...,0]
 
     # -- return --
     # pooled = rearrange(pooled,'b h w f -> b f h w')
@@ -256,6 +259,8 @@ def mark_spix_vid(vid,spix):
         img = rearrange(vid[ix],'f h w -> h w f')
         marked_t = mark_boundaries(img.cpu().numpy(),spix_t.cpu().numpy())
         marked_t = to_th(swap_c(marked_t))
+        for ci in range(3):
+            marked_t[ci][th.where(spix_t<0)] = ci==0
         marked.append(marked_t)
     marked = th.stack(marked)
     return marked

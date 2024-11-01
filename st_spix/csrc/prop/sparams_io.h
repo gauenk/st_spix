@@ -40,7 +40,7 @@ void read_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
                  float* mu_shape, float* sigma_shape, float* logdet_sigma_shape,
                  float* prior_mu_shape, float* prior_sigma_shape,
                  int* prior_mu_shape_count, int* prior_sigma_shape_count,
-                 int* counts, int* prior_counts, spix_params* sp_params,
+                 int* counts, float* prior_counts, spix_params* sp_params,
                  int* ids, int spix);
 __global__
 void write_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
@@ -49,9 +49,26 @@ void write_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
                   float* mu_shape, float* sigma_shape, float* logdet_sigma_shape,
                   float* prior_mu_shape, float* prior_sigma_shape,
                   int* prior_mu_shape_count, int* prior_sigma_shape_count,
-                  int* counts, int* prior_counts, spix_params* sp_params, int nspix);
+                  int* counts, float* prior_counts, spix_params* sp_params, int nspix);
 
-void run_update_prior(const torch::Tensor spix,PySuperpixelParams params);
+void run_update_prior(const torch::Tensor spix,PySuperpixelParams params, int max_spix);
+
+__global__
+void update_prior_kernel(float* mu_app, float* prior_mu_app,
+                         float* mu_shape, float* prior_mu_shape,
+                         float* sigma_shape, float* prior_sigma_shape,
+                         int* ids, int nspix, int prev_max_spix);
+/* __host__ */
+/* void write_prior_counts(PySuperpixelParams src_params,spix_params* dest_params); */
+
+
+__host__
+void write_prior_counts(PySuperpixelParams src_params,spix_params* dest_params,
+                        int* ids, int nactive);
+
+__global__
+void write_prior_counts_kernel(float* prior_counts, spix_params* sp_params,
+                               int* ids, int nactive);
 
 
 // -- compact --

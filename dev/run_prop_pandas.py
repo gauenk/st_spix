@@ -1,15 +1,9 @@
-
 """
 
       Execute the Algorithm's Pipeline
 
-   Fill the prior counts with "current counts" after shifting...
-   .... this is good for smaller superpixels maybe...
-   ...  but bigger superpixels are too big then...
-
 """
 
-import os
 import torch as th
 import numpy as np
 from einops import rearrange,repeat
@@ -197,18 +191,19 @@ def read_figure_image():
     # img = img[:,135:320,70:350]
 
     # -- red-pandas --
-    # fn = "/home/gauenk/Documents/packages/spix_paper/data/DIV2K/DIV2K_train_LR_bicubic/X4/0064x4.png"
-    # img = tvio.read_image(fn)/255.
-    # img = img[:,:336,:504]
+    fn = "/home/gauenk/Documents/packages/spix_paper/data/DIV2K/DIV2K_train_LR_bicubic/X4/0064x4.png"
+    img = tvio.read_image(fn)/255.
+    img = img[:,:336,:504]
 
-    # -- catepillar --
+    # # -- catepillar --
     # fn = "/home/gauenk/Documents/packages/spix_paper/data/bsd500/HR/35028.jpg"
     # img = tvio.read_image(fn)/255.
     # img = img[:,180:308,60:252]
 
-    # -- stack and return --
+    # -- stack --
     vid = th.stack([img,img,img]).to("cuda")
     print("vid.shape: ",vid.shape)
+
     return vid
 
 
@@ -234,9 +229,6 @@ def read_elephants():
     vid = resize(vid,(352,504)).to("cuda")
     # vid = resize(vid,(352,352)).to("cuda")
     return vid
-
-def rzs(vid):
-    return resize(vid,(128,128)).to("cuda")
 
 def read_otter():
     import torchvision.io as tvio
@@ -319,89 +311,23 @@ def save_spix_img(root,img,spix):
 
     import torchvision
     import matplotlib.cm as cm
-    import colorsys
-
 
     spix_e = th.nn.functional.one_hot(spix.long()+1).bool()
     spix_e = rearrange(spix_e,'h w m -> m h w')
     nspix = spix_e.shape[0]
-    print("nspix: ",nspix)
 
     # -- get colors --
-    # cmap = cm.get_cmap('hsv', nspix)
-    cmap = mpl.colormaps['hsv'].resampled(nspix)
-    colors = cmap(np.arange(0,cmap.N))
-    # cmap = cm.get_cmap('tab20', nspix)
+    cmap = cm.get_cmap('viridis', nspix)
     # colors = th.tensor(cmap.colors[:, :3] * 255).to(th.uint8)
-    colors = th.tensor(colors[:, :3])
-    order = th.randperm(len(colors))
-    colors = colors[order]
-    # print(len(colors))
-
-    # Apply the colormap to each superpixel mask
-    colored_masks = th.zeros_like(img).float()
-    for i in range(nspix):
-        # Select the color for this segment
-        color = colors[i].float()
-
-        # Apply the color to the regions defined by the mask
-        mask = spix_e[i]
-        colored_masks[0][mask] = color[0]  # Red channel
-        colored_masks[1][mask] = color[1]  # Green channel
-        colored_masks[2][mask] = color[2]  # Blue channel
-
-    # Convert the image back to the correct format if necessary
-    # colored_masks = th.clip(colored_masks * 255, 0, 255).type(th.uint8)
-    print(colored_masks.shape)
-
-    # -- mute the vibrant colors --
-    colored_masks = decrease_saturation(colored_masks, factor=0.5)
-
-    tv_utils.save_image(colored_masks[None,:],root/"seg.png")
+    colors = th.tensor(cmap.colors[:, :3])
 
     # img = th.clip(img*255,0,255).type(th.uint8)
-    # seg = torchvision.utils.draw_segmentation_masks(img,spix_e)
-    # tv_utils.save_image(seg[None,:],root/"seg.png")
-    # exit()
-
-# Function to decrease saturation for a NumPy array
-def decrease_saturation(image_array, factor=0.5):
-
-    import colorsys
-    image_array = rearrange(image_array,'c h w -> h w c')
-    image_array = image_array.cpu().numpy()
-    # Normalize RGB values to range [0, 1]
-    # image_array = image_array / 255.0
-
-    # Separate the RGB channels
-    r, g, b = image_array[..., 0], image_array[..., 1], image_array[..., 2]
-
-    # Convert RGB to HSV using vectorized approach
-    hsv = np.vectorize(colorsys.rgb_to_hsv)(r, g, b)
-    h, s, v = hsv[0], hsv[1], hsv[2]
-
-    # Decrease saturation by factor
-    s = s * factor
-    v = v * 0.9
-
-    # Convert back to RGB
-    rgb = np.vectorize(colorsys.hsv_to_rgb)(h, s, v)
-
-    # Stack the R, G, B channels and convert back to the range [0, 255]
-    muted_image_array = np.stack(rgb, axis=-1)
-
-    # Clip values to ensure they are within valid pixel range
-    # muted_image_array = np.clip(muted_image_array, 0, 255).astype(np.uint8)
-
-    muted_image_array = rearrange(muted_image_array,'h w c -> c h w')
-    muted_image_array = th.from_numpy(muted_image_array)
-    return muted_image_array
-
+    seg = torchvision.utils.draw_segmentation_masks(img,spix_e)
+    tv_utils.save_image(seg[None,:],root/"seg.png")
 
 def main():
 
     # -- get root --
-    print("PID: ",os.getpid())
     root = Path("./output/run_prop/")
     if not root.exists(): root.mkdir()
 
@@ -410,89 +336,40 @@ def main():
     #           "potts":1.,"sm_start":0,"rgb2lab":False}
 
     # -- config --
+    niters = 15
     niters_seg = 4
-    sm_start = 0
+    sm_start = 10
     sp_size = 20
-    # sp_size = 30
-    niters = sp_size*10
     # alpha_hastings = 1.0
     # alpha_hastings = 0.1
-    # alpha_hastings = 200.
     # alpha_hastings = 5.
-    # alpha_hastings = 2.
-    # potts = 10.0
-    # potts = 5.0
-    # alpha_hastings = 15.25
-    # alpha_hastings = 23.
-    alpha_hastings = 0.
-    potts = 1.0
-    # pix_var = 0.001
-    # sigma2_app = 0.02
-    sigma2_app = .01
-    # sigma2_app = 0.001
-    # sigma2_size = 0.02
-    # sigma2_size = 5e-1
-    # sigma2_size = 100.
-    # sigma2_size = 500.
-    sigma2_size = 300.
-    # sigma2_app = 0.08
-    # sigma2_app = 0.01
-
-    # -- per-image bass --
-    # potts = 10.
-    # alpha_hastings = 1.
-    # sigma2_app = 0.1
+    # alpha_hastings = 5.
+    alpha_hastings = 10.
+    potts = 10.0
+    # potts = 6.0
+    # pix_var = 0.10
+    # pix_var = 0.02
+    pix_var = 0.08
 
     # -- read img/flow --
-    vid = st_spix.data.davis_example(isize=None,nframes=-1,vid_names=['tennis'])
+    vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['tennis'])
     # vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['baseball'])
     size = 256
+    # vid = read_elephants()
+    vid = read_figure_image()
     # vid = vid[0,5:7,:,50:50+size,300:300+size]
     # vid = vid[0,0:8,:,50:50+320,:480]
-    # vid = vid[0,0:3,:,50:50+320,:480]
-    # vid = vid[0,0:30,:,50:50+320,:480]
-    # vid = vid[0,0:30,:,50:50+320,:240]
-    # vid = vid[0,0:,:,50:50+320,:240]
-    # vid = vid[0,0:,...,:800]
-    # vid = vid[0,0:8,...,:800]
-    vid = vid[0,0:30,...,:800]
-    # vid = vid[0,0:30,...,:400]
-    # vid = vid[0,0:3,...,:800]
-    # vid = vid[0,1:3+1,...,:800]
-    # vid = th.cat([vid[:2],]*3)
-    # vid = vid[0,0:5,...,:400]
-    # vid = th.stack([th.randn_like(vid[0])*0.05+vid[0],]*5)
-
-    # vid = vid[0,0:,:,50:50+320,:240]
-    # vid = vid[0,0:,:,50:50+320,:800]
-    # vid = vid[0,0:,:30,50:50+320,:800]
-    # vid = vid[0,0:2,:,50:50+320,:240]
-    # vid = vid[0,0:6,:,50:50+320,:240]
-    # vid = vid[0,0:3,:,50:50+320,:240]
-
-    # vid = vid[0,0:2,:,50:50+320,:240]
-    # vid = vid.repeat(5,1,1,1)
-
-    # vid = vid[0,0:2,:,50:50+320,480-320:480]
-
+    # vid = vid[0,0:2,:,50:50+320,:480]
     # vid = vid[0,2:5,:,50:50+size,200:200+size]
     # vid = read_otter().to("cuda")
     # vid = read_mnist().to("cuda")
     # vid = resize(vid,(128,128))
-    # vid = read_figure_image()
-    # vid = read_figure_image()
-    # vid = read_elephants()
-
-
     vid_og = vid.clone()
     print(vid.shape)
 
     # -- run flow [raft] --
     from st_spix.flow_utils import run_raft,run_spynet
     fflow,bflow = run_raft(th.clip(255.*vid,0.,255.).type(th.uint8))
-    # fflow[...] = 0.
-    # fflow[...] = th.randn_like(fflow)*0.1
-
     # fflow,bflow = run_spynet(vid)
     B,F,H,W = vid.shape
     # fflow = th.zeros((B,2,H,W),device="cuda")
@@ -508,13 +385,14 @@ def main():
     # -- save --
     B,F,H,W = vid.shape
     tv_utils.save_image(vid,root / "vid.png")
-    for t in range(B):
-        tv_utils.save_image(vid[[t]],root / ("vid%d.png" % t))
+    tv_utils.save_image(vid[[0]],root / "vid0.png")
+    tv_utils.save_image(vid[[1]],root / "vid1.png")
+    tv_utils.save_image(vid[[2]],root / "vid2.png")
 
     # -- propogate --
     # outs = stream_bass(vid,flow=fflow,
     #                    niters=niters,niters_seg=niters_seg,
-    #                    sp_size=sp_size,sigma2_app=sigma2_app,
+    #                    sp_size=sp_size,pix_var=pix_var,
     #                    alpha_hastings=alpha_hastings,
     #                    potts=potts,sm_start=sm_start)
     # spix,params,children,missing,pmaps = outs
@@ -567,12 +445,6 @@ def main():
     # else:
     #     vid_lab = vid
     vid_lab = st_spix.utils.vid_rgb2lab_th(vid.clone(),normz=False)
-    vid_lab = vid_lab+1.
-    # vid_lab = (vid_lab + 1.)/2.
-    # vid_lab = (vid_lab + 1.)/10.
-    # print("vid_lab.min(),vid_lab.max(): ",vid_lab.min(),vid_lab.max())
-    # exit()
-    # vid_lab = vid.clone()
     vid_lab = rearrange(vid_lab,'b f h w -> b h w f').contiguous()
     fflow = rearrange(fflow,'b f h w -> b h w f').contiguous()
 
@@ -583,69 +455,42 @@ def main():
         with MemIt(memer,"main"):
             with TimeIt(timer,"main"):
 
-                outs = stream_bass(vid_lab,flow=fflow,
-                                   niters=niters,niters_seg=niters_seg,
-                                   sp_size=sp_size,sigma2_app=sigma2_app,
-                                   sigma2_size=sigma2_size,
-                                   alpha_hastings=alpha_hastings,
-                                   potts=potts,sm_start=sm_start,rgb2lab=False)
-                # spix,params,children,missing = outs
-                spix,params,pre_fill,post_fill = outs
+                # outs = stream_bass(vid_lab,flow=fflow,
+                #                    niters=niters,niters_seg=niters_seg,
+                #                    sp_size=sp_size,pix_var=pix_var,
+                #                    alpha_hastings=alpha_hastings,
+                #                    potts=potts,sm_start=sm_start,rgb2lab=False)
+                # spix,params,children,missing,pmaps = outs
 
-                # spix = indepent_bass(vid_lab,niters=niters,niters_seg=niters_seg,
-                #                      sp_size=sp_size,sigma2_app=sigma2_app,
-                #                      alpha_hastings=alpha_hastings,
-                #                      potts=potts,sm_start=sm_start,rgb2lab=False)
-
+                spix = indepent_bass(vid_lab,niters=niters,niters_seg=niters_seg,
+                                     sp_size=sp_size,pix_var=pix_var,
+                                     alpha_hastings=alpha_hastings,
+                                     potts=potts,sm_start=sm_start,rgb2lab=False)
                 th.cuda.synchronize()
         print(timer)
         print(memer)
         break
     # exit()
 
-    # -- ... --
-    for t in range(len(vid)):
-        print("Num Uniq: ",len(th.unique(spix[t])))
-
-    # print(spix[-1,150:170,20:40])
-    # print(spix[-2,30:50,0:20])
-    # print(spix[-1,30:50,0:20])
-    print(spix[1,:10,40:60])
-    # print(spix[2,:10,40:60])
-    # spix[th.where(spix==128)] = 0
-    # exit()
 
     # -- view --
     marked = mark_spix_vid(vid,spix)
-    marked_pre_fill = mark_spix_vid(vid,pre_fill)
-    marked_post_fill = mark_spix_vid(vid,post_fill)
-    tv_utils.save_image(marked_pre_fill,root / "marked_pre_fill.png")
-    tv_utils.save_image(marked_post_fill,root / "marked_post_fill.png")
-    # save_zoom_vid(marked,[205,180,260,225],root/"nose.png")
-    # save_zoom_vid(marked,[220,100,275,145],root/"eye.png")
-    # cmarked = color_regions(marked,[[205,180,260,225],[220,100,275,145]])
+    save_zoom_vid(marked,[205,180,260,225],root/"nose.png")
+    save_zoom_vid(marked,[220,100,275,145],root/"eye.png")
+    cmarked = color_regions(marked,[[205,180,260,225],[220,100,275,145]])
     # print("cmarked.shape: ",cmarked.shape)
-    # cmarked = cmarked[:,:,:250,35:380]
-    # tv_utils.save_image(cmarked,root / "cmarked_fill.png")
+    cmarked = cmarked[:,:,:250,35:380]
+    tv_utils.save_image(cmarked,root / "cmarked_fill.png")
+    for ix,cimg in enumerate(cmarked):
+        tv_utils.save_image(cimg[None,:],root / ("cmarked%d.png"%ix))
+    cvid = vid[:,:,:250,35:380]
+    for ix,cimg in enumerate(cvid):
+        tv_utils.save_image(cimg[None,:],root / ("cvid%d.png"%ix))
 
     marked_m = marked.clone()
     # marked_m[1:] = (1-1.*missing.cpu())*marked_m[1:]
-    a,b,c = spix[-2,40,0].item(),spix[-1,40,0].item(),spix[-1,30,0].item()
-    # a,b,c = spix[1,0,55].item(),spix[2,8,55].item(),spix[2,15,55].item()
-    print(a,b,c)
-    marked_c = color_spix(marked.clone(),spix,a,cidx=1)
-    # marked_c = color_spix(marked_c,spix,b,cidx=0)
-    marked_c = color_spix(marked_c,spix,b,cidx=0)
-    marked_c = color_spix(marked_c,spix,c,cidx=2)
-    # marked_c = color_spix(marked_c,spix,spix[0].max().item()+1,cidx=2)
-    # marked_c = color_spix(marked_c,spix,b,cidx=2)
-    # marked_c = color_spix(marked.clone(),spix,125,cidx=0)
-
-    # marked_c = color_spix(marked_c,spix,125,cidx=0)
-    # marked_c = color_spix(marked_c,spix,120,cidx=0)
-    # marked_c = color_spix(marked_c,spix,44,cidx=2)
-    # marked_c = color_spix(marked_c,spix,108,cidx=1)
-
+    marked_c = color_spix(marked.clone(),spix,2,cidx=1)
+    marked_c = color_spix(marked_c,spix,8,cidx=0)
     # marked_c = color_spix(marked_c,spix,9,cidx=1)
     # # marked_c = color_spix(marked_c,spix,10,cidx=0)
     # # marked_c = color_spix(marked_c,spix,11,cidx=1)
@@ -656,8 +501,8 @@ def main():
     print("saving images.")
     # save_spix_parts(root/"otters",vid[0,...,70:150,80:180],spix[0,...,70:150,80:180])
     save_spix_img(root,vid[0],spix[0])
-    # save_spix_parts(root/"elephant0",vid[0],spix[0])
-    # save_spix_parts(root/"elephant1",vid[1],spix[1])
+    save_spix_parts(root/"elephant0",vid[0],spix[0])
+    save_spix_parts(root/"elephant1",vid[1],spix[1])
     # viz_seg = draw_spix_vid(vid,spix)
     futils.viz_flow_quiver(root/"flow.png",fflow[[0]],step=4)
     tv_utils.save_image(marked,root / "marked_fill.png")
@@ -666,12 +511,6 @@ def main():
     tv_utils.save_image(marked_m,root / "marked_missing.png")
     tv_utils.save_image(marked_c,root / "marked_colored.png")
     # tv_utils.save_image(viz_seg,root / "viz_seg.png")
-
-    # -- elephant zoom --
-    tv_utils.save_image(rzs(marked[[0],...,70-10:140-10,110+10:180+10]),
-                        root / "eleph0.png")
-    tv_utils.save_image(rzs(marked[[1],...,70+10:140+10,110+15:180+15]),
-                        root / "eleph1.png")
 
     # -- vizualize the lab values with the means --
     vid_lab = st_spix.utils.vid_rgb2lab(vid,normz=False)
@@ -682,6 +521,50 @@ def main():
     spix_og = spix.clone()
     # params_og = [st_spix.copy_spix_params(p) for p in params]
     border_og = prop_cuda.find_border(spix_og)
+
+    # -- run fwd/bwd --
+    niters_ref = 15
+    niters_fwd_bwd = 1
+    pix_var = 0.1
+    potts = 2.
+    # print("8: ",params[0].mu_app[8],params[0].counts[8])
+    spix,params = run_fwd_bwd(vid_og,spix,params,pmaps,sp_size,pix_var,
+                              potts,niters_fwd_bwd,niters_ref)
+    # print("8:" ,params[0].mu_app[8],params[0].counts[8])
+    border_b = prop_cuda.find_border(spix)
+    spix,params = run_fwd_bwd(vid_og,spix,params,pmaps,sp_size,pix_var,
+                              potts,niters_fwd_bwd,niters_ref)
+    border_c = prop_cuda.find_border(spix)
+
+    # -- view --
+    marked = mark_spix_vid(vid,spix)
+    marked_m = marked.clone()
+    # marked_m[1:] = (1-1.*missing.cpu())*marked_m[1:]
+    marked_c = color_spix(marked.clone(),spix,2,cidx=0)
+    marked_c = color_spix(marked_c,spix,3,cidx=2)
+
+    # -- save --
+    print("saving images.")
+    # viz_seg = draw_spix_vid(vid,spix)
+    tv_utils.save_image(marked,root / "fwdbwd_marked_fill.png")
+    tv_utils.save_image(marked_m,root / "fwdbwd_marked_missing.png")
+    tv_utils.save_image(marked_c,root / "fwdbwd_marked_colored.png")
+    # tv_utils.save_image(viz_seg,root / "viz_seg.png")
+
+    mvid = st_spix.spix_utils.mark_border(vid,border_og,0)
+    tv_utils.save_image(mvid,root / "double_border_a.png")
+    mvid = st_spix.spix_utils.mark_border(vid,border_b,0)
+    tv_utils.save_image(mvid,root / "double_border_b.png")
+    mvid = st_spix.spix_utils.mark_border(vid,border_c,0)
+    tv_utils.save_image(mvid,root / "double_border_c.png")
+    # mvid = st_spix.spix_utils.mark_border(mvid,border_c,1)
+    # mvid = st_spix.spix_utils.mark_border(mvid,border_og,2)
+
+
+    # -- vizualize the lab values with the means --
+    # vid_lab = st_spix.utils.vid_rgb2lab(vid)
+    # print([(vid_lab[:,i].min().item(),vid_lab[:,i].max().item()) for i in range(3)])
+    # inspect_means(vid_lab,spix,params)
 
     # -- view --
     vid_lab = vid_lab - vid_lab.min()
@@ -700,60 +583,6 @@ def main():
     tv_utils.save_image(marked_m,root / "lab_marked_missing.png")
     tv_utils.save_image(marked_c,root / "lab_marked_colored.png")
     # tv_utils.save_image(viz_seg,root / "viz_seg.png")
-
-    exit()
-    # -- run fwd/bwd --
-    niters_ref = 15
-    niters_fwd_bwd = 5
-    sigma2_app = 0.005
-    potts = 1.
-    # print("8: ",params[0].mu_app[8],params[0].counts[8])
-    spix,params = run_fwd_bwd(vid_og,spix,params,sp_size,sigma2_app,
-                              potts,niters_fwd_bwd,niters_ref)
-    # print("8:" ,params[0].mu_app[8],params[0].counts[8])
-    border_b = prop_cuda.find_border(spix)
-    spix,params = run_fwd_bwd(vid_og,spix,params,sp_size,sigma2_app,
-                              potts,niters_fwd_bwd,niters_ref)
-    border_c = prop_cuda.find_border(spix)
-
-    # -- view --
-    marked = mark_spix_vid(vid,spix)
-    marked_m = marked.clone()
-    # marked_m[1:] = (1-1.*missing.cpu())*marked_m[1:]
-    marked_c = color_spix(marked.clone(),spix,115,cidx=0)
-    marked_c = color_spix(marked_c,spix,126,cidx=2)
-
-    # -- save --
-    print("saving images.")
-    # viz_seg = draw_spix_vid(vid,spix)
-    tv_utils.save_image(marked,root / "fwdbwd_marked_fill.png")
-    tv_utils.save_image(marked_m,root / "fwdbwd_marked_missing.png")
-    tv_utils.save_image(marked_c,root / "fwdbwd_marked_colored.png")
-    # tv_utils.save_image(viz_seg,root / "viz_seg.png")
-
-    # -- elephant zoom --
-    tv_utils.save_image(rzs(marked[[0],...,70-10:140-10,110+10:180+10]),
-                        root / "eleph0.png")
-    tv_utils.save_image(rzs(marked[[1],...,70+10:140+10,110+15:180+15]),
-                        root / "eleph1.png")
-    # tv_utils.save_image(marked[[0],...,70-10:140-10,110+10:180+10],root / "eleph0.png")
-    # tv_utils.save_image(marked[[1],...,70+10:140+10,110+15:180+15],root / "eleph1.png")
-
-
-    mvid = st_spix.spix_utils.mark_border(vid,border_og,0)
-    tv_utils.save_image(mvid,root / "double_border_a.png")
-    mvid = st_spix.spix_utils.mark_border(vid,border_b,0)
-    tv_utils.save_image(mvid,root / "double_border_b.png")
-    mvid = st_spix.spix_utils.mark_border(vid,border_c,0)
-    tv_utils.save_image(mvid,root / "double_border_c.png")
-    # mvid = st_spix.spix_utils.mark_border(mvid,border_c,1)
-    # mvid = st_spix.spix_utils.mark_border(mvid,border_og,2)
-
-
-    # -- vizualize the lab values with the means --
-    # vid_lab = st_spix.utils.vid_rgb2lab(vid)
-    # print([(vid_lab[:,i].min().item(),vid_lab[:,i].max().item()) for i in range(3)])
-    # inspect_means(vid_lab,spix,params)
 
 
 
