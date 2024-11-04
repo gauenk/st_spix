@@ -33,7 +33,8 @@ __host__ void update_params(const float* img, const int* spix,
     sum_by_label<<<BlockPerGrid1,ThreadPerBlock>>>(img,spix,sp_params,sp_helper,
                                                    npixels,nbatch,width,nftrs);
     // calc_posterior_mode<<<BlockPerGrid2,ThreadPerBlock>>>(sp_params,sp_helper,
-    //                                                       sigma2_app,nspix_buffer); 
+    //                                                       sigma2_app,sp_size,
+    //                                                       nspix_buffer); 
     calc_simple_update<<<BlockPerGrid2,ThreadPerBlock>>>(sp_params,sp_helper,
                                                          sigma2_app, sp_size,
                                                          nspix_buffer);
@@ -167,6 +168,9 @@ void calc_summ_stats(spix_params*  sp_params,spix_helper* sp_helper,
 
     // --  sample means --
 	if (count_int<=0){ return; }
+    //   sp_params[k].valid = 0; // invalidate empty spix?
+    //   return;
+    // }
 
     // -- appearance --
     mu_app.x = sp_helper[k].sum_app.x / count;
@@ -218,16 +222,34 @@ void calc_simple_update(spix_params*  sp_params,spix_helper* sp_helper,
     
     // -- read curr --
 	int count_int = sp_params[k].count;
-	float a_prior = sp_params[k].prior_count; 
-	float prior_sigma_s_2 = a_prior * a_prior;
+	float pc = sp_params[k].prior_count; 
+	// float prior_sigma_s_2 = pc * pc;
+	float prior_sigma_s_2 = pc * sp_size;
 	double count = count_int * 1.0;
     double2 mu_shape;
     float3 mu_app;
     double3 sigma_shape;
-	double total_count = (double) count_int + a_prior;
+	double total_count = (double) count_int + pc;
 
     // --  sample means --
 	if (count_int<=0){ return; }
+
+    // -- get prior --
+    double3 prior_sigma_shape = sp_params[k].prior_sigma_shape;
+    double pr_det = prior_sigma_shape.x*prior_sigma_shape.z - \
+      prior_sigma_shape.y*prior_sigma_shape.y;
+    // printf("[a:%d] sxx,syx,syy: %lf %lf %lf %lf\n",
+    //        k,prior_sigma_shape.x,prior_sigma_shape.y,prior_sigma_shape.z,pr_det);
+    double tmp = prior_sigma_shape.x;
+    prior_sigma_shape.x = prior_sigma_shape.z/pr_det;
+    prior_sigma_shape.y = prior_sigma_shape.y/pr_det;
+    prior_sigma_shape.z = tmp/pr_det;
+    // printf("[b:%d] sxx,syx,syy: %lf %lf %lf %f\n",
+    //        k,prior_sigma_shape.x,prior_sigma_shape.y,prior_sigma_shape.z,pc);
+    // prior_sigma_shape.x = pc * sp_size;
+    // prior_sigma_shape.y = 0;
+    // prior_sigma_shape.z = pc * sp_size;
+
 
     // -- appearance --
     mu_app.x = sp_helper[k].sum_app.x / count;
@@ -252,9 +274,12 @@ void calc_simple_update(spix_params*  sp_params,spix_helper* sp_helper,
     sigma_shape.z = sp_helper[k].sq_sum_shape.z - count*mu_shape.y*mu_shape.y;
 
     // -- inverse --
-    sigma_shape.x = (prior_sigma_s_2 + sigma_shape.x) / (total_count - 3.0);
-    sigma_shape.y = sigma_shape.y / (total_count - 3);
-    sigma_shape.z = (prior_sigma_s_2 + sigma_shape.z) / (total_count - 3.0);
+    // sigma_shape.x = (prior_sigma_s_2 + sigma_shape.x) / (total_count - 3.0);
+    // sigma_shape.y = sigma_shape.y / (total_count - 3);
+    // sigma_shape.z = (prior_sigma_s_2 + sigma_shape.z) / (total_count - 3.0);
+    sigma_shape.x = (pc*prior_sigma_shape.x + sigma_shape.x) / (total_count + 3.0);
+    sigma_shape.y = (pc*prior_sigma_shape.y + sigma_shape.y) / (total_count + 3.0);
+    sigma_shape.z = (pc*prior_sigma_shape.z + sigma_shape.z) / (total_count + 3.0);
 
     // -- correct sample cov if not invertable --
     double det = sigma_shape.x*sigma_shape.z - sigma_shape.y*sigma_shape.y;
@@ -281,7 +306,7 @@ void calc_simple_update(spix_params*  sp_params,spix_helper* sp_helper,
 
 __global__
 void calc_posterior_mode(spix_params*  sp_params, spix_helper* sp_helper,
-                         float sigma2_app, const int nsuperpixel_buffer) {
+                         float sigma2_app, int sp_size, const int nsuperpixel_buffer) {
 
     // -- update thread --
 	int k = threadIdx.x + blockIdx.x * blockDim.x; // the label
@@ -291,11 +316,11 @@ void calc_posterior_mode(spix_params*  sp_params, spix_helper* sp_helper,
     
     // -- read curr --
 	int count_int = sp_params[k].count;
-	// float a_prior = sp_params[k].prior_count;
+	// float pc = sp_params[k].prior_count;
 	float prior_count = sp_params[k].prior_count;
 	double count = count_int * 1.0;
     double lprob = 0.0;
-    bool is_cond = sp_params[k].is_cond;
+    bool prop = sp_params[k].prop;
 
     // -- unpack --
     // int prior_mu_app_count = sp_params[k].prior_mu_app_count;
@@ -360,7 +385,8 @@ void calc_posterior_mode(spix_params*  sp_params, spix_helper* sp_helper,
     //        _sq_sum.x,_sq_sum.y,_sq_sum.z,mu_shape.x,mu_shape.y);
     double3 sigma_shape = calc_shape_sigma_mode_simp(sp_helper[k].sq_sum_shape,
                                                      mu_shape,prior_sigma_shape,
-                                                     prior_mu_shape,count,prior_count);
+                                                     prior_mu_shape,count,
+                                                     prior_count,sp_size);
     // double3 sigma_shape = calc_shape_sigma_mode(sp_helper[k].sq_sum_shape,mu_shape,
     //                                             prior_sigma_shape,prior_mu_shape,
     //                                             count,prior_count);
@@ -417,7 +443,7 @@ __device__ float3 calc_app_sample_mean(float3 sample_sum, double count) {
 }
 
 __device__ float3 calc_app_mean_mode(float3 sample_sum, float3 prior_mu,
-                                     int count, int prior_count) {
+                                     int count, float prior_count) {
   float3 post_mu;
   post_mu.x = (sample_sum.x + prior_count * prior_mu.x)/(count + prior_count);
   post_mu.y = (sample_sum.y + prior_count * prior_mu.y)/(count + prior_count);
@@ -474,7 +500,7 @@ __device__ float3 calc_app_sigma_mode(double3 sample_sq_sum, double3 sample_sum,
     return sigma_mode;
 }
 
-__device__ double calc_app_sigma_ll(float3 sigma, float3 prior_sigma, int prior_count) {
+__device__ double calc_app_sigma_ll(float3 sigma, float3 prior_sigma, float prior_count) {
 
     // -- inverse-gamma params --
     double alpha = prior_count/2.;
@@ -510,7 +536,7 @@ __device__ double2 calc_shape_sample_mean(int2 sum_shape, double count) {
 }
 
 __device__ double2 calc_shape_mean_mode(double2& mu, double2 prior_mu,
-                                        int count, int prior_count) {
+                                        int count, float prior_count) {
   mu.x = (prior_count * prior_mu.x + count*mu.x)/(prior_count + count);
   mu.y = (prior_count * prior_mu.y + count*mu.y)/(prior_count + count);
   return mu;
@@ -530,7 +556,7 @@ __device__ double calc_shape_mean_ll(double2 mu, double2 prior_mu,
 // Compute the posterior mode of the covariance matrix
 __device__ double3 calc_shape_sigma_mode_simp(longlong3 sq_sum, double2 mu,
                                               double3 prior_sigma_s, double2 prior_mu,
-                                              int count, int prior_count) {
+                                              int count, float prior_count, int sp_size) {
   
 	// -- sample covairance --
     double3 sigma_mode;
@@ -544,7 +570,7 @@ __device__ double3 calc_shape_sigma_mode_simp(longlong3 sq_sum, double2 mu,
       sigma_mode.z = sq_sum.z;
     }
 
-    int sigma2_prior = prior_count*prior_count;
+    float sigma2_prior = prior_count*sp_size;
     double total_count = 1.*(count + prior_count);
     sigma_mode.x = (sigma2_prior + sigma_mode.x)/(total_count + 3.0);
     sigma_mode.y = (sigma_mode.y) / (total_count + 3.0);
@@ -557,7 +583,7 @@ __device__ double3 calc_shape_sigma_mode_simp(longlong3 sq_sum, double2 mu,
 // Compute the posterior mode of the covariance matrix_
 __device__ double3 calc_shape_sigma_mode(longlong3 sq_sum, double2 mu,
                                          double3 prior_sigma, double2 prior_mu,
-                                         int count, int prior_count) {
+                                         int count, float prior_count) {
 
     // -- prior sigma_s --
     // double3 sigma_opt = outer_product_term(prior_mu, mu, prior_count, count);
@@ -616,7 +642,7 @@ __device__ double calc_shape_sigma_ll(double3 sigma_s, double3 prior_sigma,
 ************************************************************/
 
 __device__ double3 outer_product_term(double2 prior_mu, double2 mu,
-                                      int obs_count, int prior_count) {
+                                      int obs_count, float prior_count) {
     double pscale = (1.0*obs_count*prior_count)/(obs_count+prior_count);
     double3 deltas;
     deltas.x = mu.x - prior_mu.x;

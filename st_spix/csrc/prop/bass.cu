@@ -53,18 +53,32 @@ __host__ int bass(float* img, int* seg,spix_params* sp_params,bool* border,
     // float sigma2_app = sigma_app*sigma_app;
     // fprintf(stdout,"pix_var: %3.5f\n",pix_var);
 
+    // -- Update Parameters --
+    // set_border(seg, border, height, width);
+    // update_params(img, seg, sp_params, sp_helper, sigma2_app,
+    //               npix, sp_size, nspix_buffer, nbatch, width, nftrs);
 
     // -- Update Parameters --
     update_params(img, seg, sp_params, sp_helper, sigma2_app,
                   npix, sp_size, nspix_buffer, nbatch, width, nftrs);
 
+    // -- Update Segmentation --
+    update_seg(img, seg, border, sp_params,
+               niters_seg, sigma2_app, potts,
+               npix, nbatch, width, height, nftrs);
+
     for (int idx = 0; idx < niters; idx++) {
 
 
-      // -- Update Segmentation --
-      update_seg(img, seg, border, sp_params,
-                 niters_seg, sigma2_app, potts,
-                 npix, nbatch, width, height, nftrs);
+      // -- Update Parameters --
+      update_params(img, seg, sp_params, sp_helper, sigma2_app,
+                    npix, sp_size, nspix_buffer, nbatch, width, nftrs);
+
+      // // -- Update Segmentation --
+      // update_seg(img, seg, border, sp_params,
+      //            niters_seg, sigma2_app, potts,
+      //            npix, nbatch, width, height, nftrs);
+
 
       // -- Run Split/Merge --
       if (idx >= sm_start){
@@ -75,18 +89,30 @@ __host__ int bass(float* img, int* seg,spix_params* sp_params,bool* border,
                                alpha_hastings, sigma2_app, sigma2_size, count,
                                idx, max_spix,sp_size,npix,nbatch,width,
                                height,nftrs,nspix_buffer);
+
+          // -- Update Parameters --
+          update_params(img, seg, sp_params, sp_helper, sigma2_app,
+                        npix, sp_size, nspix_buffer, nbatch, width, nftrs);
+
         }
         if( idx%4 == 2){
           run_merge(img, seg, border, sp_params,
                     sp_helper, sm_helper, sm_seg1, sm_seg2, sm_pairs,
                     alpha_hastings, sigma2_app, sigma2_size, count, idx,
                     max_spix,sp_size,npix,nbatch,width,height,nftrs,nspix_buffer);
+
+          // -- Update Parameters --
+          update_params(img, seg, sp_params, sp_helper, sigma2_app,
+                        npix, sp_size, nspix_buffer, nbatch, width, nftrs);
+
+
         }
       }
 
-      // -- Update Parameters --
-      update_params(img, seg, sp_params, sp_helper, sigma2_app,
-                    npix, sp_size, nspix_buffer, nbatch, width, nftrs);
+      // -- Update Segmentation --
+      update_seg(img, seg, border, sp_params,
+                 niters_seg, sigma2_app, potts,
+                 npix, nbatch, width, height, nftrs);
 
 
       // -- dev only [ DELETE ME! ] --
@@ -149,7 +175,11 @@ run_bass(const torch::Tensor img, int niters,
 
     // -- get min,max --
     int min_seg = at::min(spix).item<int>(); 
-    fprintf(stdout,"min_seg: %d\n",min_seg);
+    int max_seg = at::max(spix).item<int>(); 
+    auto _unique_ids = std::get<0>(at::_unique(spix));
+    int nuniq = _unique_ids.size(0);
+    // int nspix = nuniq;
+    fprintf(stdout,"min_seg,max_seg,nuniq: %d,%d,%d\n",min_seg,max_seg,nuniq);
 
     // -- allocate memory --
     int nspix_buffer = nspix*50;
@@ -160,13 +190,6 @@ run_bass(const torch::Tensor img, int niters,
     spix_helper* sp_helper=(spix_helper*)easy_allocate(nspix_buffer,helper_size);
 
     // -- compute pixel (inverse) covariance info --
-    float pix_half = float(sigma2_app/2) * float(sigma2_app/2);
-    float3 pix_var;
-    pix_var.x = 1.0/pix_half;
-    pix_var.y = 1.0/pix_half;
-    pix_var.z = 1.0/pix_half;
-    // float sigma_app = sigma2_app;
-    // float logdet_pix_var = 3.*log(pix_half);
     // float prior_sigma_app = float(sigma2_app/2) * float(sigma2_app/2);
     // float prior_sigma_app = sigma2_app;
     // float sigma2_app = 4*std::sqrt(1./pix_var.x);
@@ -200,8 +223,8 @@ run_bass(const torch::Tensor img, int niters,
 
     // -- init spix_params --
     init_sp_params(sp_params,sigma2_app,img_ptr,spix_ptr,sp_helper,
-                   npix,nspix,nspix_buffer,nbatch,width,nftrs);
-    mark_active_contiguous(sp_params,nspix,nspix_buffer);
+                   npix,nspix,nspix_buffer,nbatch,width,nftrs,sp_size);
+    mark_active_contiguous(sp_params,nspix,nspix_buffer,sp_size);
     //                  int npix, int nspix_buffer,ftrs);
     //              int nbatch, int width, int nftrs)
     // init_sp_params(sp_paramsimg,,nspix,nspix_buffer,npix);
@@ -233,8 +256,7 @@ run_bass(const torch::Tensor img, int niters,
 
     // PySuperpixelParams params;
     PySuperpixelParams params = get_params_as_tensors(sp_params,ids,num_ids,nspix);
-    run_update_prior(spix,params,0); // shift estimates to prior information @ spix
-
+    run_update_prior(spix,params,0,false); // shift estimates to prior information @ spix
 
     // -- view --
     // _unique_ids = std::get<0>(at::_unique(spix));

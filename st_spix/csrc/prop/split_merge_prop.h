@@ -24,7 +24,7 @@
 
 __host__ int run_split_p(const float* img, int* seg, bool* border,
                        spix_params* sp_params, spix_helper* sp_helper,
-                       spix_helper_sm* sm_helper,
+                       spix_helper_sm_v2* sm_helper,
                        int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
                        float alpha_hastings,
                        float sigma2_app, float sigma2_size,
@@ -36,7 +36,7 @@ __host__ int run_split_p(const float* img, int* seg, bool* border,
 
 __host__ void run_merge_p(const float* img, int* seg, bool* border,
                         spix_params* sp_params, spix_helper* sp_helper,
-                        spix_helper_sm* sm_helper,
+                        spix_helper_sm_v2* sm_helper,
                         int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
                         float alpha_hastings,
                         float sigma2_app, float sigma2_size,
@@ -49,7 +49,7 @@ __host__ void run_merge_p(const float* img, int* seg, bool* border,
 __host__ void CudaCalcMergeCandidate_p(const float* img, int* seg,
                                      bool* border, spix_params* sp_params,
                                      spix_helper* sp_helper,
-                                     spix_helper_sm* sm_helper,
+                                     spix_helper_sm_v2* sm_helper,
                                      int* sm_pairs, const int npix, const int nbatch,
                                      const int sp_size,
                                      const int width, const int height,
@@ -60,7 +60,7 @@ __host__ void CudaCalcMergeCandidate_p(const float* img, int* seg,
 __host__ int CudaCalcSplitCandidate_p(const float* img, int* seg, bool* border,
                                     spix_params* sp_params,
                                     spix_helper* sp_helper,
-                                    spix_helper_sm* sm_helper,
+                                    spix_helper_sm_v2* sm_helper,
                                     int* sm_seg1, int* sm_seg2, int* sm_pairs,
                                     const int sp_size,
                                     const int npix, const int nbatch, const int width,
@@ -70,11 +70,12 @@ __host__ int CudaCalcSplitCandidate_p(const float* img, int* seg, bool* border,
                                     float sigma2_app, float sigma2_size);
 
 __global__ void init_sm_p(const float* img,
-                        const int* seg_gpu,
-                        spix_params* sp_params,
-                        spix_helper_sm* sm_helper,
-                        const int nspix_buffer, const int nbatch,
-                        const int width,const int nftrs,int* sm_pairs, int* nvalid);
+                          const int* seg_gpu,
+                          spix_params* sp_params,
+                          spix_helper_sm_v2* sm_helper,
+                          const int nspix_buffer, const int nbatch,
+                          const int height, const int width,
+                          const int nftrs,int* sm_pairs, int* nvalid);
 
 /************************************************************
 
@@ -86,7 +87,7 @@ __global__ void init_sm_p(const float* img,
 
 __global__
 void merge_marginal_likelihood_p(int* sm_pairs, spix_params* sp_params,
-                               spix_helper_sm* sm_helper,
+                               spix_helper_sm_v2* sm_helper,
                                const int sp_size,
                                const int npix, const int nbatch,
                                const int width, const int nspix_buffer,
@@ -95,7 +96,7 @@ __global__
 void merge_hastings_ratio_p(const float* img, int* sm_pairs,
                           spix_params* sp_params,
                           spix_helper* sp_helper,
-                          spix_helper_sm* sm_helper,
+                          spix_helper_sm_v2* sm_helper,
                           const int npix, const int nbatch, const int width,
                           const int nftrs, const int nspix_buffer,
                           float alpha_hasting_ratio, int* nmerges);
@@ -108,28 +109,27 @@ __global__  void calc_merge_candidate_p(int* seg, bool* border, int* sm_pairs,
                                       const int change);
 
 __global__ void sum_by_label_merge_p(const float* img, const int* seg_gpu,
-                                   spix_params* sp_params,
-                                   spix_helper_sm* sm_helper,
-                                   const int npix, const int nbatch,
-                                   const int width, const int nftrs);
-
+                                     spix_params* sp_params,
+                                     spix_helper_sm_v2* sm_helper,
+                                     const int npix, const int nbatch,
+                                     const int width, const int nftrs);
 
 __global__ void merge_likelihood_p(const float* img,int* sm_pairs,
                                  spix_params* sp_params,
                                  spix_helper* sp_helper,
-                                 spix_helper_sm* sm_helper,
+                                 spix_helper_sm_v2* sm_helper,
                                  const int npix, const int nbatch,
                                  const int width, const int nftrs,
                                  const int nspix_buffer, float a_0, float b_0);
 
 
 __global__ void remove_sp_p(int* sm_pairs, spix_params* sp_params,
-                          spix_helper_sm* sm_helper,
+                          spix_helper_sm_v2* sm_helper,
                           const int nspix_buffer);
 
 __global__ void merge_sp_p(int* seg, bool* border, int* sm_pairs,
                          spix_params* sp_params,
-                         spix_helper_sm* sm_helper,
+                         spix_helper_sm_v2* sm_helper,
                          const int npix, const int nbatch,
                          const int width, const int height);
 
@@ -143,7 +143,7 @@ __global__ void merge_sp_p(int* seg, bool* border, int* sm_pairs,
 
 __global__ void init_split_p(const bool* border, int* seg_gpu,
                            spix_params* sp_params,
-                           spix_helper_sm* sm_helper,
+                           spix_helper_sm_v2* sm_helper,
                            const int nspix_buffer,
                            const int nbatch, const int width,
                            const int height, const int offset,
@@ -151,7 +151,7 @@ __global__ void init_split_p(const bool* border, int* seg_gpu,
 
 __global__ void split_sp_p(int* seg, int* sm_seg1, int* sm_pairs,
                          spix_params* sp_params,
-                         spix_helper_sm* sm_helper,
+                         spix_helper_sm_v2* sm_helper,
                          const int npix, const int nbatch,
                          const int width, const int height, int max_nspix);
 
@@ -159,18 +159,32 @@ __global__ void calc_split_candidate_p(int* dists, int* spix, bool* border,
                                      int distance, int* done_gpu, const int npix,
                                      const int nbatch, const int width, const int height);
 
+__device__ double marginal_likelihood_shape_p(double3 sigma_est, double3 prior_sigma,
+                                              float pr_count,int num_obs);
+__device__ double compute_l2norm_mu_app_p(double3 sum_obs,float3 prior_mu,
+                                          int _num_obs, double sigma2);
+
 __global__ void calc_seg_split_p(int* sm_seg1, int* sm_seg2, int* seg,
                                const int npix, int nbatch, int max_nspix);
 
 __global__ void sum_by_label_split_p(const float* img, const int* seg,
-                                   spix_params* sp_params,
-                                   spix_helper_sm* sm_helper,
-                                   const int npix, const int nbatch,
-                                   const int width, const int nftrs, int max_nspix);
+                                     spix_params* sp_params,
+                                     spix_helper_sm_v2* sm_helper,
+                                     const int npix, const int nbatch,
+                                     const int height, const int width,
+                                     const int nftrs, int max_nspix);
+
+__global__
+void sample_estimates_p(spix_params* sp_params,
+                        spix_helper_sm_v2* sm_helper,
+                        const int sp_size,
+                        const int npix, const int nbatch,
+                        const int width, const int nspix_buffer,
+                        float sigma2_app, float sigma2_size, int max_nspix);
 
 __global__
 void split_marginal_likelihood_p(spix_params* sp_params,
-                               spix_helper_sm* sm_helper,
+                               spix_helper_sm_v2* sm_helper,
                                const int sp_size,
                                const int npix, const int nbatch,
                                const int width, const int nspix_buffer,
@@ -183,11 +197,24 @@ __device__ double marginal_likelihood_app_p(double3 sum_obs,double3 sq_sum_obs,
 __device__ double size_beta_likelihood_p(int _count, int _tgt_count,
                                        double alpha, const int _npix);
 
+__device__ double compute_lprob_mu_app(double3 sum_obs,float3 prior_mu,
+                                       int _num_obs, double sigma2);
+
+__device__ double3 compute_sigma_shape(int2 sum, longlong3 sq_sum,
+                                       int count, float prior_count, int sp_size);
+__device__ int2 get_sum_shape(int2 sum_s, int2 sum_k);
+__device__ longlong3 get_sq_sum_shape(longlong3 sq_sum_s, longlong3 sq_sum_k);
+
+__device__ double compute_lprob_sigma_shape(double3 sigma_est,
+                                            double3 prior_sigma);
+__device__ double wasserstein_p(double3 sigma_est,double3 sigma_prior);
+__device__ double3 eigenvals_cov_p(double3 cov);
+
 __global__
 void split_likelihood_p(const float* img, int* sm_pairs,
                       spix_params* sp_params,
                       spix_helper* sp_helper,
-                      spix_helper_sm* sm_helper,
+                      spix_helper_sm_v2* sm_helper,
                       const int npix, const int nbatch,
                       const int width, const int nftrs,
                       const int nspix_buffer,
@@ -197,9 +224,9 @@ __global__
 void split_hastings_ratio_p(const float* img, int* sm_pairs,
                           spix_params* sp_params,
                           spix_helper* sp_helper,
-                          spix_helper_sm* sm_helper,
+                          spix_helper_sm_v2* sm_helper,
                           const int npix, const int nbatch,
                           const int width, const int nftrs,
-                          const int nspix_buffer,
+                          const int nspix_buffer,int sp_size,
                           float alpha_hasting_ratio,
                           int max_nspix, int* max_sp );

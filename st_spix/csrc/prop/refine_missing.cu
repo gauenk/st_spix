@@ -60,13 +60,12 @@ __host__ void refine_missing(float* img, int* seg, spix_params* sp_params,
                              int niters, int niters_seg,
                              // float3 pix_ivar,float logdet_pix_var,
                              float sigma2_app, float potts,
-                             int sp_size, int nspix,
+                             int sp_size, int nspix, int nspix_buffer,
                              int nbatch, int width, int height, int nftrs,
                              double* logging_aprior){
 
     // -- init --
     int npix = height * width;
-    int nspix_buffer = nspix * 45;
     for (int i = 0; i < niters; i++) {
 
       // -- Update Parameters with Previous SuperpixelParams as Prior --
@@ -137,7 +136,7 @@ run_refine_missing(const torch::Tensor img,
     assert(nbatch==1);
 
     // -- allocate memory --
-    int nspix_buffer = nspix*50;
+    int nspix_buffer = nspix*10;
     const int sparam_size = sizeof(spix_params);
     const int helper_size = sizeof(spix_helper);
     bool* border = (bool*)easy_allocate(nbatch*npix,sizeof(bool));
@@ -201,12 +200,12 @@ run_refine_missing(const torch::Tensor img,
     // -- init superpixel params --
     int init_nspix = nspix_from_spsize(sp_size, width, height);
     init_sp_params(sp_params,sigma2_app,img_ptr,filled_spix_ptr,sp_helper,
-                   npix,init_nspix,nspix_buffer,nbatch,width,nftrs);
+                   npix,init_nspix,nspix_buffer,nbatch,width,nftrs,sp_size);
     auto _unique_ids = std::get<0>(at::_unique(spix));
     int nactive = _unique_ids.size(0);
     int* _ids = _unique_ids.data<int>();
     write_prior_counts(prior_params,sp_params,_ids,nactive);
-    mark_active(sp_params, _ids, nactive, nspix, nspix_buffer);
+    mark_active(sp_params, _ids, nactive, nspix, nspix_buffer, sp_size);
 
 
     // -- init logging_lprior --
@@ -218,7 +217,8 @@ run_refine_missing(const torch::Tensor img,
       refine_missing(img_ptr, filled_spix_ptr, sp_params,
                      missing_ptr, border, sp_helper,
                      niters, niters_seg, sigma_app, potts,
-                     sp_size, nspix, nbatch, width, height, nftrs, logging_ptr);
+                     sp_size, nspix, nspix_buffer,
+                     nbatch, width, height, nftrs, logging_ptr);
     }
 
     // -- get spixel parameters as tensors --

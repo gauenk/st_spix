@@ -33,9 +33,9 @@ __global__ void init_sp_params_kernel_s(superpixel_params* sp_params, const int 
 
   // calculate the inverse of covariance
   double3 sigma_s_local;
-  sigma_s_local.x = 1.0/sp_size_square;
+  sigma_s_local.x = sp_size;
   sigma_s_local.y = 0.0;
-  sigma_s_local.z = 1.0/sp_size_square;
+  sigma_s_local.z = sp_size;
   sp_params[k].sigma_s = sigma_s_local;
   sp_params[k].prior_count = npix/nspix;
   if(k>=nspix) {

@@ -857,7 +857,7 @@ void split_hastings_ratio_p(const float* img, int* sm_pairs,
         prior_sigma_shape.z = prior_count;
         sp_params[s].prior_sigma_shape = prior_sigma_shape;
         sp_params[s].prior_sigma_shape_count = prior_count;
-        sp_params[s].is_cond = false;
+        sp_params[s].prop = false;
 
       }
 

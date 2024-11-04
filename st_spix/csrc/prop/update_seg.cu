@@ -206,6 +206,15 @@ __device__ float2 calc_joint(float* imgC, int* seg,
 ***********************************************
 **********************************************/
 
+__host__ void set_border(int* seg, bool* border, int height, int width){
+  int npix = height*width;
+  int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
+  dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
+  dim3 BlockPerGrid(num_block,1);
+  cudaMemset(border, 0, npix*sizeof(bool));
+  find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(seg,border,npix,width,height);
+}
+
 __host__ void update_seg(float* img, int* seg, bool* border,
                          spix_params* sp_params, const int niters,
                          const float sigma2_app, const float potts,
@@ -227,8 +236,7 @@ __host__ void update_seg(float* img, int* seg, bool* border,
         }
     }
     cudaMemset(border, 0, npix*sizeof(bool));
-    find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(\
-           seg, border, npix, xdim, ydim);
+    find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(seg, border, npix, xdim, ydim);
 }
 
 

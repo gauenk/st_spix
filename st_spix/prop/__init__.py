@@ -18,6 +18,7 @@ import torchvision.utils as tv_utils
 # -- helpers --
 import st_spix
 from st_spix import flow_utils
+from st_spix import flow_img
 from st_spix.spix_utils import img4bass,mark_spix
 from st_spix import flow_utils as futils
 
@@ -139,7 +140,15 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=4,
                                      sp_size,sigma2_app,sigma2_size,
                                      potts,alpha_hastings)
 
+    # alpha_hastings = 0.5
+    # alpha_hastings = 0.
+    # alpha_hastings = 100.
+    # sigma2_size = 1e2
+    # sigma2_size = 5e1
+    print("\n\n\n alpha_hastings set to 0. \n\n\n\n")
+    print("\n\n\n sigma2_size set to 1e8 \n\n\n\n")
     print("nuniq_spix: ",len(th.unique(spix_t.ravel())))
+    # exit()
 
     # print(spix_t.sum())
     # print("post.")
@@ -193,6 +202,9 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=4,
         # -- unpack --
         img_t = vid[[ix+1]]
         flow_t = flow[[ix]]
+        # print(flow_t.shape)
+        print("\n\n\n\n\n")
+        print("flow info:",ix,flow_t.abs().mean((-4,-3,-2)))
         # flow_t = th.zeros_like(flow[[ix]])
         spix_tm1 = spix[-1].clone()
         params_tm1 = params[-1]
@@ -202,8 +214,22 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=4,
         # print(hex(id(params_tm1.ids)),hex(id(params_tm1.ids[0])))
         # print("[out] uniq: ",  th.unique(spix_tm1.ravel()))
         # print("[a-out] bincount: ",  th.bincount(spix_tm1.ravel()))
+        print("\n\n\n\n")
+        # print(params_tm1.prior_sigma_shape.shape)
+        # print(params_tm1.prior_sigma_shape[0])
+        # print(params_tm1.prior_sigma_shape[50])
+        # print(params_tm1.prior_sigma_shape[100])
+        print(params_tm1.prior_sigma_shape[59])
+        print("-"*20)
+        # print(params_tm1.prior_sigma_shape[-100])
+        # print(params_tm1.prior_sigma_shape[-50])
+        # print(params_tm1.prior_sigma_shape[-30:-20])
+        # print(params_tm1.prior_sigma_shape[-20:-10])
+        # print(params_tm1.prior_sigma_shape[-10:])
+        print("\n\n\n\n")
 
         # -- run --
+        if ix > 20: alpha_hastings = 0.
         # alpha_hastings_t = alpha_hastings*(1+2.0*ix)
         # alpha_hastings_t = min(alpha_hastings_t,40.)
         alpha_hastings_t = alpha_hastings
@@ -223,7 +249,6 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=4,
         # print("hey: ",params_t.ids)
         # print(hex(id(params_t.ids)),hex(id(params_t.ids[0])))
         # print(dir(params_t))
-
 
         # -- append --
         spix.append(spix_t)
@@ -263,6 +288,9 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
     mu_shape_tm1 = params_tm1.mu_shape[None,:]
     # spix_ids = params_tm1.ids
     spix_ids = th.unique(spix_tm1.ravel())
+    if len(spix_ids) > 10000:
+        print("too many spix.")
+        exit()
 
     # -- checking prior counts -
     # pcounts = params_tm1.prior_counts
@@ -298,6 +326,7 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
     flow_sp,flow_down,means_shift = fxn(flow,mu_shape_tm1,spix_tm1,spix_ids)
     params_tm1.prior_mu_shape[...] = params_tm1.mu_shape[...]
 
+
     # print("OH.")
     # print(params_tm1.mu_s[:4]/th.tensor([[W-1,H-1]]).to(img.device))
 
@@ -315,6 +344,7 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
     print("[c] bincount: ",  th.bincount(spix_prop[args].ravel()))
     spix_prop[counts!=1] = -1
     missing_mask = counts != 1
+    print("delta: ",th.mean(1.*(spix_prop - spix_tm1)).item())
 
     # _spix,_flow = spix0[None,:],flow_down
     # _spix_toshift = spix0[None,:,:,None].clone().float()
@@ -404,9 +434,12 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
     # th.save(spix_tm1,"spix_tm1.pth")
     # th.save(spix_prop,"spix_prop_prefill.pth")
     pre_fill = spix_prop.clone()
-    spix_prop = prop_cuda.fill_missing(spix_prop,params_tm1.mu_shape,missing,0)
+    # pre_fill = flow_img.flow2img(flow_sp[0])
+    print("pre.")
+    spix_prop = prop_cuda.fill_missing(spix_prop,params_tm1.mu_shape,missing,1000)
+    print("post.")
     post_fill = spix_prop.clone()
-    # assert(spix_prop.min().item() >= 0)
+    assert(spix_prop.min().item() >= 0)
     # print(spix_prop.min().item(),spix_prop.max().item())
     # exit()
 
@@ -549,12 +582,12 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
 
     # -- bass iters --
     # niters = 10
-    sm_start = sp_size
+    sm_start = 0
     # # alpha_hastings = 0.1
     # # print("alpha_hastings: ",alpha_hastings)
     # niters_prop = niters
     # niters_prop = 0#sp_size*4
-    niters_prop = sp_size*10
+    niters_prop = sp_size
     # niters_prop = 0
     _alpha_hastings = alpha_hastings
     # _alpha_hastings = alpha_hastings-10.-20-30.

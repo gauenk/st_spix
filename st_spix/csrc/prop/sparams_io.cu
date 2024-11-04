@@ -113,6 +113,9 @@ PySuperpixelParams init_tensor_params(int size){
     .layout(torch::kStrided).device(device);
   auto options_f32 = torch::TensorOptions().dtype(torch::kFloat32)
     .layout(torch::kStrided).device(device);
+  auto options_f64 = torch::TensorOptions().dtype(torch::kFloat64)
+    .layout(torch::kStrided).device(device);
+
 
   // -- allocate superpixel params --
   PySuperpixelParams sp_params_py;
@@ -128,10 +131,10 @@ PySuperpixelParams init_tensor_params(int size){
 
   // -- shape --
   sp_params_py.mu_shape = torch::zeros({size,2},options_f32);
-  sp_params_py.sigma_shape = torch::zeros({size,3},options_f32);
+  sp_params_py.sigma_shape = torch::zeros({size,3},options_f64);
   sp_params_py.logdet_sigma_shape = torch::zeros({size},options_f32);
   sp_params_py.prior_mu_shape = torch::zeros({size,2},options_f32);
-  sp_params_py.prior_sigma_shape = torch::zeros({size,3},options_f32);
+  sp_params_py.prior_sigma_shape = torch::zeros({size,3},options_f64);
   sp_params_py.prior_mu_shape_count = torch::zeros({size},options_i32);
   sp_params_py.prior_sigma_shape_count = torch::zeros({size},options_i32);
 
@@ -159,6 +162,7 @@ __host__ spix_params* get_tensors_as_params(PySuperpixelParams params,
   // -- allocate superpixel params --
   const int sparam_size = sizeof(spix_params);
   spix_params* sp_params=(spix_params*)easy_allocate(nspix_buffer,sparam_size);
+  cudaMemset(sp_params,0,nspix_buffer*sparam_size);
   // init_sp_params(sp_params,sp_size,nspix,nspix_buffer,npix);
 
   // -- check legal accessing --
@@ -191,10 +195,10 @@ __host__ void params_to_tensors(PySuperpixelParams sp_params_py,
 
   // -- shape --
   auto mu_shape = sp_params_py.mu_shape.data<float>();
-  auto sigma_shape = sp_params_py.sigma_shape.data<float>();
+  auto sigma_shape = sp_params_py.sigma_shape.data<double>();
   auto logdet_sigma_shape = sp_params_py.logdet_sigma_shape.data<float>();
   auto prior_mu_shape = sp_params_py.prior_mu_shape.data<float>();
-  auto prior_sigma_shape = sp_params_py.prior_sigma_shape.data<float>();
+  auto prior_sigma_shape = sp_params_py.prior_sigma_shape.data<double>();
   auto prior_mu_shape_count = sp_params_py.prior_mu_shape_count.data<int>();
   auto prior_sigma_shape_count = sp_params_py.prior_sigma_shape_count.data<int>();
 
@@ -224,8 +228,8 @@ __global__
 void read_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
                  float* prior_mu_app, float* prior_sigma_app,
                  int* prior_mu_app_count, int* prior_sigma_app_count,
-                 float* mu_shape, float* sigma_shape, float* logdet_sigma_shape,
-                 float* prior_mu_shape, float* prior_sigma_shape,
+                 float* mu_shape, double* sigma_shape, float* logdet_sigma_shape,
+                 float* prior_mu_shape, double* prior_sigma_shape,
                  int* prior_mu_shape_count, int* prior_sigma_shape_count,
                  int* counts, float* prior_counts, 
                  spix_params* sp_params, int* ids, int num_spix){
@@ -249,10 +253,10 @@ void read_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
 
     // -- offest memory access [shape] --
     float* mu_shape_ix = mu_shape + ix * 2;
-    float* sigma_shape_ix = sigma_shape + ix * 3;  // Handle sigma_shape
+    double* sigma_shape_ix = sigma_shape + ix * 3;  // Handle sigma_shape
     float* logsigma_shape_ix = logdet_sigma_shape + ix;  // Already in the code
     float* prior_mu_shape_ix = prior_mu_shape + ix * 2;  // Handle prior_mu_shape
-    float* prior_sigma_shape_ix = prior_sigma_shape + ix * 3;  // Handle prior_sigma_shape
+    double* prior_sigma_shape_ix = prior_sigma_shape + ix * 3; // Handle prior_sigma_shape
     int* prior_mu_shape_count_ix = prior_mu_shape_count + ix; 
     int* prior_sigma_shape_count_ix = prior_sigma_shape_count + ix; 
 
@@ -322,10 +326,10 @@ __host__ void tensors_to_params(PySuperpixelParams sp_params_py,
   auto prior_mu_app_count = sp_params_py.prior_mu_app_count.data<int>();
   auto prior_sigma_app_count = sp_params_py.prior_sigma_app_count.data<int>();
   auto mu_shape = sp_params_py.mu_shape.data<float>();
-  auto sigma_shape = sp_params_py.sigma_shape.data<float>();
+  auto sigma_shape = sp_params_py.sigma_shape.data<double>();
   auto logdet_sigma_shape = sp_params_py.logdet_sigma_shape.data<float>();
   auto prior_mu_shape = sp_params_py.prior_mu_shape.data<float>();
-  auto prior_sigma_shape = sp_params_py.prior_sigma_shape.data<float>();
+  auto prior_sigma_shape = sp_params_py.prior_sigma_shape.data<double>();
   auto prior_mu_shape_count = sp_params_py.prior_mu_shape_count.data<int>();
   auto prior_sigma_shape_count = sp_params_py.prior_sigma_shape_count.data<int>();
 
@@ -378,8 +382,8 @@ __global__
 void write_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
                   float* prior_mu_app, float* prior_sigma_app,
                   int* prior_mu_app_count, int* prior_sigma_app_count,
-                  float* mu_shape, float* sigma_shape, float* logdet_sigma_shape,
-                  float* prior_mu_shape, float* prior_sigma_shape,
+                  float* mu_shape, double* sigma_shape, float* logdet_sigma_shape,
+                  float* prior_mu_shape, double* prior_sigma_shape,
                   int* prior_mu_shape_count, int* prior_sigma_shape_count,
                   int* counts, float* prior_counts, spix_params* sp_params, int nspix) {
 
@@ -409,10 +413,10 @@ void write_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
 
     // -- offset memory access for shape --
     float* mu_shape_ix = mu_shape + ix * 2;
-    float* sigma_shape_ix = sigma_shape + ix * 3;
+    double* sigma_shape_ix = sigma_shape + ix * 3;
     float* logdet_sigma_shape_ix = logdet_sigma_shape + ix;
     float* prior_mu_shape_ix = prior_mu_shape + ix * 2;
-    float* prior_sigma_shape_ix = prior_sigma_shape + ix * 3;
+    double* prior_sigma_shape_ix = prior_sigma_shape + ix * 3;
     int* prior_mu_shape_count_ix = prior_mu_shape_count + ix;
     int* prior_sigma_shape_count_ix = prior_sigma_shape_count + ix;
 
@@ -457,16 +461,39 @@ void write_params(float* mu_app, float* sigma_app, float* logdet_sigma_app,
     // -- shape [prior] --
     sp_params[sp_index].prior_mu_shape.x = prior_mu_shape_ix[0];
     sp_params[sp_index].prior_mu_shape.y = prior_mu_shape_ix[1];
-    sp_params[sp_index].prior_sigma_shape.x = prior_sigma_shape_ix[0];
-    sp_params[sp_index].prior_sigma_shape.y = prior_sigma_shape_ix[1];
-    sp_params[sp_index].prior_sigma_shape.z = prior_sigma_shape_ix[2];
+    // sp_params[sp_index].prior_sigma_shape.x = prior_sigma_shape_ix[0];
+    // sp_params[sp_index].prior_sigma_shape.y = prior_sigma_shape_ix[1];
+    // sp_params[sp_index].prior_sigma_shape.z = prior_sigma_shape_ix[2];
     sp_params[sp_index].prior_mu_shape_count = prior_mu_shape_count_ix[0];
     sp_params[sp_index].prior_sigma_shape_count = prior_sigma_shape_count_ix[0];
+
+    // -- shape ... --
+    double cov_xx = prior_sigma_shape_ix[0];
+    double cov_xy = prior_sigma_shape_ix[1];
+    double cov_yy = prior_sigma_shape_ix[2];
+    // float det = cov_xx * cov_yy - cov_xy*cov_xy;
+    // if (det < 0){ det = 0.00001; }
+    // prior_sigma_shape_ptr[0] = icov_yy/det;
+    // prior_sigma_shape_ptr[1] = -icov_xy/det;
+    // prior_sigma_shape_ptr[2] = icov_xx/det;
+    // sp_params[sp_index].prior_sigma_shape.x = cov_yy/det;
+    // sp_params[sp_index].prior_sigma_shape.y = -cov_xy/det;
+    // sp_params[sp_index].prior_sigma_shape.z = cov_xx/det;
+    sp_params[sp_index].prior_sigma_shape.x = cov_xx;
+    sp_params[sp_index].prior_sigma_shape.y = cov_xy;
+    sp_params[sp_index].prior_sigma_shape.z = cov_yy;
+    // printf("prior_sigma: %lf %lf %lf\n",
+    //        sp_params[sp_index].prior_sigma_shape.x,
+    //        sp_params[sp_index].prior_sigma_shape.y,
+    //        sp_params[sp_index].prior_sigma_shape.z);
 
     // -- misc --
     sp_params[sp_index].count = counts_ix[0];
     sp_params[sp_index].prior_count = prior_counts_ix[0];
-    sp_params[sp_index].is_cond = true;
+    sp_params[sp_index].prop = true;
+    sp_params[sp_index].valid = 0; // this is set later
+
+    // sp_params[sp_index].prop = true;
 }
 
 
@@ -651,15 +678,17 @@ int compactify_new_superpixels(torch::Tensor spix,spix_params* sp_params,
 __global__
 void update_prior_kernel(float* mu_app, float* prior_mu_app,
                          float* mu_shape, float* prior_mu_shape,
-                         float* sigma_shape, float* prior_sigma_shape,
-                         int* ids, int nspix, int prev_nspix) {
+                         double* sigma_shape, double* prior_sigma_shape,
+                         int* ids, int nspix, int prev_nspix, bool invert) {
 
     // -- filling superpixel params into image --
     int ix = threadIdx.x + blockIdx.x * blockDim.x;
     if (ix >= nspix) return;
     int sp_index = ids[ix];
     if (sp_index < 0){ return; } // not needed; remove me
+    // printf("[update_prior_kernel.a]: %d\n",sp_index);
     if (sp_index < prev_nspix){ return; }
+    // printf("[update_prior_kernel]: %d\n",sp_index);
 
     // -- mean appearance --
     float* prior_mu_app_ptr = prior_mu_app + 3*sp_index;
@@ -675,16 +704,23 @@ void update_prior_kernel(float* mu_app, float* prior_mu_app,
     prior_mu_shape_ptr[1] = mu_shape_ptr[1];
 
     // -- cov shape --
-    float* prior_sigma_shape_ptr = prior_sigma_shape + 3*sp_index;
-    float* sigma_shape_ptr = sigma_shape + 3*sp_index;
-    float icov_xx = sigma_shape_ptr[0];
-    float icov_xy = sigma_shape_ptr[1];
-    float icov_yy = sigma_shape_ptr[2];
-    float det = icov_xx * icov_yy - icov_xy*icov_xy;
-    if (det < 0){ det = 0.0001; }
-    prior_sigma_shape_ptr[0] = icov_yy/det;
-    prior_sigma_shape_ptr[1] = -icov_xy/det;
-    prior_sigma_shape_ptr[2] = icov_xx/det;
+    double* prior_sigma_shape_ptr = prior_sigma_shape + 3*sp_index;
+    double* sigma_shape_ptr = sigma_shape + 3*sp_index;
+    double icov_xx = sigma_shape_ptr[0];
+    double icov_xy = sigma_shape_ptr[1];
+    double icov_yy = sigma_shape_ptr[2];
+    double det = icov_xx * icov_yy - icov_xy*icov_xy;
+    if (det < 0){ det = 0.000001; }
+
+    if (invert){
+      prior_sigma_shape_ptr[0] = icov_yy/det;
+      prior_sigma_shape_ptr[1] = -icov_xy/det;
+      prior_sigma_shape_ptr[2] = icov_xx/det;
+    }else{
+      prior_sigma_shape_ptr[0] = icov_xx;
+      prior_sigma_shape_ptr[1] = icov_xy;
+      prior_sigma_shape_ptr[2] = icov_yy;
+    }
     // prior_sigma_shape_ptr[0] = sigma_shape_ptr[0];
     // prior_sigma_shape_ptr[1] = sigma_shape_ptr[1];
     // prior_sigma_shape_ptr[2] = sigma_shape_ptr[2];
@@ -692,7 +728,8 @@ void update_prior_kernel(float* mu_app, float* prior_mu_app,
 }
 
 
-void run_update_prior(const torch::Tensor spix,PySuperpixelParams params, int max_nspix){
+void run_update_prior(const torch::Tensor spix,PySuperpixelParams params,
+                      int prev_nspix, bool invert){
 
     // -- check --
     CHECK_INPUT(spix);
@@ -716,8 +753,8 @@ void run_update_prior(const torch::Tensor spix,PySuperpixelParams params, int ma
     float* prior_mu_app = params.prior_mu_app.data<float>();
     float* mu_shape = params.mu_shape.data<float>();
     float* prior_mu_shape = params.prior_mu_shape.data<float>();
-    float* sigma_shape = params.sigma_shape.data<float>();
-    float* prior_sigma_shape = params.prior_sigma_shape.data<float>();
+    double* sigma_shape = params.sigma_shape.data<double>();
+    double* prior_sigma_shape = params.prior_sigma_shape.data<double>();
 
     // -- launch copy kernel --
     int num_blocks = ceil( double(nspix) / double(THREADS_PER_BLOCK) ); 
@@ -725,7 +762,8 @@ void run_update_prior(const torch::Tensor spix,PySuperpixelParams params, int ma
     dim3 nthreads(THREADS_PER_BLOCK);
     update_prior_kernel<<<nblocks,nthreads>>>(mu_app, prior_mu_app, mu_shape,
                                               prior_mu_shape, sigma_shape,
-                                              prior_sigma_shape, ids, nspix, max_nspix);
+                                              prior_sigma_shape, ids,
+                                              nspix, prev_nspix, invert);
 
 }
 

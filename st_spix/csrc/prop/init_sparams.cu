@@ -22,7 +22,7 @@ __host__ void init_sp_params(spix_params* sp_params,
                              float prior_sigma_app,
                              float* img, int* spix, spix_helper* sp_helper,
                              int npix, int nspix, int nspix_buffer,
-                             int nbatch, int width, int nftrs){
+                             int nbatch, int width, int nftrs, int sp_size){
 
   // -- fill sp_params with summary statistics --
   update_params_summ(img, spix, sp_params, sp_helper,
@@ -31,11 +31,14 @@ __host__ void init_sp_params(spix_params* sp_params,
   dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
   dim3 BlockPerGrid(num_block,1);
   init_sp_params_kernel<<<BlockPerGrid,ThreadPerBlock>>>(sp_params, prior_sigma_app,
-                                                         nspix, nspix_buffer, npix);
+                                                         nspix, nspix_buffer,
+                                                         npix, sp_size);
 }
 
-__global__ void init_sp_params_kernel(spix_params* sp_params,float prior_sigma_app,
-                                      const int nspix, int nspix_buffer, int npix){
+__global__ void init_sp_params_kernel(spix_params* sp_params,
+                                      float prior_sigma_app,
+                                      const int nspix, int nspix_buffer,
+                                      int npix, int sp_size){
   // the label
   int k = threadIdx.x + blockIdx.x * blockDim.x;  
   if (k>=nspix_buffer) return;
@@ -47,6 +50,13 @@ __global__ void init_sp_params_kernel(spix_params* sp_params,float prior_sigma_a
   *****************************************************/
 
   int count = npix/(1.*nspix);
+
+  double3 prior_sigma_shape;
+  prior_sigma_shape.x = 1.*sp_size;
+  prior_sigma_shape.y = 0.;
+  prior_sigma_shape.z = 1.*sp_size;
+  sp_params[k].prior_sigma_shape = prior_sigma_shape;
+
   // int count = max(sp_params[k].count,1);
   if(k<nspix) {
 
@@ -69,13 +79,14 @@ __global__ void init_sp_params_kernel(spix_params* sp_params,float prior_sigma_a
     // sp_params[k].sigma_app.z = 0;
 
     // -- shape --
-    sp_params[k].prior_mu_shape = sp_params[k].mu_shape;
-    sp_params[k].prior_mu_shape.x = 0;
-    sp_params[k].prior_mu_shape.y = 0;
-    // sp_params[k].prior_sigma_shape = sp_params[k].sigma_shape;
-    sp_params[k].prior_sigma_shape.x = count;
-    sp_params[k].prior_sigma_shape.y = 0;
-    sp_params[k].prior_sigma_shape.z = count;
+    // sp_params[k].prior_mu_shape = sp_params[k].mu_shape;
+    // sp_params[k].prior_mu_shape.x = 0;
+    // sp_params[k].prior_mu_shape.y = 0;
+    // // sp_params[k].prior_sigma_shape = sp_params[k].sigma_shape;
+
+    // double3 prior_sigma_shape;
+    // sp_params[k].prior_sigma_shape = prior_sigma_shape;
+
     sp_params[k].prior_mu_shape_count = 1;
     sp_params[k].prior_sigma_shape_count = count;
     sp_params[k].logdet_prior_sigma_shape = 4*log(max(count,1));
@@ -105,9 +116,6 @@ __global__ void init_sp_params_kernel(spix_params* sp_params,float prior_sigma_a
     sp_params[k].prior_mu_shape = sp_params[k].mu_shape;
     sp_params[k].prior_mu_shape.x = 0;
     sp_params[k].prior_mu_shape.y = 0;
-    sp_params[k].prior_sigma_shape.x = count;
-    sp_params[k].prior_sigma_shape.y = 0;
-    sp_params[k].prior_sigma_shape.z = count;
     sp_params[k].prior_mu_shape_count = 1;
     sp_params[k].prior_sigma_shape_count = count;
     sp_params[k].logdet_prior_sigma_shape = 4*log(max(count,1));
@@ -132,11 +140,48 @@ __global__ void init_sp_params_kernel(spix_params* sp_params,float prior_sigma_a
 }
 
 
-__global__ void mark_inactive_kernel(spix_params* params,int nspix_buffer, int* nvalid){
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*****************************************************
+*******************************************************
+
+
+          Mark active and inactive pixels
+
+
+
+*******************************************************
+******************************************************/
+
+__global__ void mark_inactive_kernel(spix_params* params,int nspix_buffer,
+                                     int* nvalid, int nspix, int sp_size){
   int spix_id = threadIdx.x + blockIdx.x * blockDim.x;
   if (spix_id >= nspix_buffer){ return; }
   atomicAdd(nvalid,1);
   params[spix_id].valid = 0;
+  params[spix_id].prop = false;
+
+  // -- set new prior --
+  if (spix_id >= nspix){
+    double3 prior_sigma_shape;
+    prior_sigma_shape.x = 1.*sp_size;
+    prior_sigma_shape.y = 0;
+    prior_sigma_shape.z = 1.*sp_size;
+    params[spix_id].prior_sigma_shape = prior_sigma_shape;
+  }
 }
 
 __global__ void mark_active_kernel(spix_params* params, int* ids,
@@ -144,23 +189,25 @@ __global__ void mark_active_kernel(spix_params* params, int* ids,
   int id_index = threadIdx.x + blockIdx.x * blockDim.x;
   if (id_index >= nactive){ return; }
   int spix_id = ids[id_index];
-  if (spix_id >= nspix_buffer){ return; }
-  if (spix_id < 0){ return ;}
+  if ((spix_id < 0) || (spix_id >= nspix_buffer)){ return; } // invalid
   atomicAdd(nvalid,1);
   params[spix_id].valid = 1;
+  params[spix_id].prop = true;
+
 }
 
-__host__ void mark_active_contiguous(spix_params* params, int nspix, int nspix_buffer){
+__host__ void mark_active_contiguous(spix_params* params, int nspix,
+                                     int nspix_buffer, int sp_size){
   auto options_i32 = torch::TensorOptions().dtype(torch::kInt32)
     .layout(torch::kStrided).device("cuda");
   auto _grid = torch::arange(0, nspix, 1, options_i32);
   int* ids = _grid.data<int>();
-  mark_active(params, ids, nspix, nspix, nspix_buffer);
+  mark_active(params, ids, nspix, nspix, nspix_buffer, sp_size);
 }
 
 
 __host__ void mark_active(spix_params* params, int* ids, int nactive,
-                          int nspix, int nspix_buffer){
+                          int nspix, int nspix_buffer, int sp_size){
 
 
   // -- allocate --
@@ -173,11 +220,12 @@ __host__ void mark_active(spix_params* params, int* ids, int nactive,
   dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
   int num_block1 = ceil( double(nspix_buffer)/double(THREADS_PER_BLOCK) );
   dim3 BlockPerGrid1(num_block1,1);
-  mark_inactive_kernel<<<BlockPerGrid1,ThreadPerBlock>>>(params,nspix_buffer,nvalid_gpu);
+  mark_inactive_kernel<<<BlockPerGrid1,ThreadPerBlock>>>(params,nspix_buffer,
+                                                         nvalid_gpu,nspix,sp_size);
 
   // -- report--
   cudaMemcpy(&nvalid, nvalid_gpu, sizeof(int), cudaMemcpyDeviceToHost);
-  printf("[init_sparams] ninactive: %d\n",nvalid);
+  printf("[init_sparams.mark_active] ninactive: %d\n",nvalid);
   cudaMemset(nvalid_gpu, 0,sizeof(int));
 
 
@@ -194,10 +242,6 @@ __host__ void mark_active(spix_params* params, int* ids, int nactive,
   cudaFree(nvalid_gpu);
 
 }
-
-// __host__ void mark_active_(spix_params* params, int* ids, int nactive,
-//                           int nspix, int nspix_buffer){
-// }
 
 
 

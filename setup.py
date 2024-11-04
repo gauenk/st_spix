@@ -144,9 +144,9 @@ setup(
             "st_spix/csrc/prop/update_prop_params.cu",
             "st_spix/csrc/prop/update_missing_seg.cu",
             "st_spix/csrc/prop/update_prop_seg.cu",
-            # "st_spix/csrc/prop/split_merge_prop.cu",
+            "st_spix/csrc/prop/split_merge_prop.cu",
             # "st_spix/csrc/prop/merge_prop.cu",
-            "st_spix/csrc/prop/split_prop.cu",
+            # "st_spix/csrc/prop/split_prop.cu",
             "st_spix/csrc/prop/relabel.cu",
             # -- pybind --
             "st_spix/csrc/pybind_prop.cpp",

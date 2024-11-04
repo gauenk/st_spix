@@ -14,7 +14,7 @@ __host__ void refine_missing(float* img, int* seg, spix_params* sp_params,
                              int niters, int niters_seg,
                              /* float3 pix_ivar,float logdet_pix_var, */
                              float sigma2_app, float potts,
-                             int sp_size, int nspix,
+                             int sp_size, int nspix, int nspix_buffer,
                              int nbatch, int width, int height, int nftrs);
 
 /* __global__ */

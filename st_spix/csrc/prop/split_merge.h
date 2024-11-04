@@ -251,6 +251,6 @@ void split_hastings_ratio(const float* img, int* sm_pairs,
                           spix_helper_sm* sm_helper,
                           const int npix, const int nbatch,
                           const int width, const int nftrs,
-                          const int nspix_buffer,
+                          const int nspix_buffer, int sp_size,
                           float alpha_hasting_ratio,
                           int max_nspix, int* max_sp );

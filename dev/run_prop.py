@@ -412,9 +412,10 @@ def main():
     # -- config --
     niters_seg = 4
     sm_start = 0
-    sp_size = 20
-    # sp_size = 30
-    niters = sp_size*10
+    # sp_size = 20
+    sp_size = 30
+    niters = min(sp_size*10,150)
+    # niters = sp_size # a fun default from the authors
     # alpha_hastings = 1.0
     # alpha_hastings = 0.1
     # alpha_hastings = 200.
@@ -432,9 +433,9 @@ def main():
     # sigma2_app = 0.001
     # sigma2_size = 0.02
     # sigma2_size = 5e-1
-    # sigma2_size = 100.
+    sigma2_size = 25.
     # sigma2_size = 500.
-    sigma2_size = 300.
+    # sigma2_size = 10.1
     # sigma2_app = 0.08
     # sigma2_app = 0.01
 
@@ -445,6 +446,8 @@ def main():
 
     # -- read img/flow --
     vid = st_spix.data.davis_example(isize=None,nframes=-1,vid_names=['tennis'])
+    # vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['tennis'])
+    # vid = st_spix.data.davis_example(isize=None,nframes=40,vid_names=['tennis'])
     # vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['baseball'])
     size = 256
     # vid = vid[0,5:7,:,50:50+size,300:300+size]
@@ -453,9 +456,20 @@ def main():
     # vid = vid[0,0:30,:,50:50+320,:480]
     # vid = vid[0,0:30,:,50:50+320,:240]
     # vid = vid[0,0:,:,50:50+320,:240]
+    vid = vid[0,0:10,...,:800]
     # vid = vid[0,0:,...,:800]
-    # vid = vid[0,0:8,...,:800]
-    vid = vid[0,0:30,...,:800]
+    # vid = vid[0,0:3,...,:800]
+    # vid = vid[0,0:3,...,:480]
+    # vid = vid[0,0:6,...,:800]
+    # vid = vid[0,0:8,...,:400,:400]
+    # vid = vid[0,0:10,...,:400,:400]
+    # vid = vid[0,0:20,...,:400,:400]
+    # vid = vid[0,2:6,...,:400,:400]
+
+    # vid = vid[0,0:30,...,:800]
+    # vid = vid[0,0:3,...,:800]
+    # vid = vid[0,0:15,...,:800]
+    # vid = vid[0,0:6,...,:400]
     # vid = vid[0,0:30,...,:400]
     # vid = vid[0,0:3,...,:800]
     # vid = vid[0,1:3+1,...,:800]
@@ -617,8 +631,9 @@ def main():
 
     # -- view --
     marked = mark_spix_vid(vid,spix)
-    marked_pre_fill = mark_spix_vid(vid,pre_fill)
-    marked_post_fill = mark_spix_vid(vid,post_fill)
+    marked_pre_fill = mark_spix_vid(vid[1:],pre_fill)
+    # marked_pre_fill = pre_fill # actually the flow_sp image
+    marked_post_fill = mark_spix_vid(vid[1:],post_fill)
     tv_utils.save_image(marked_pre_fill,root / "marked_pre_fill.png")
     tv_utils.save_image(marked_post_fill,root / "marked_post_fill.png")
     # save_zoom_vid(marked,[205,180,260,225],root/"nose.png")
@@ -630,8 +645,13 @@ def main():
 
     marked_m = marked.clone()
     # marked_m[1:] = (1-1.*missing.cpu())*marked_m[1:]
-    a,b,c = spix[-2,40,0].item(),spix[-1,40,0].item(),spix[-1,30,0].item()
+    # a,b,c = spix[-2,40,0].item(),spix[-1,40,0].item(),spix[-1,30,0].item()
+    # a,b,c = spix[-2,40,0].item(),spix[-1,40,0].item(),spix[-1,30,0].item()
     # a,b,c = spix[1,0,55].item(),spix[2,8,55].item(),spix[2,15,55].item()
+    a = 0
+    b = 0
+    c = 0
+    a = spix[0,125,25].item()
     print(a,b,c)
     marked_c = color_spix(marked.clone(),spix,a,cidx=1)
     # marked_c = color_spix(marked_c,spix,b,cidx=0)

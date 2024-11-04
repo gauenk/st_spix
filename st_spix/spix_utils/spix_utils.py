@@ -72,6 +72,11 @@ def pool_flow_and_shift_mean_v1(flow,means,spix,spix_ids):
     # pooled,downsampled = pooling(flow,spix,nspix)
     # print("downsampled.shape: ",downsampled.shape,nspix)
 
+    # -- dev [REMOVE ME!] --
+    # downsampled[...,0] = -downsampled[...,0]
+    # downsampled[...,0] = 0. # this is best?... by far...?
+    # downsampled[...] = 0. # this is best?... by far...?
+
     # -- update means --
     # means[0,spix_ids,-2] = means[0,spix_ids,-2] + downsampled[...,0]
     # means[0,spix_ids,-1] = means[0,spix_ids,-1] + downsampled[...,1]
@@ -81,6 +86,9 @@ def pool_flow_and_shift_mean_v1(flow,means,spix,spix_ids):
     # print("means.shape: ",means.shape)
 
     # print(th.cat([means[0,:10],downsampled[0,:10]],-1))
+    # (+,+)...
+    # (-,+) looked good.
+    # (+,-) looked good at end and start; mid is bad
     means[0,:,-2] += 1.*downsampled[0,...,1]
     means[0,:,-1] += 1.*downsampled[0,...,0]
 

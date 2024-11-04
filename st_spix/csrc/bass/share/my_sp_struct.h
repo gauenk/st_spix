@@ -103,7 +103,7 @@ struct alignas(16) spix_params{
     int count;
     float prior_count; // df and lam for shape and appearance
     int valid;
-    bool is_cond;
+    bool prop;
 };
 
 struct alignas(16) spix_helper{
@@ -133,9 +133,17 @@ struct alignas(16) spix_helper_sm {
     float numerator_f_app;
     float3 denominator;
     float3 denominator_f;
+    // -- ... --
     float lprob_shape;
-    float lprob_f_shape;
+    // -- ... --
+    float lprob_f;
+    float lprob_s_cond;
+    float lprob_s_ucond;
+    float lprob_k_cond;
+    float lprob_k_ucond;
+    // -- ... --
     float hasting;
+    bool select;
     bool merge; // a bool
     bool remove;
     bool stop_bfs;
@@ -148,7 +156,11 @@ struct alignas(16) spix_helper_sm_v2 {
     double3 sum_app;
     double3 sq_sum_app;
     int2 sum_shape;
-    ulonglong3 sq_sum_shape;
+    longlong3 sq_sum_shape;
+    // -- computed stats --
+    double3 sigma_s;
+    double3 sigma_k;
+    double3 sigma_f;
     // -- app --
     float lprob_k_cond_app;
     float lprob_k_ucond_app;
@@ -164,6 +176,7 @@ struct alignas(16) spix_helper_sm_v2 {
     // -- helpers --
     float hasting;
     bool merge; // a bool
+    bool select;
     bool remove;
     int count;
     int max_sp;
