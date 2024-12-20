@@ -15,6 +15,12 @@
 
 #include "split_merge.h"
 
+// // -- for python api ... maybe move it elsewhere?? --
+// #include "init_utils.h"
+// #include "init_sparams.h"
+// #include "seg_utils.h"
+
+
 #include <stdio.h>
 #ifndef WIN32
 #include <unistd.h>
@@ -104,12 +110,12 @@ __host__ void CudaCalcMergeCandidate(const float* img, int* seg, bool* border,
 
     init_sm<<<BlockPerGrid2,ThreadPerBlock>>>(img,seg,sp_params,sm_helper,
                                               nspix_buffer, nbatch, width,
-                                              nftrs, sm_pairs, nvalid);
+                                              nftrs, npix, sm_pairs, nvalid);
     // fprintf(stdout,"direction: %d\n",direction);
     calc_merge_candidate<<<BlockPerGrid,ThreadPerBlock>>>(seg,border, sm_pairs,
                                                           npix, nbatch, width,
                                                           height, direction); 
-    sum_by_label_merge<<<BlockPerGrid,ThreadPerBlock>>>(img,seg,sp_params,sm_helper,
+    sum_by_label<<<BlockPerGrid,ThreadPerBlock>>>(img,seg,sp_params,sm_helper,
                                                         npix, nbatch, width,  nftrs);
     merge_marginal_likelihood<<<BlockPerGrid2,ThreadPerBlock>>>(sm_pairs,sp_params,
                                                                 sm_helper,
@@ -124,7 +130,7 @@ __host__ void CudaCalcMergeCandidate(const float* img, int* seg, bool* border,
                                                            log_alpha,nmerges_gpu);
     // -- count number of merges --
     cudaMemcpy(&nmerges,nmerges_gpu, sizeof(int), cudaMemcpyDeviceToHost);
-    printf("nmerges: %d\n",nmerges);
+    // printf("nmerges: %d\n",nmerges);
     cudaMemset(nmerges_gpu, 0,sizeof(int));
 
     cudaMemcpy(&nvalid_cpu, nvalid, sizeof(int), cudaMemcpyDeviceToHost);
@@ -146,6 +152,26 @@ __host__ void CudaCalcMergeCandidate(const float* img, int* seg, bool* border,
 
 
 
+void sumIntArray(int* data, int H, int W) {
+
+    auto options_i32 = torch::TensorOptions().dtype(torch::kInt32)
+      .layout(torch::kStrided).device("cuda");
+    torch::Tensor tensor = torch::from_blob(data, {H, W}, options_i32);
+    int sum = tensor.sum().item<int>();
+    printf("sum: %d\n",sum);
+}
+
+void saveIntArray(int* data, int H, int W, const std::string& filename) {
+    // Create a PyTorch tensor from the raw pointer
+    // Note: 'torch::kInt' specifies that the tensor will have an integer data type
+    auto options_i32 = torch::TensorOptions().dtype(torch::kInt32)
+      .layout(torch::kStrided).device("cuda");
+    torch::Tensor tensor = torch::from_blob(data, {H, W}, options_i32);
+
+    // Save the tensor to a file
+    torch::save(tensor, filename);
+}
+
 
 
 __host__ int CudaCalcSplitCandidate(const float* img, int* seg, bool* border,
@@ -162,6 +188,7 @@ __host__ int CudaCalcSplitCandidate(const float* img, int* seg, bool* border,
 
     if (max_nspix>nspix_buffer/2){ return max_nspix; }
     int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
+    // printf("nspix_buffer: %d\n",nspix_buffer);
     int num_block2 = ceil( double(nspix_buffer) / double(THREADS_PER_BLOCK) );
     dim3 BlockPerGrid2(num_block2,1);
     dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
@@ -170,36 +197,39 @@ __host__ int CudaCalcSplitCandidate(const float* img, int* seg, bool* border,
     // float a_0 = 1e6;
     // float b_0 = sigma2_app * (a_0) ;
     // float b_0;
-    int done = 1;
     int* done_gpu;
     int* max_sp;
-    int nvalid_cpu;
     int* nvalid;
+    int nvalid_cpu;
     cudaMalloc((void **)&nvalid, sizeof(int));
-    cudaMemset(nvalid, 0,sizeof(int));
     cudaMalloc((void **)&max_sp, sizeof(int));
     cudaMalloc((void **)&done_gpu, sizeof(int)); 
+    cudaMemset(nvalid, 0,sizeof(int));
 
-    int distance = 1;
     cudaMemset(sm_seg1, 0, npix*sizeof(int));
     cudaMemset(sm_seg2, 0, npix*sizeof(int));
-
-    init_sm<<<BlockPerGrid2,ThreadPerBlock>>>(img,seg,sp_params,
-                                              sm_helper, nspix_buffer,
-                                              nbatch, width, nftrs, sm_pairs, nvalid);
+    init_sm<<<BlockPerGrid2,ThreadPerBlock>>>(img,seg,sp_params, sm_helper,
+                                              nspix_buffer, nbatch, width,
+                                              nftrs, npix, sm_pairs, nvalid);
     cudaMemcpy(&nvalid_cpu, nvalid, sizeof(int), cudaMemcpyDeviceToHost);
     // printf("[split] nvalid: %d\n",nvalid_cpu);
     cudaMemset(nvalid, 0,sizeof(int));
+    // printf("direction: %d\n",direction);
 
     init_split<<<BlockPerGrid2,ThreadPerBlock>>>(border,sm_seg1,sp_params,
-                                                 sm_helper, nspix_buffer,
+                                                 nspix_buffer,
                                                  nbatch, width, height, direction,
                                                  seg, max_sp, max_nspix);
     init_split<<<BlockPerGrid2,ThreadPerBlock>>>(border,sm_seg2,sp_params,
-                                                 sm_helper, nspix_buffer,
+                                                 nspix_buffer,
                                                  nbatch, width,height, -direction,
                                                  seg, max_sp, max_nspix);
 
+
+    // -- compute sum of sm_seg2 --
+    // sumIntArray(sm_seg1,height,width);
+    // sumIntArray(sm_seg2,height,width);
+    
     // idk what "split_sp" is doing here; init_sm clears the merge fields and
     // so the function returns immediately...
     split_sp<<<BlockPerGrid,ThreadPerBlock>>>(seg,sm_seg1,sm_pairs,
@@ -208,14 +238,42 @@ __host__ int CudaCalcSplitCandidate(const float* img, int* seg, bool* border,
 
     // gpuErrchk( cudaPeekAtLastError() );
     // gpuErrchk( cudaDeviceSynchronize() );
+    // printf("width,height,npix: %d,%d,%d\n",width,height,npix);
+
+    int distance = 1;
+    int done = 1;
     while(done)
     {
+      // // -- debug REMOVE ME --
+      //   if (distance < 10){
+      //     char buffer[50];
+      //     sprintf(buffer, "sm_spix1_%d",distance);
+      //     std::string fn = buffer;
+      //     saveIntArray(sm_seg1, height, width, fn);
+      //   }
+
+
         cudaMemset(done_gpu, 0, sizeof(int));
-        cudaMemcpy(&done, done_gpu, sizeof(int), cudaMemcpyDeviceToHost);
+        // cudaMemcpy(&done, done_gpu, sizeof(int), cudaMemcpyDeviceToHost);
         calc_split_candidate<<<BlockPerGrid,ThreadPerBlock>>>(\
                  sm_seg1,seg,border,distance, done_gpu, npix, nbatch, width, height); 
         distance++;
         cudaMemcpy(&done, done_gpu, sizeof(int), cudaMemcpyDeviceToHost);
+        // printf("[a] distance: %d\n",distance);
+
+        // // -- debug REMOVE ME --
+        // if (distance > 5000){
+        //   // saveIntArray(int* data, int H, int W, const std::string& filename) 
+        //   // saveIntArray(sm_seg1,height,width,spir"sm_seg1.pth");
+        //   char buffer[50];
+        //   sprintf(buffer, "sm_spix1_%d",distance);
+        //   std::string fn = buffer;
+        //   saveIntArray(sm_seg1, height, width, fn);
+
+        //   if (distance > 5005){
+        //     exit(1);
+        //   }
+        // }
         // gpuErrchk( cudaPeekAtLastError() );
         // gpuErrchk( cudaDeviceSynchronize() );
     }
@@ -225,28 +283,28 @@ __host__ int CudaCalcSplitCandidate(const float* img, int* seg, bool* border,
     while(done)
     {
 		cudaMemset(done_gpu, 0, sizeof(int));
-        cudaMemcpy(&done, done_gpu, sizeof(int), cudaMemcpyDeviceToHost);//?
+        // cudaMemcpy(&done, done_gpu, sizeof(int), cudaMemcpyDeviceToHost);
         calc_split_candidate<<<BlockPerGrid,ThreadPerBlock>>>(\
                 sm_seg2,seg,border,distance, done_gpu, npix, nbatch, width, height); 
         distance++;
         cudaMemcpy(&done, done_gpu, sizeof(int), cudaMemcpyDeviceToHost);
+        // printf("[b] distance: %d\n",distance);
         // gpuErrchk( cudaPeekAtLastError() );
         // gpuErrchk( cudaDeviceSynchronize() );
     }
 
     // updates the segmentation to the two regions; split either left/right or up/down.
-    printf("max_nspix: %d\n",max_nspix);
+    // printf("max_nspix: %d\n",max_nspix);
     calc_seg_split<<<BlockPerGrid,ThreadPerBlock>>>(sm_seg1,sm_seg2,
-                                                    seg, npix,
-                                                    nbatch, max_nspix);
+                                                    seg, npix, nbatch, max_nspix);
     // std::string fname_split1_post = "split1_post";
     // write_tensor_to_file_v2(sm_seg1,height,width,fname_split1_post);
 
     // computes summaries stats for each split
     // printf("npix: %d\n",npix);
-    sum_by_label_split<<<BlockPerGrid,ThreadPerBlock>>>(img, sm_seg1, sp_params,
+    sum_by_label<<<BlockPerGrid,ThreadPerBlock>>>(img, sm_seg1, sp_params,
                                                         sm_helper, npix, nbatch,
-                                                        width,nftrs,max_nspix);
+                                                        width,nftrs);
     // gpuErrchk( cudaPeekAtLastError() );
     // gpuErrchk( cudaDeviceSynchronize() );
     // calc_bn_split<<<BlockPerGrid2,ThreadPerBlock>>>(sm_pairs, sp_params, sp_helper,
@@ -272,7 +330,6 @@ __host__ int CudaCalcSplitCandidate(const float* img, int* seg, bool* border,
 
     // gpuErrchk( cudaPeekAtLastError() );
     // gpuErrchk( cudaDeviceSynchronize() );
-
     // fprintf(stdout,"[s_m.cu] max_nspix: %d\n",max_nspix);
     split_hastings_ratio<<<BlockPerGrid2,ThreadPerBlock>>>(img, sm_pairs, sp_params,
                                                            sp_helper, sm_helper,
@@ -292,7 +349,7 @@ __host__ int CudaCalcSplitCandidate(const float* img, int* seg, bool* border,
     // -- nvalid --
     int prev_max_sp = max_nspix;
     cudaMemcpy(&max_nspix, max_sp, sizeof(int), cudaMemcpyDeviceToHost);
-    printf("[split] nsplits: %d\n",max_nspix-prev_max_sp);
+    // printf("[split] nsplits: %d\n",max_nspix-prev_max_sp);
 
     // -- free --
     cudaFree(nvalid);
@@ -308,7 +365,7 @@ __global__ void init_sm(const float* img, const int* seg_gpu,
                         spix_params* sp_params,
                         spix_helper_sm* sm_helper,
                         const int nspix_buffer, const int nbatch,
-                        const int width,const int nftrs,
+                        const int width,const int nftrs, int npix,
                         int* sm_pairs, int* nvalid) {
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
 	if (k>=nspix_buffer) return;
@@ -337,9 +394,17 @@ __global__ void init_sm(const float* img, const int* seg_gpu,
 
     sm_helper[k].merge = false;
     sm_helper[k].remove = false;
-    sm_pairs[k*2+1] = -1;
-    sm_pairs[k*2] = -1;
-   
+
+    // -- invalidate --
+    sm_pairs[2*k] = -1;
+    sm_pairs[2*k+1] = -1;
+    // int k2 = 2*k;
+    // if (k2 < 2*npix){
+    //   sm_pairs[k2] = -1;
+    // }
+    // if (k2+1 < 2*npix){
+    //   sm_pairs[k2+1] = -1;
+    // }
 
 }
 __global__
@@ -476,6 +541,7 @@ __global__ void merge_hastings_ratio(const float* img, int* sm_pairs,
       }else{
         sm_pairs[2*s] = curr_max;
       }
+
     }
     return;
 }
@@ -543,10 +609,32 @@ void split_marginal_likelihood(spix_params* sp_params,
     sq_sum_f.y = sq_sum_s.y + sq_sum_k.y;
     sq_sum_f.z = sq_sum_s.z + sq_sum_k.z;
 
+    /************************************************
+
+        Data Term [Standard BASS]
+
+    ************************************************/
+
+
+
+    /************************************************
+
+        Proper Data Term [Fixed Var; Standard BASS+]
+
+    ************************************************/
+
     // -- marginal likelihood --
     // double lprob_k = marginal_likelihood_app(sum_k,sq_sum_k,count_k,sigma2_app);
     // double lprob_s = marginal_likelihood_app(sum_s,sq_sum_s,count_s,sigma2_app);
     // double lprob_f = marginal_likelihood_app(sum_f,sq_sum_f,count_f,sigma2_app);
+
+
+    /************************************************
+
+       Appearance Variance Minimize; just for dev
+
+    ************************************************/
+
     double sigma2_prior_var = 1.;
     double lprob_k = appearance_variance(sum_k,sq_sum_k,count_k,sigma2_prior_var);
     double lprob_s = appearance_variance(sum_s,sq_sum_s,count_s,sigma2_prior_var);
@@ -634,11 +722,10 @@ __device__ double marginal_likelihood_app(double3 sum_obs,double3 sq_sum_obs,
 
 
 
-
-__global__  void calc_merge_candidate(int* seg, bool* border, int* sm_pairs,
-                                      const int npix, const int nbatch,
-                                      const int width, const int height,
-                                      const int direction){
+__global__ void calc_merge_candidate(int* seg, bool* border, int* sm_pairs,
+                                     const int npix, const int nbatch,
+                                     const int width, const int height,
+                                     const int direction){
   // todo: add nbatch
     int idx = threadIdx.x + blockIdx.x * blockDim.x;  
     if (idx>=npix) return; 
@@ -651,12 +738,14 @@ __global__  void calc_merge_candidate(int* seg, bool* border, int* sm_pairs,
     W = OUT_OF_BOUNDS_LABEL; // init 
 
     if(direction==1){
-      if ((y>1) && (y< height-2))
+      // if ((y>0) && (y< height-1))
+      if ((y>=0) && (y< (height-1)))
         {
           W = __ldg(&seg[idx+width]);  // down
         }
     }else{
-      if ((x>1) && (x< width-2))
+      // if ((x>0) && (x< width-1))
+      if ((x>0) && (x< width))
         {
           W = __ldg(&seg[idx-1]);  // left
         }
@@ -665,7 +754,7 @@ __global__  void calc_merge_candidate(int* seg, bool* border, int* sm_pairs,
     // If the nbr is different from the central pixel and is not out-of-bounds,
     // then it is a border pixel.
     if (W>=0 && C!=W){
-      atomicMax(&sm_pairs[C*2+1],W);
+      atomicMax(&sm_pairs[2*C+1],W);
     }
 
     return;        
@@ -673,9 +762,10 @@ __global__  void calc_merge_candidate(int* seg, bool* border, int* sm_pairs,
 
 __global__
 void calc_split_candidate(int* dists, int* spix, bool* border,
-                          int distance, int* mutex, const int npix,
+                          int distance, int* done_flag, const int npix,
                           const int nbatch, const int width, const int height){
   
+
     // todo: add batch -- no nftrs
     int idx = threadIdx.x + blockIdx.x * blockDim.x;  
     if (idx>=npix) return; 
@@ -690,25 +780,25 @@ void calc_split_candidate(int* dists, int* spix, bool* border,
     if ((y>0)&&(idx-width>=0)){
       if((!dists[idx-width]) and (spix[idx-width] == spixC)){
         dists[idx-width] = distance+1;
-        mutex[0] = 1;
+        done_flag[0] = 1;
       }
     }          
     if ((x>0)&&(idx-1>=0)){
       if((!dists[idx-1]) and (spix[idx-1] == spixC)){
         dists[idx-1] = distance+1;
-        mutex[0] = 1;
+        done_flag[0] = 1;
       }
     }
     if ((y<height-1)&&(idx+width<npix)){
       if((!dists[idx+width]) and (spix[idx+width] == spixC)){
         dists[idx+width] = distance+1;
-        mutex[0] = 1;
+        done_flag[0] = 1;
       }
     }   
     if ((x<width-1)&&(idx+1<npix)){
       if((!dists[idx+1]) and (spix[idx+1] == spixC)){
         dists[idx+1] = distance+1;
-        mutex[0] = 1;
+        done_flag[0] = 1;
       }
     }
     
@@ -718,7 +808,6 @@ void calc_split_candidate(int* dists, int* spix, bool* border,
 
 __global__ void init_split(const bool* border, int* seg_gpu,
                            spix_params* sp_params,
-                           spix_helper_sm* sm_helper,
                            const int nspix_buffer,
                            const int nbatch, const int width,
                            const int height, const int direction,
@@ -744,8 +833,13 @@ __global__ void init_split(const bool* border, int* seg_gpu,
     }
     
     int ind = y*width+x;
+    // if (k <= max_nspix){
+    //   printf("k,ind,direction,width,mu_shape.x,mu_shape.y: %d,%d,%d,%d,%lf,%lf\n",
+    //          k,ind,direction,width,sp_params[k].mu_shape.x,sp_params[k].mu_shape.y);
+    // }
     if((ind<0)||(ind>width*height-1)) return;
     
+    // printf("seg[ind]: %d\n",seg[ind]);
     // if(border[ind]) return;
     if (seg[ind]!=k) return;
     seg_gpu[ind] = 1;
@@ -760,48 +854,20 @@ __global__ void calc_seg_split(int* sm_seg1, int* sm_seg2, int* seg,
 	if (t>=npix) return;
     int seg_val = __ldg(&seg[t]);
 
+    // printf("[%d] (%d,%d)\n",t,sm_seg1[t],sm_seg2[t]);
     if(sm_seg1[t]>__ldg(&sm_seg2[t])) seg_val += max_nspix; 
     sm_seg1[t] = seg_val;
 
     return;
 }
 
-__global__ void sum_by_label_merge(const float* img, const int* seg_gpu,
+
+__global__ void sum_by_label(const float* img, const int* seg,
                                    spix_params* sp_params,
                                    spix_helper_sm* sm_helper,
                                    const int npix, const int nbatch,
                                    const int width, const int nftrs) {
-  // todo: nbatch
-	// getting the index of the pixel
-    int t = threadIdx.x + blockIdx.x * blockDim.x;
-	if (t>=npix) return;
 
-	//get the label
-	int k = __ldg(&seg_gpu[t]);
-    float l = __ldg(& img[3*t]);
-    float a = __ldg(& img[3*t+1]);
-    float b = __ldg(& img[3*t+2]);
-	atomicAdd(&sm_helper[k].count, 1); 
-	atomicAdd(&sm_helper[k].sq_sum_app.x, l*l);
-	atomicAdd(&sm_helper[k].sq_sum_app.y, a*a);
-	atomicAdd(&sm_helper[k].sq_sum_app.z,b*b);
-    atomicAdd(&sm_helper[k].sum_app.x, l);
-	atomicAdd(&sm_helper[k].sum_app.y, a);
-	atomicAdd(&sm_helper[k].sum_app.z, b);
-    
-	int x = t % width;
-	int y = t / width; 
-    atomicAdd(&sm_helper[k].sum_shape.x, x);
-    atomicAdd(&sm_helper[k].sum_shape.y, y);
-
-}
-
-__global__ void sum_by_label_split(const float* img, const int* seg,
-                                   spix_params* sp_params,
-                                   spix_helper_sm* sm_helper,
-                                   const int npix, const int nbatch,
-                                   const int width, const int nftrs, int max_nspix) {
-  // todo: nbatch
 	// getting the index of the pixel
     int t = threadIdx.x + blockIdx.x * blockDim.x;
 	if (t>=npix) return;
@@ -1002,5 +1068,9 @@ __global__ void remove_sp(int* sm_pairs, spix_params* sp_params,
     return;
     
 }
+
+
+
+
 
 

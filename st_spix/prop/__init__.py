@@ -50,10 +50,12 @@ def indepent_bass(vid,niters=30,niters_seg=5,
     # sigma2_app_g = [0.08,0.07,0.06]
     # potts = 4.
 
+
     # -- updated version --
     spix = []
     for ix in range(vid.shape[0]):
         # sigma2_app = sigma2_app_g[ix]
+        # print("time @ %d" % int(ix))
 
         # img_t = rearrange(vid_lab[None,ix],'b f h w -> b h w f').contiguous()
         img_t = vid[[ix]]
@@ -135,19 +137,24 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=4,
     # img_t = rearrange(vid_lab[None,0],'b f h w -> b h w f').contiguous()
     img_t = vid[[0]]
     sm_start = 0
+    niters = sp_size
+    # niters = 0
     # niters,niters_seg = sp_size,4 # a fun choice from BASS authors
     spix_t,params_t = prop_cuda.bass(img_t,niters,niters_seg,sm_start,
                                      sp_size,sigma2_app,sigma2_size,
                                      potts,alpha_hastings)
 
+    print("\n")
+    # exit()
+    # sigma2_size = 1e5
     # alpha_hastings = 0.5
-    # alpha_hastings = 0.
+    alpha_hastings = -1.3 # this one!
     # alpha_hastings = 100.
     # sigma2_size = 1e2
     # sigma2_size = 5e1
-    print("\n\n\n alpha_hastings set to 0. \n\n\n\n")
-    print("\n\n\n sigma2_size set to 1e8 \n\n\n\n")
-    print("nuniq_spix: ",len(th.unique(spix_t.ravel())))
+    # print("\n\n\n alpha_hastings set to 0. \n\n\n\n")
+    # print("\n\n\n sigma2_size set to 1e8 \n\n\n\n")
+    # print("nuniq_spix: ",len(th.unique(spix_t.ravel())))
     # exit()
 
     # print(spix_t.sum())
@@ -203,10 +210,10 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=4,
         img_t = vid[[ix+1]]
         flow_t = flow[[ix]]
         # print(flow_t.shape)
-        print("\n\n\n\n\n")
-        print("flow info:",ix,flow_t.abs().mean((-4,-3,-2)))
+        # print("\n\n\n\n\n")
+        # print("flow info:",ix,flow_t.abs().mean((-4,-3,-2)))
         # flow_t = th.zeros_like(flow[[ix]])
-        spix_tm1 = spix[-1].clone()
+        spix_tm1 = spix[-1]
         params_tm1 = params[-1]
         # print([p.ids for p in params])
         # print("a: ",params_tm1.ids)
@@ -214,22 +221,27 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=4,
         # print(hex(id(params_tm1.ids)),hex(id(params_tm1.ids[0])))
         # print("[out] uniq: ",  th.unique(spix_tm1.ravel()))
         # print("[a-out] bincount: ",  th.bincount(spix_tm1.ravel()))
-        print("\n\n\n\n")
+
+        # print("\n\n\n\n")
+
         # print(params_tm1.prior_sigma_shape.shape)
         # print(params_tm1.prior_sigma_shape[0])
         # print(params_tm1.prior_sigma_shape[50])
         # print(params_tm1.prior_sigma_shape[100])
-        print(params_tm1.prior_sigma_shape[59])
-        print("-"*20)
+
+        # print(params_tm1.prior_sigma_shape[59])
+        # print("-"*20)
+
         # print(params_tm1.prior_sigma_shape[-100])
         # print(params_tm1.prior_sigma_shape[-50])
         # print(params_tm1.prior_sigma_shape[-30:-20])
         # print(params_tm1.prior_sigma_shape[-20:-10])
         # print(params_tm1.prior_sigma_shape[-10:])
-        print("\n\n\n\n")
+
+        # print("\n\n\n\n")
 
         # -- run --
-        if ix > 20: alpha_hastings = 0.
+        # if ix > 20: alpha_hastings = 0.
         # alpha_hastings_t = alpha_hastings*(1+2.0*ix)
         # alpha_hastings_t = min(alpha_hastings_t,40.)
         alpha_hastings_t = alpha_hastings
@@ -239,7 +251,9 @@ def stream_bass(vid,flow=None,niters=30,niters_seg=4,
                         potts,alpha_hastings_t,sm_start)
         # spix_t,params_t,children_t,missing_t = outs
         spix_t,params_t,pre_fill_t,post_fill_t = outs
-        print(th.unique(spix_t.ravel()))
+
+        # print(th.unique(spix_t.ravel()))
+
         # print(spix_t.shape)
         # print(spix_t.sum())
         # if ix > 1: spix_t = spix_tm1
@@ -281,11 +295,12 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
     # -- get superpixel flows and shift means --
     B,H,W,F = img.shape
     # print(params_tm1.mu_s[:4]/th.tensor([[W-1,H-1]]).to(img.device))
-    params_t0 = params_tm1
+    # params_t0 = params_tm1
     # print("[a] uniq: ",  th.unique(spix_tm1.ravel()))
-    params_tm1 = copy_spix_params(params_tm1)
+    # params_tm1 = copy_spix_params(params_tm1)
     # print([p.device for p in unpack_spix_params_to_list(params_tm1)])
     mu_shape_tm1 = params_tm1.mu_shape[None,:]
+
     # spix_ids = params_tm1.ids
     spix_ids = th.unique(spix_tm1.ravel())
     if len(spix_ids) > 10000:
@@ -324,6 +339,7 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
     # print("len(spix_ids): ",len(th.unique(spix_tm1)))
     fxn = st_spix.pool_flow_and_shift_mean
     flow_sp,flow_down,means_shift = fxn(flow,mu_shape_tm1,spix_tm1,spix_ids)
+    # print(params_tm1.mu_shape.dtype,params_tm1.prior_mu_shape.dtype)
     params_tm1.prior_mu_shape[...] = params_tm1.mu_shape[...]
 
 
@@ -341,10 +357,10 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
     # missing_mask = th.logical_or(missing_mask > 0,spix_prop<0)
     spix_prop,counts = prop_cuda.shift_labels(spix_tm1,flow_down)
     args = th.where(spix_prop>=0)
-    print("[c] bincount: ",  th.bincount(spix_prop[args].ravel()))
+    # print("[c] bincount: ",  th.bincount(spix_prop[args].ravel()))
     spix_prop[counts!=1] = -1
     missing_mask = counts != 1
-    print("delta: ",th.mean(1.*(spix_prop - spix_tm1)).item())
+    # print("delta: ",th.mean(1.*(spix_prop - spix_tm1)).item())
 
     # _spix,_flow = spix0[None,:],flow_down
     # _spix_toshift = spix0[None,:,:,None].clone().float()
@@ -433,12 +449,12 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
 
     # th.save(spix_tm1,"spix_tm1.pth")
     # th.save(spix_prop,"spix_prop_prefill.pth")
-    pre_fill = spix_prop.clone()
+    pre_fill = spix_prop#.clone()
     # pre_fill = flow_img.flow2img(flow_sp[0])
-    print("pre.")
-    spix_prop = prop_cuda.fill_missing(spix_prop,params_tm1.mu_shape,missing,1000)
-    print("post.")
-    post_fill = spix_prop.clone()
+    # print("pre.")
+    spix_prop = prop_cuda.fill_missing(spix_prop,params_tm1.mu_shape.float(),missing,2000)
+    # print("post.")
+    post_fill = spix_prop#.clone()
     assert(spix_prop.min().item() >= 0)
     # print(spix_prop.min().item(),spix_prop.max().item())
     # exit()
@@ -513,7 +529,7 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
 
     # -- convert [see description below] --
     # niters = 10#sp_size
-    niters = sp_size
+    niters = 5#sp_size
     if isinstance(params_tm1,edict):
         params_tm1 = spix_dict_to_list(params_tm1)
     # spix_t = spix_prop
@@ -587,7 +603,8 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
     # # print("alpha_hastings: ",alpha_hastings)
     # niters_prop = niters
     # niters_prop = 0#sp_size*4
-    niters_prop = sp_size
+    # niters_prop = sp_size//2
+    niters_prop = 5
     # niters_prop = 0
     _alpha_hastings = alpha_hastings
     # _alpha_hastings = alpha_hastings-10.-20-30.

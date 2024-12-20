@@ -52,9 +52,9 @@ __global__ void init_sp_params_kernel(spix_params* sp_params,
   int count = npix/(1.*nspix);
 
   double3 prior_sigma_shape;
-  prior_sigma_shape.x = 1.*sp_size;
+  prior_sigma_shape.x = 1.0/sp_size;
   prior_sigma_shape.y = 0.;
-  prior_sigma_shape.z = 1.*sp_size;
+  prior_sigma_shape.z = 1.0/sp_size;
   sp_params[k].prior_sigma_shape = prior_sigma_shape;
 
   // int count = max(sp_params[k].count,1);
@@ -177,9 +177,9 @@ __global__ void mark_inactive_kernel(spix_params* params,int nspix_buffer,
   // -- set new prior --
   if (spix_id >= nspix){
     double3 prior_sigma_shape;
-    prior_sigma_shape.x = 1.*sp_size;
+    prior_sigma_shape.x = 1.0/sp_size;
     prior_sigma_shape.y = 0;
-    prior_sigma_shape.z = 1.*sp_size;
+    prior_sigma_shape.z = 1.0/sp_size;
     params[spix_id].prior_sigma_shape = prior_sigma_shape;
   }
 }
@@ -225,7 +225,7 @@ __host__ void mark_active(spix_params* params, int* ids, int nactive,
 
   // -- report--
   cudaMemcpy(&nvalid, nvalid_gpu, sizeof(int), cudaMemcpyDeviceToHost);
-  printf("[init_sparams.mark_active] ninactive: %d\n",nvalid);
+  // printf("[init_sparams.mark_active] ninactive: %d\n",nvalid);
   cudaMemset(nvalid_gpu, 0,sizeof(int));
 
 
@@ -236,7 +236,7 @@ __host__ void mark_active(spix_params* params, int* ids, int nactive,
 
   // -- report--
   cudaMemcpy(&nvalid, nvalid_gpu, sizeof(int), cudaMemcpyDeviceToHost);
-  printf("[init_sparams] nvalid: %d\n",nvalid);
+  // printf("[init_sparams] nvalid: %d\n",nvalid);
 
   // -- free --
   cudaFree(nvalid_gpu);

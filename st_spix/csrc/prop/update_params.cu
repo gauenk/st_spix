@@ -167,15 +167,18 @@ void calc_summ_stats(spix_params*  sp_params,spix_helper* sp_helper,
     double3 sigma_shape;
 
     // --  sample means --
-	if (count_int<=0){ return; }
-    //   sp_params[k].valid = 0; // invalidate empty spix?
-    //   return;
-    // }
+	// if (count_int<=0){ return; }
+	if (count_int<=0){
+      sp_params[k].valid = 0; // invalidate empty spix?
+      return;
+    }
 
     // -- appearance --
     mu_app.x = sp_helper[k].sum_app.x / count;
     mu_app.y = sp_helper[k].sum_app.y / count;
     mu_app.z = sp_helper[k].sum_app.z / count;
+
+    // -- view --
     sp_params[k].mu_app.x = mu_app.x;
     sp_params[k].mu_app.y = mu_app.y;
     sp_params[k].mu_app.z = mu_app.z;
@@ -186,8 +189,9 @@ void calc_summ_stats(spix_params*  sp_params,spix_helper* sp_helper,
     // -- shape --
     mu_shape.x = sp_helper[k].sum_shape.x / count;
     mu_shape.y = sp_helper[k].sum_shape.y / count;
-    sp_params[k].mu_shape.x = mu_shape.x;
-    sp_params[k].mu_shape.y = mu_shape.y;
+    sp_params[k].mu_shape = mu_shape;
+    // sp_params[k].mu_shape.x = mu_shape.x;
+    // sp_params[k].mu_shape.y = mu_shape.y;
 
     // -- sample covariance [NOT inverse] for shape --
     sigma_shape.x = sp_helper[k].sq_sum_shape.x/count - mu_shape.x*mu_shape.x;
@@ -198,10 +202,11 @@ void calc_summ_stats(spix_params*  sp_params,spix_helper* sp_helper,
     double det = sigma_shape.x*sigma_shape.z - sigma_shape.y*sigma_shape.y;
     if (det <= 0){
       sigma_shape.x = sigma_shape.x + 0.00001;
-      sigma_shape.y = sigma_shape.y + 0.00001;
+      sigma_shape.z = sigma_shape.z + 0.00001;
       det = sigma_shape.x * sigma_shape.z - sigma_shape.y * sigma_shape.y;
       if (det<=0){ det = 0.00001; } // safety hack
     }
+
     sp_params[k].sigma_shape.x = sigma_shape.x;
     sp_params[k].sigma_shape.y = sigma_shape.y;
     sp_params[k].sigma_shape.z = sigma_shape.z;
@@ -223,16 +228,21 @@ void calc_simple_update(spix_params*  sp_params,spix_helper* sp_helper,
     // -- read curr --
 	int count_int = sp_params[k].count;
 	float pc = sp_params[k].prior_count; 
-	// float prior_sigma_s_2 = pc * pc;
-	float prior_sigma_s_2 = pc * sp_size;
+	float prior_sigma_s_2 = pc * pc;
+	// float prior_sigma_s_2 = pc * sp_size;
 	double count = count_int * 1.0;
     double2 mu_shape;
     float3 mu_app;
     double3 sigma_shape;
-	double total_count = (double) count_int + pc;
+	// double total_count = (double) count_int + pc;
+	double total_count = (double) count_int + pc*50;
 
     // --  sample means --
-	if (count_int<=0){ return; }
+	// if (count_int<=0){ return; }
+	if (count_int<=0){
+      sp_params[k].valid = 0; // invalidate empty spix?
+      return;
+    }
 
     // -- get prior --
     double3 prior_sigma_shape = sp_params[k].prior_sigma_shape;
@@ -249,12 +259,16 @@ void calc_simple_update(spix_params*  sp_params,spix_helper* sp_helper,
     // prior_sigma_shape.x = pc * sp_size;
     // prior_sigma_shape.y = 0;
     // prior_sigma_shape.z = pc * sp_size;
+    prior_sigma_shape.x = pc;// * pc;
+    prior_sigma_shape.y = 0;
+    prior_sigma_shape.z = pc;// * pc;
 
 
     // -- appearance --
     mu_app.x = sp_helper[k].sum_app.x / count;
     mu_app.y = sp_helper[k].sum_app.y / count;
     mu_app.z = sp_helper[k].sum_app.z / count;
+    // printf("%2.3f, %2.3f, %2.3f\n",mu_app.x,mu_app.y,mu_app.z);
     sp_params[k].mu_app.x = mu_app.x;
     sp_params[k].mu_app.y = mu_app.y;
     sp_params[k].mu_app.z = mu_app.z;
@@ -274,18 +288,18 @@ void calc_simple_update(spix_params*  sp_params,spix_helper* sp_helper,
     sigma_shape.z = sp_helper[k].sq_sum_shape.z - count*mu_shape.y*mu_shape.y;
 
     // -- inverse --
-    // sigma_shape.x = (prior_sigma_s_2 + sigma_shape.x) / (total_count - 3.0);
-    // sigma_shape.y = sigma_shape.y / (total_count - 3);
-    // sigma_shape.z = (prior_sigma_s_2 + sigma_shape.z) / (total_count - 3.0);
-    sigma_shape.x = (pc*prior_sigma_shape.x + sigma_shape.x) / (total_count + 3.0);
-    sigma_shape.y = (pc*prior_sigma_shape.y + sigma_shape.y) / (total_count + 3.0);
-    sigma_shape.z = (pc*prior_sigma_shape.z + sigma_shape.z) / (total_count + 3.0);
+    sigma_shape.x = (prior_sigma_s_2 + sigma_shape.x) / (total_count - 3.0);
+    sigma_shape.y = sigma_shape.y / (total_count - 3);
+    sigma_shape.z = (prior_sigma_s_2 + sigma_shape.z) / (total_count - 3.0);
+    // sigma_shape.x = (pc*prior_sigma_shape.x + sigma_shape.x) / (total_count + 3.0);
+    // sigma_shape.y = (pc*prior_sigma_shape.y + sigma_shape.y) / (total_count + 3.0);
+    // sigma_shape.z = (pc*prior_sigma_shape.z + sigma_shape.z) / (total_count + 3.0);
 
     // -- correct sample cov if not invertable --
     double det = sigma_shape.x*sigma_shape.z - sigma_shape.y*sigma_shape.y;
     if (det <= 0){
       sigma_shape.x = sigma_shape.x + 0.00001;
-      sigma_shape.y = sigma_shape.y + 0.00001;
+      sigma_shape.z = sigma_shape.z + 0.00001;
       det = sigma_shape.x * sigma_shape.z - sigma_shape.y * sigma_shape.y;
       if (det<=0){ det = 0.00001; } // safety hack
     }

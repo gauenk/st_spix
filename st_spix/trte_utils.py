@@ -14,6 +14,7 @@ from einops import rearrange,repeat
 from spix_paper import metrics
 
 import torch
+import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
@@ -87,6 +88,47 @@ def load_old_model(fn,model):
 
     # print(list(state.keys()))
     model.load_state_dict(state)
+
+def load_flow_fxn(cfg,device):
+    import stnls
+    from dev_basics import flow as flow_pkg
+    from .spynet import SpyNet
+    from .flow_utils import load_raft,run_raft_on_video
+
+    wt = cfg.window_time
+    if cfg.flow_method == "raft":
+        model = load_raft().to(device)
+        def forward(video):
+            video = th.clip(255.*video,0.,255.)
+            fflow,bflow = run_raft_on_video(video,model)
+            # print(fflow.max(),fflow.min())
+            # print(bflow.max(),bflow.min())
+            # exit()
+            flows = stnls.nn.search_flow(fflow[None,:],bflow[None,:],wt,1)
+            return flows,fflow
+    elif cfg.flow_method == "spynet":
+        model = SpyNet().to(device)
+        def forward(video):
+            fflow,bflow = run_raft_on_video(video,model)
+            # print(fflow.max(),fflow.min())
+            # print(bflow.max(),bflow.min())
+            # print("fflow.shape: ",fflow.shape)
+            # exit()
+            flows = stnls.nn.search_flow(fflow[None,:],bflow[None,:],wt,1)
+            # print("flows.shape: ",flows.shape)
+            # # B,HD,T,W_t,_,fH,fW = flows.shape
+            # exit()
+            return flows,fflow
+    elif cfg.flow_method == "cv2":
+        def forward(video):
+            flows = flow_pkg.run(video.cpu().numpy(),sigma=0.0,ftype="cv2")
+            # fflow,bflow = flows.fflow[0,0][None,:],flows.bflow[0,0][None,:]
+            fflow,bflow = flows.fflow[None,:],flows.bflow[None,:]
+            # print("fflow.shape,bflow.shape: ",fflow.shape,bflow.shape)
+            flows = stnls.nn.search_flow(fflow,bflow,wt,1)
+            return flows,fflow
+    return forward
+
 
 def load_checkpoint(chkpt,model,optimizer=None,weights_only=False,skip_module=True):
     start_epoch = 0

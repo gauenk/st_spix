@@ -277,7 +277,7 @@ class NeighAttnMat(nn.Module):
         scale = self.scale
         if self.learn_attn_scale:
             scale = self.attn_scale_net(rearrange(x,'b h w c -> b c h w'))
-            scale = rearrange(scale,'t 1 h w -> 1 1 t h w 1') # B HD T H W K
+            scale = rearrange(scale,'t 1 h w -> t 1 1 h w 1') # B HD T H W K
         #     # print(scale)
         #     # print(scale.shape)
         #     # exit()
@@ -292,7 +292,8 @@ class NeighAttnMat(nn.Module):
 
         # print(q.shape)
         attn = run_search_fxn(q, k, self.kernel_size, self.dilation, self.dist_type)
-        attn.shape[:-1] == scale.shape[:-1],"Equal shapes."
+        if hasattr(scale,"shape"):
+            assert attn.shape[:-1] == scale.shape[:-1],"Equal shapes."
         attn = scale * attn
 
         # print(q.shape)

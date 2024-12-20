@@ -110,7 +110,8 @@ __device__ inline int ischangbale_by_nbrs(bool* nbrs){
 /* } */
 
 __device__ inline int ischangbale_by_nbrs(bool* nbrs){
-  int num,count_diff = 0;
+  int num = 0;
+  int count_diff = 0;
 #pragma unroll
    for (int i=7; i>=0; i--)
    {

@@ -179,14 +179,23 @@ def to_th(tensor):
 def swap_c(img):
     return rearrange(img,'... h w f -> ... f h w')
 
-def mark_spix_vid(vid,spix):
+def mark_spix_vid(vid,spix,mode=None):
+    # mode = "thick"
+    # mode = "subpixel"
     if vid.ndim == 5:
         # print("Only using first video batch.")
         vid = vid[0]
     marked = []
+    if th.is_tensor(spix):
+        spix = spix.detach().cpu().numpy()
+    if th.is_tensor(vid):
+        vid = vid.detach().cpu().numpy()
     for ix,spix_t in enumerate(spix):
         img = rearrange(vid[ix],'f h w -> h w f')
-        marked_t = mark_boundaries(img.cpu().numpy(),spix_t.cpu().numpy())
+        if mode is None:
+            marked_t = mark_boundaries(img,spix_t)
+        else:
+            marked_t = mark_boundaries(img,spix_t,mode=mode)
         marked_t = to_th(swap_c(marked_t))
         marked.append(marked_t)
     marked = th.stack(marked)

@@ -96,7 +96,8 @@ __global__ void init_sm(const float* img,
                         spix_params* sp_params,
                         spix_helper_sm* sm_helper,
                         const int nspix_buffer, const int nbatch,
-                        const int width,const int nftrs,int* sm_pairs, int* nvalid);
+                        const int width,const int nftrs, const int npix,
+                        int* sm_pairs, int* nvalid);
 
 /************************************************************
 
@@ -128,8 +129,7 @@ __global__  void calc_merge_candidate(int* seg, bool* border, int* sm_pairs,
                                       const int npix, const int nbatch,
                                       const int width, const int height,
                                       const int change);
-
-__global__ void sum_by_label_merge(const float* img, const int* seg_gpu,
+__global__ void sum_by_label(const float* img, const int* seg_gpu,
                                    spix_params* sp_params,
                                    spix_helper_sm* sm_helper,
                                    const int npix, const int nbatch,
@@ -187,7 +187,6 @@ __global__ void merge_sp(int* seg, bool* border, int* sm_pairs,
 
 __global__ void init_split(const bool* border, int* seg_gpu,
                            spix_params* sp_params,
-                           spix_helper_sm* sm_helper,
                            const int nspix_buffer,
                            const int nbatch, const int width,
                            const int height, const int offset,
@@ -206,11 +205,6 @@ __global__ void calc_split_candidate(int* dists, int* spix, bool* border,
 __global__ void calc_seg_split(int* sm_seg1, int* sm_seg2, int* seg,
                                const int npix, int nbatch, int max_nspix);
 
-__global__ void sum_by_label_split(const float* img, const int* seg,
-                                   spix_params* sp_params,
-                                   spix_helper_sm* sm_helper,
-                                   const int npix, const int nbatch,
-                                   const int width, const int nftrs, int max_nspix);
 
 __global__
 void split_marginal_likelihood(spix_params* sp_params,

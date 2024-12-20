@@ -259,13 +259,15 @@ def swap_c(img):
     return rearrange(img,'... h w f -> ... f h w')
 
 def mark_spix_vid(vid,spix):
+    mode = "thick"
+    mode = "subpixel"
     if vid.ndim == 5:
         print("Only using first video batch.")
         vid = vid[0]
     marked = []
     for ix,spix_t in enumerate(spix):
         img = rearrange(vid[ix],'f h w -> h w f')
-        marked_t = mark_boundaries(img.cpu().numpy(),spix_t.cpu().numpy())
+        marked_t = mark_boundaries(img.cpu().numpy(),spix_t.cpu().numpy(),mode=mode)
         marked_t = to_th(swap_c(marked_t))
         for ci in range(3):
             marked_t[ci][th.where(spix_t<0)] = ci==0

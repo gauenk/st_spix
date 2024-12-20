@@ -13,6 +13,6 @@ __host__ int bass(float* img, int* seg,spix_params* sp_params,bool* border,
                   int* sm_seg1 ,int* sm_seg2, int* sm_pairs,
                   int niters, int niters_seg, int sm_start,
                   float sigma_app, float sigma2_size, int sp_size,
-                  float potts, float alpha_hastings,
-                  int nspix, int nbatch, int width, int height, int nftrs);
+                  float potts, float alpha_hastings, int nspix,
+                  int nspix_buffer, int nbatch, int width, int height, int nftrs);
 

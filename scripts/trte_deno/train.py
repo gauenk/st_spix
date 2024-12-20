@@ -32,7 +32,8 @@ def main():
     exp_fn_list = [
         # "exps/trte_deno/train.cfg",
         # "exps/trte_deno/train_conv.cfg",
-        "exps/trte_deno/train_lin.cfg",
+        # "exps/trte_deno/train_lin.cfg",
+        "exps/trte_deno/train_sconv.cfg",
         # "exps/trte_deno/train_conv_only.cfg",
         # "exps/trte_deno/train_empty.cfg",
         # "exps/trte_deno/train_spix.cfg",

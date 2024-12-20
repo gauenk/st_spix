@@ -12,13 +12,13 @@ from st_spix.sp_video_pooling import video_pooling
 from st_spix.sp_pooling import sp_pooling
 import prop_cuda
 
-bass_kwargs = {"use_bass_prop":False,"niters":30,"niters_seg":4,
-               "sp_size":25,"pix_var":0.1,"alpha_hastings":0.01,
-               "potts":10.,"sm_start":0}
+bass_kwargs = {"use_bass_prop":False,"niters":20,"niters_seg":4,
+               "sp_size":20,"sigma2_app":0.1,"sigma2_size":1.,
+               "alpha_hastings":0.0,"potts":1.,"sm_start":0}
 
 def unpack_kwargs(kwargs):
     keys = ["niters","niters_seg","sm_start",
-            "sp_size","pix_var","potts","alpha_hastings"]
+            "sp_size","sigma2_app","sigma2_size","potts","alpha_hastings"]
     params = [kwargs[key] for key in keys]
     return params
 
@@ -30,8 +30,12 @@ def run_bass(vid,flows,kwargs):
     # kwargs['rgb2lab'] = False
     if use_bass_prop:
         del kwargs['use_bass_prop']
+        # vid = vid - vid.min()
+        # vid = vid / vid.max()
+        flows = th.clip(flows,-20,20)
         outs = stream_bass(vid,flow=flows,**kwargs)
-        spix,params,children,missing,pmaps = outs
+        spix = outs[0]
+        # spix,params,children,missing,pmaps = outs
         spix = spix[:,None]
     else:
         # -- each independent spix --
@@ -47,12 +51,20 @@ def run_bass(vid,flows,kwargs):
             sm_start = 0
             # niters,niters_seg = sp_size,4 # a fun choice from BASS authors
             outs = unpack_kwargs(kwargs)
-            niters,niters_seg,sm_start,sp_size,pix_var,potts,alpha_hastings = outs
+            niters,niters_seg,sm_start,sp_size,sigma2_app,\
+                sigma2_size,potts,alpha_hastings = outs
             spix_t,params_t = prop_cuda.bass(img_t,niters,niters_seg,sm_start,
-                                             sp_size,pix_var,potts,alpha_hastings)
+                                             sp_size,sigma2_app,sigma2_size,
+                                             potts,alpha_hastings)
+            # spix_t,params_t = prop_cuda.bass(img_t,niters,niters_seg,sm_start,
+            #                                  sp_size,sigma2_app,potts,alpha_hastings)
             nspix_t = spix_t.max().item()+1
             spix.append(spix_t)
         spix = th.stack(spix)
+
+    # print(spix.shape)
+    # for t in range(len(spix)):
+    #     print("number spix: ",t,len(th.unique(spix[t])))
     return spix
 
 # def get_bass_sims(vid,spix,scale=1.):
@@ -62,6 +74,9 @@ def run_bass(vid,flows,kwargs):
 #     return sims
 
 def get_bass_sims(vid,spix,scale=1.):
+    return get_sims(vid,spix,scale)
+
+def get_sims(vid,spix,scale=1.):
     T,F,H,W = vid.shape
     use_video_pooling = False
 

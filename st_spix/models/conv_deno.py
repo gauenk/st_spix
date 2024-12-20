@@ -27,7 +27,9 @@ class ConvDenoiser(nn.Module):
     defs = dict(SuperpixelNetwork.defs)
     defs.update(SuperpixelAttention.defs)
     defs.update({"lname":"deno","net_depth":1,
-                 "conv_kernel_size":3,"use_sim_net":False})
+                 "conv_kernel_size":3,
+                 "use_spixftrs_net":False,
+                 "spixftrs_dim":3})
 
     def __init__(self, in_dim, dim, **kwargs):
         super().__init__()
@@ -54,11 +56,12 @@ class ConvDenoiser(nn.Module):
         self.spix_net = SuperpixelNetwork(dim,**spix_kwargs) if self.use_sp_net else None
 
         # -- superpixel feature network --
-        self.use_sim_net = kwargs['use_sim_net']
-        if self.use_sim_net:
-            self.sim_net = nn.Identity()
+        self.use_spixftrs_net = kwargs['use_spixftrs_net']
+        self.spixftrs_dim = kwargs['spixftrs_dim']
+        if self.use_spixftrs_net:
+            self.spixftrs_net = nn.Identity()
         else:
-            self.sim_net = SimNet(out_channels=dim)
+            self.spixftrs_net = SimNet(out_channels=self.spixftrs_dim)
 
     def unpack_conv_ksize(self,ksize,depth):
         if hasattr(ksize,"__len__"):
@@ -82,7 +85,7 @@ class ConvDenoiser(nn.Module):
 
         # -- first features --
         ftrs = self.conv0(x)
-        if self.use_sim_net: spix_ftrs = self.sim_net(x)
+        if self.use_spixftrs_net: spix_ftrs = self.spixftrs_net(x)
         else: spix_ftrs = ftrs
         if self.use_sp_net: sims,spix = self.spix_net(spix_ftrs,fflow)[:2]
         else: sims,spix = None,None

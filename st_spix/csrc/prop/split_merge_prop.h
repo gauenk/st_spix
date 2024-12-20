@@ -75,7 +75,8 @@ __global__ void init_sm_p(const float* img,
                           spix_helper_sm_v2* sm_helper,
                           const int nspix_buffer, const int nbatch,
                           const int height, const int width,
-                          const int nftrs,int* sm_pairs, int* nvalid);
+                          const int nftrs, const int npix,
+                          int* sm_pairs, int* nvalid);
 
 /************************************************************
 
@@ -101,7 +102,8 @@ void merge_hastings_ratio_p(const float* img, int* sm_pairs,
                           const int nftrs, const int nspix_buffer,
                           float alpha_hasting_ratio, int* nmerges);
 
-__device__ double size_likelihood_p(int curr_count, int tgt_count, double sigma2);
+/* __device__ double size_likelihood_p(int curr_count, int tgt_count, double sigma2); */
+__device__ double size_likelihood_p(int curr_count, float tgt_count, double sigma2);
 
 __global__  void calc_merge_candidate_p(int* seg, bool* border, int* sm_pairs,
                                       const int npix, const int nbatch,

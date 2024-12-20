@@ -238,7 +238,6 @@ __host__ int CudaCalcSplitCandidate(const float* image_gpu_double, int* split_me
                                                         xdim,nftrs,max_SP);
     // gpuErrchk( cudaPeekAtLastError() );
     // gpuErrchk( cudaDeviceSynchronize() );
-
     calc_bn_split<<<BlockPerGrid2,ThreadPerBlock>>>(seg_split3, split_merge_pairs,
                                                     sp_params, sp_gpu_helper,
                                                     sp_gpu_helper_sm, nPixels,
@@ -881,7 +880,8 @@ __global__ void calc_hasting_ratio(const float* image_gpu_double,
                                    superpixel_GPU_helper_sm* sp_gpu_helper_sm,
                                    const int nPixels, const int nbatch, const int xdim,
                                    const int nftrs, const int nsuperpixel_buffer,
-                                   float a0, float b0, float alpha_hasting_ratio, int* mutex ) {
+                                   float a0, float b0,
+                                   float alpha_hasting_ratio, int* mutex ) {
   // todo; add nbatch; 
 	// getting the index of the pixel
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label

@@ -38,9 +38,38 @@ __device__ const bool bass_lut[256] = {
 	       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0,
 	       0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 1, 0,
 	       0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0};
+/* __device__ const bool bass_lut[256] = { */
+/*         0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, */
+/* 	       1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, */
+/* 	       0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, */
+/* 	       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, */
+/* 	       0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, */
+/* 	       0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, */
+/* 	       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, */
+/* 	       0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, */
+/* 	       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, */
+/* 	       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, */
+/* 	       0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 1, 0, */
+/* 	       0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0}; */
+/* __device__ inline int ischangbale_by_nbrs(bool* nbrs){ */
+/*   int num,count_diff = 0; */
+/* #pragma unroll */
+/*    for (int i=7; i>=0; i--) */
+/*    { */
+/*       num <<= 1; */
+/*       if (nbrs[i]) num++; */
+/*       else count_diff++; */
+/*    } */
+/*    // convert binary string "nbrs" into decimal "num" */
+/*    nbrs[8] = bass_lut[num]; */
+/*    return count_diff; */
+/* } */
+
+
 
 __device__ inline int ischangbale_by_nbrs(bool* nbrs){
-  int num,count_diff = 0;
+  int num = 0;
+  int count_diff = 0;
 #pragma unroll
    for (int i=7; i>=0; i--)
    {
@@ -49,6 +78,7 @@ __device__ inline int ischangbale_by_nbrs(bool* nbrs){
       else count_diff++;
    }
    // convert binary string "nbrs" into decimal "num"
+   /* printf("bass_lut num: %d\n",num); */
    nbrs[8] = bass_lut[num];
    return count_diff;
 }
@@ -70,6 +100,21 @@ void set_nbrs(int NW,int N,int NE,int W,
   nbrs[5] = (label == SW);
   nbrs[6] = (label == S);
   nbrs[7] = (label == SE);
+  return;
+}
+
+__device__ inline
+void set_nbrs_v1(int NW,int N,int NE,int W,
+              int E,int SW,int S,int SE,
+              int label, bool* nbrs){
+  nbrs[0] = (label ==NW)  || (NW==-1);
+  nbrs[1] = (label == N)  || (N ==-1);
+  nbrs[2] = (label == NE) || (NE==-1);
+  nbrs[3] = (label == W)  || (W ==-1);
+  nbrs[4] = (label == E)  || (E ==-1);
+  nbrs[5] = (label == SW) || (SW==-1);
+  nbrs[6] = (label == S)  || (S ==-1);
+  nbrs[7] = (label == SE) || (SE==-1);
   return;
 }
 

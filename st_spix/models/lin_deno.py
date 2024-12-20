@@ -48,6 +48,15 @@ class LinearDenoiser(nn.Module):
         spix_kwargs = extract(kwargs,SuperpixelNetwork.defs)
         self.spix_net = SuperpixelNetwork(dim,**spix_kwargs) if self.use_sp_net else None
 
+
+        # -- superpixel feature network --
+        self.use_spixftrs_net = kwargs['use_spixftrs_net']
+        self.spixftrs_dim = kwargs['spixftrs_dim']
+        if self.use_spixftrs_net:
+            self.spixftrs_net = nn.Identity()
+        else:
+            self.spixftrs_net = SimNet(out_channels=self.spixftrs_dim)
+
     def forward(self, x, flows, noise_info=None):
         """
 
@@ -63,7 +72,9 @@ class LinearDenoiser(nn.Module):
 
         # -- first features --
         ftrs = apply_lin(x,self.lin0)
-        if self.use_sp_net: sims = self.spix_net(ftrs)[0]
+        if self.use_spixftrs_net: spix_ftrs = self.spixftrs_net(x)
+        else: spix_ftrs = ftrs
+        if self.use_sp_net: sims = self.spix_net(spix_ftrs)[0]
         else: sims = None
 
         # -- depth --

@@ -77,8 +77,8 @@ __host__ void refine_missing(float* img, int* seg, spix_params* sp_params,
                  sigma2_app,potts,npix, nbatch, width, height, nftrs);
 
       // -- logging --
-      cudaMemcpy(logging_aprior+i,&(sp_params[10].prior_lprob),sizeof(double),
-                 cudaMemcpyDeviceToDevice);
+      // cudaMemcpy(logging_aprior+i,&(sp_params[10].prior_lprob),sizeof(double),
+      //            cudaMemcpyDeviceToDevice);
 
     }
 

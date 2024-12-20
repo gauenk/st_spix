@@ -25,6 +25,7 @@
 #include "seg_utils.h"
 #include "sparams_io.h"
 // #include "simple_sparams_io.h"
+#include "relabel.h"
 
 // -- primary functions --
 #include "prop_bass.h"
@@ -252,10 +253,6 @@ __host__ int prop_bass(float* img, int* seg,spix_params* sp_params,bool* border,
     // int num_ids = unique_ids.sizes()[0];
     // printf("num_ids: %d\n",num_ids);
 
-
-    // -- relabeling --
-    // run_relabeling(seg,sp_params,...);
-
     CudaFindBorderPixels_end(seg, border, npix, nbatch, width, height);
     return max_spix;
 
@@ -276,9 +273,6 @@ run_prop_bass(const torch::Tensor img, const torch::Tensor spix,
               float sigma2_app, float sigma2_size,
               float potts, float alpha_hastings){
 
-   // spix_t,params_t = prop_cuda.prop_bass(img,spix_t,params_tm1,
-   //                                        niters_prop,niters_seg,sm_start,
-   //                                        sp_size,pix_var,potts,_alpha_hastings)
 
     // -- check --
     CHECK_INPUT(img);
@@ -306,7 +300,6 @@ run_prop_bass(const torch::Tensor img, const torch::Tensor spix,
     torch::Tensor filled_spix = spix.clone();
     assert(nbatch==1);
 
-
     // -- allocate memory --
     // int nspix_buffer = nspix*50;
     int nspix_buffer = nspix*10;
@@ -314,7 +307,7 @@ run_prop_bass(const torch::Tensor img, const torch::Tensor spix,
     const int helper_size = sizeof(spix_helper);    
     bool* border = (bool*)easy_allocate(nbatch*npix,sizeof(bool));
     spix_params* sp_params = get_tensors_as_params(prior_params,sp_size,
-                                                         npix,nspix,nspix_buffer);
+                                                   npix,nspix,nspix_buffer);
     // spix_params* sp_params=(spix_params*)easy_allocate(nspix_buffer,sparam_size);
     spix_helper* sp_helper=(spix_helper*)easy_allocate(nspix_buffer,helper_size);
 
@@ -346,7 +339,7 @@ run_prop_bass(const torch::Tensor img, const torch::Tensor spix,
     // -- split/merge memory --
     int* sm_seg1 = (int*)easy_allocate(npix,sizeof(int));
     int* sm_seg2 = (int*)easy_allocate(npix,sizeof(int));
-    int* sm_pairs = (int*)easy_allocate(2*npix,sizeof(int));
+    int* sm_pairs = (int*)easy_allocate(2*nspix_buffer,sizeof(int));
     // const int sm_helper_size = sizeof(spix_helper_sm);
     // spix_helper_sm* sm_helper=(spix_helper_sm*)easy_allocate(nspix_buffer,
     //                                                          sm_helper_size);
@@ -364,16 +357,16 @@ run_prop_bass(const torch::Tensor img, const torch::Tensor spix,
     // printf("nspix_buffer: %d,%d,%d\n",nspix_buffer,npix/(1.*nspix),sp_size);
 
     // -- init superpixel params --
-    int init_nspix = nspix_from_spsize(sp_size, width, height);
+    // int init_nspix = nspix_from_spsize(sp_size, width, height);
     // init_sp_params(sp_params,sigma2_app,img_ptr,filled_spix_ptr,sp_helper,
     //                npix,init_nspix,nspix_buffer,nbatch,width,nftrs);
     auto _unique_ids = std::get<0>(at::_unique(spix));
     int nactive = _unique_ids.size(0);
     int* _ids = _unique_ids.data<int>();
     // write_prior_counts(prior_params,sp_params,_ids,nactive);
-    printf(".\n");
+    // printf(".\n");
     mark_active(sp_params, _ids, nactive, nspix, nspix_buffer, sp_size); // marks "valid"
-    printf("..\n");
+    // printf("..\n");
     // float prior_sigma_app = float(pix_var_i/2) * float(pix_var_i/2);
     // init_sp_params_from_past(sp_params,prior_sp_params,prior_map_ptr,
     //                          rescale,nspix,nspix_buffer,npix);
@@ -402,11 +395,11 @@ run_prop_bass(const torch::Tensor img, const torch::Tensor spix,
                              niters, niters_seg, sm_start, sigma2_app, sigma2_size,
                              sp_size, potts, alpha_hastings, nspix, nspix_buffer,
                              nbatch, width, height, nftrs);
-    fprintf(stdout,"[before] max_spix: %d\n",max_spix);
+    // fprintf(stdout,"[before] max_spix: %d\n",max_spix);
     // fprintf(stdout,"max_spix: %d\n",max_spix);
 
     // -- view --
-    // _unique_ids = std::get<0>(at::_unique(spix));
+    // _unique_ids = std::get<0>(at::_unique(filled_spix));
     // nactive = _unique_ids.size(0);
     //  _ids = _unique_ids.data<int>();
     // _num_blocks = ceil( double(nactive) / double(THREADS_PER_BLOCK) ); 
@@ -414,15 +407,24 @@ run_prop_bass(const torch::Tensor img, const torch::Tensor spix,
     // dim3 _nthreads0(THREADS_PER_BLOCK);
     // view_prior_counts_kernel<<<_nblocks0,_nthreads0>>>(sp_params, _ids, nactive);
 
+
     // -- ensure new superpixels are compactly added to previous superpixels --
     int prev_nspix = prior_params.ids.size(0);
-    printf("[before ..filled] max: %d\n",filled_spix.max().item<int>());
-    fprintf(stdout,"prev_nspix: %d\n",prev_nspix);
+    // printf("[before ..filled] max: %d\n",filled_spix.max().item<int>());
+    // fprintf(stdout,"prev_nspix: %d\n",prev_nspix);
     nspix = compactify_new_superpixels(filled_spix,sp_params,
                                           prev_nspix,max_spix,npix);
     // nspix = max_spix + 1;
-    printf("[after ..filled] max: %d\n",filled_spix.max().item<int>());
-    fprintf(stdout,"[after] nspix: %d\n",nspix);
+    // printf("[after ..filled] max: %d\n",filled_spix.max().item<int>());
+    // fprintf(stdout,"[after] nspix: %d\n",nspix);
+
+
+    // -- relabeling --
+    // run_relabeling(filled_spix_ptr,sp_params,...);
+    // float thresh = -100;
+    // run_relabel(filled_spix,prior_params,thresh);
+    // run_relabeling(filled_spix,sp_params,thresh,nspix_buffer);
+
 
     // -- view --
     // _unique_ids = std::get<0>(at::_unique(spix));

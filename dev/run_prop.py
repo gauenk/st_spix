@@ -1,7 +1,7 @@
 
 """
 
-      Execute the Algorithm's Pipeline
+             Execute the Algorithm's Pipeline
 
    Fill the prior counts with "current counts" after shifting...
    .... this is good for smaller superpixels maybe...
@@ -397,6 +397,44 @@ def decrease_saturation(image_array, factor=0.5):
     muted_image_array = th.from_numpy(muted_image_array)
     return muted_image_array
 
+def read_worm1():
+    return read_segtrack_video("worm_1")
+
+def read_bass_examples():
+    from PIL import Image
+    root = Path("/home/gauenk/Documents/packages/BASS_check/images/")
+    vid = []
+    for fn in root.iterdir():
+        fname = fn.resolve()
+        if fname.stem == "302003": continue
+        fname = str(fname)
+        img = np.array(Image.open(fname).convert("RGB"))/255.
+        vid.append(img)
+    vid = np.stack(vid)
+    vid = th.from_numpy(vid).to("cuda")
+    # print(vid.shape)
+    vid = rearrange(vid,'t h w c -> t c h w').float()
+    print("vid.shape: ",vid.shape)
+    vid = vid[:,:,:320,:480]
+    return vid
+
+
+def read_segtrack_video(vname):
+    from PIL import Image
+    root = Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/in/")
+    root = root /"SegTrackv2/PNGImages/" /vname
+    nframes = len([f for f in root.iterdir() if str(f).endswith(".png")])
+    vid = []
+    for frame_ix in range(nframes):
+        fname = root/("%05d.png" % (frame_ix+1))
+        img = np.array(Image.open(fname).convert("RGB"))/255.
+        vid.append(img)
+    vid = np.stack(vid)
+    vid = th.from_numpy(vid).to("cuda")
+    # print(vid.shape)
+    vid = rearrange(vid,'t h w c -> t c h w').float()
+    return vid
+
 
 def main():
 
@@ -413,8 +451,10 @@ def main():
     niters_seg = 4
     sm_start = 0
     # sp_size = 20
+    # sp_size = 30
     sp_size = 30
-    niters = min(sp_size*10,150)
+    # niters = min(sp_size*10,150)
+    niters = sp_size
     # niters = sp_size # a fun default from the authors
     # alpha_hastings = 1.0
     # alpha_hastings = 0.1
@@ -425,15 +465,24 @@ def main():
     # potts = 5.0
     # alpha_hastings = 15.25
     # alpha_hastings = 23.
-    alpha_hastings = 0.
-    potts = 1.0
+    # alpha_hastings = -10000.
+    # alpha_hastings = 0.
+    alpha_hastings = -0.693
+    # potts = 1.0
+    potts = 30.0
+    # potts = 0.01
+    # potts = 0.
     # pix_var = 0.001
     # sigma2_app = 0.02
-    sigma2_app = .01
+    # sigma2_app = .01
+    sigma2_app = 8e-5
     # sigma2_app = 0.001
     # sigma2_size = 0.02
     # sigma2_size = 5e-1
-    sigma2_size = 25.
+    # sigma2_size = 25.
+    # sigma2_size = .1
+    # sigma2_size = .001
+    sigma2_size = 1.
     # sigma2_size = 500.
     # sigma2_size = 10.1
     # sigma2_app = 0.08
@@ -445,25 +494,31 @@ def main():
     # sigma2_app = 0.1
 
     # -- read img/flow --
-    vid = st_spix.data.davis_example(isize=None,nframes=-1,vid_names=['tennis'])
-    # vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['tennis'])
-    # vid = st_spix.data.davis_example(isize=None,nframes=40,vid_names=['tennis'])
+    # vid = st_spix.data.davis_example(isize=None,nframes=-1,vid_names=['tennis'])
+    # vid = st_spix.data.davis_example(isize="320_320",nframes=30,vid_names=['tennis'])
+    vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['tennis'])
+    # vid = st_spix.data.davis_example(isize=None,nframes=30,vid_names=['tennis'])
     # vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['baseball'])
+    # vid = read_bass_examples()
+    # vid = read_worm1()
     size = 256
     # vid = vid[0,5:7,:,50:50+size,300:300+size]
     # vid = vid[0,0:8,:,50:50+320,:480]
     # vid = vid[0,0:3,:,50:50+320,:480]
+    vid = vid[0,0:3,:,20:20+320,:480]
     # vid = vid[0,0:30,:,50:50+320,:480]
     # vid = vid[0,0:30,:,50:50+320,:240]
-    # vid = vid[0,0:,:,50:50+320,:240]
-    vid = vid[0,0:10,...,:800]
+    # vid = vid[0,0:,:,150+50:150+50+320,:240]
+    # vid = vid[0,0:2,...,:800]
     # vid = vid[0,0:,...,:800]
+    # vid = vid[0]
+
     # vid = vid[0,0:3,...,:800]
     # vid = vid[0,0:3,...,:480]
     # vid = vid[0,0:6,...,:800]
-    # vid = vid[0,0:8,...,:400,:400]
+    # vid = vid[0,0:2,...,:400,:400]
     # vid = vid[0,0:10,...,:400,:400]
-    # vid = vid[0,0:20,...,:400,:400]
+    # vid = vid[0,0:20,...,:480,:800]
     # vid = vid[0,2:6,...,:400,:400]
 
     # vid = vid[0,0:30,...,:800]
@@ -499,11 +554,13 @@ def main():
 
 
     vid_og = vid.clone()
-    print(vid.shape)
+    # print(vid.shape)
+    # vid = vid[:29,:,:320,:240].clone()
 
     # -- run flow [raft] --
     from st_spix.flow_utils import run_raft,run_spynet
     fflow,bflow = run_raft(th.clip(255.*vid,0.,255.).type(th.uint8))
+    # fflow = th.clip(fflow,-10,10)
     # fflow[...] = 0.
     # fflow[...] = th.randn_like(fflow)*0.1
 
@@ -525,6 +582,7 @@ def main():
     for t in range(B):
         tv_utils.save_image(vid[[t]],root / ("vid%d.png" % t))
 
+    # vid = vid[:29,:,:320,:240].clone()
     # -- propogate --
     # outs = stream_bass(vid,flow=fflow,
     #                    niters=niters,niters_seg=niters_seg,
@@ -581,7 +639,7 @@ def main():
     # else:
     #     vid_lab = vid
     vid_lab = st_spix.utils.vid_rgb2lab_th(vid.clone(),normz=False)
-    vid_lab = vid_lab+1.
+    # vid_lab = vid_lab+1.
     # vid_lab = (vid_lab + 1.)/2.
     # vid_lab = (vid_lab + 1.)/10.
     # print("vid_lab.min(),vid_lab.max(): ",vid_lab.min(),vid_lab.max())
@@ -590,6 +648,7 @@ def main():
     vid_lab = rearrange(vid_lab,'b f h w -> b h w f').contiguous()
     fflow = rearrange(fflow,'b f h w -> b h w f').contiguous()
 
+    print(".")
     th.cuda.synchronize()
     while True:
         timer = ExpTimer()
@@ -603,7 +662,6 @@ def main():
                                    sigma2_size=sigma2_size,
                                    alpha_hastings=alpha_hastings,
                                    potts=potts,sm_start=sm_start,rgb2lab=False)
-                # spix,params,children,missing = outs
                 spix,params,pre_fill,post_fill = outs
 
                 # spix = indepent_bass(vid_lab,niters=niters,niters_seg=niters_seg,
@@ -615,6 +673,12 @@ def main():
         print(timer)
         print(memer)
         break
+    # exit()
+
+
+    # -- info --
+    print(spix[0][310:,0:10])
+    print("spix.shape: ",spix.shape)
     # exit()
 
     # -- ... --
@@ -630,12 +694,7 @@ def main():
     # exit()
 
     # -- view --
-    marked = mark_spix_vid(vid,spix)
-    marked_pre_fill = mark_spix_vid(vid[1:],pre_fill)
-    # marked_pre_fill = pre_fill # actually the flow_sp image
-    marked_post_fill = mark_spix_vid(vid[1:],post_fill)
-    tv_utils.save_image(marked_pre_fill,root / "marked_pre_fill.png")
-    tv_utils.save_image(marked_post_fill,root / "marked_post_fill.png")
+    marked = mark_spix_vid(vid,spix,mode="subpixel")
     # save_zoom_vid(marked,[205,180,260,225],root/"nose.png")
     # save_zoom_vid(marked,[220,100,275,145],root/"eye.png")
     # cmarked = color_regions(marked,[[205,180,260,225],[220,100,275,145]])
@@ -686,6 +745,14 @@ def main():
     tv_utils.save_image(marked_m,root / "marked_missing.png")
     tv_utils.save_image(marked_c,root / "marked_colored.png")
     # tv_utils.save_image(viz_seg,root / "viz_seg.png")
+
+    marked_pre_fill = mark_spix_vid(vid[1:],pre_fill)
+    # marked_pre_fill = pre_fill # actually the flow_sp image
+    marked_post_fill = mark_spix_vid(vid[1:],post_fill)
+    tv_utils.save_image(marked_pre_fill,root / "marked_pre_fill.png")
+    tv_utils.save_image(marked_post_fill,root / "marked_post_fill.png")
+    return
+
 
     # -- elephant zoom --
     tv_utils.save_image(rzs(marked[[0],...,70-10:140-10,110+10:180+10]),

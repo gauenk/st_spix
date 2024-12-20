@@ -106,7 +106,7 @@ __host__ void CudaCalcMergeCandidate_p(const float* img, int* seg, bool* border,
 
     init_sm_p<<<BlockPerGrid2,ThreadPerBlock>>>(img,seg,sp_params,sm_helper,
                                                 nspix_buffer, nbatch, height, width,
-                                                nftrs, sm_pairs, nvalid);
+                                                nftrs, npix, sm_pairs, nvalid);
     // fprintf(stdout,"direction: %d\n",direction);
     calc_merge_candidate_p<<<BlockPerGrid,ThreadPerBlock>>>(seg,border, sm_pairs,
                                                           npix, nbatch, width,
@@ -126,11 +126,11 @@ __host__ void CudaCalcMergeCandidate_p(const float* img, int* seg, bool* border,
                                                            log_alpha,nmerges_gpu);
     // -- count number of merges --
     cudaMemcpy(&nmerges,nmerges_gpu, sizeof(int), cudaMemcpyDeviceToHost);
-    printf("nmerges: %d\n",nmerges);
+    // printf("nmerges: %d\n",nmerges);
     cudaMemset(nmerges_gpu, 0,sizeof(int));
 
     cudaMemcpy(&nvalid_cpu, nvalid, sizeof(int), cudaMemcpyDeviceToHost);
-    printf("[merge] nvalid: %d\n",nvalid_cpu);
+    // printf("[merge] nvalid: %d\n",nvalid_cpu);
 
     
     // -- actually merge --
@@ -189,7 +189,7 @@ __host__ int CudaCalcSplitCandidate_p(const float* img, int* seg, bool* border,
     init_sm_p<<<BlockPerGrid2,ThreadPerBlock>>>(img,seg,sp_params,
                                                 sm_helper, nspix_buffer,
                                                 nbatch, height, width,
-                                                nftrs, sm_pairs, nvalid);
+                                                nftrs, npix, sm_pairs, nvalid);
     cudaMemcpy(&nvalid_cpu, nvalid, sizeof(int), cudaMemcpyDeviceToHost);
     // printf("[split] nvalid: %d\n",nvalid_cpu);
     cudaMemset(nvalid, 0,sizeof(int));
@@ -298,7 +298,7 @@ __host__ int CudaCalcSplitCandidate_p(const float* img, int* seg, bool* border,
     // -- nvalid --
     int prev_max_sp = max_nspix;
     cudaMemcpy(&max_nspix, max_sp, sizeof(int), cudaMemcpyDeviceToHost);
-    printf("[split] nsplits: %d\n",max_nspix-prev_max_sp);
+    // printf("[split] nsplits: %d\n",max_nspix-prev_max_sp);
 
     // -- free --
     cudaFree(nvalid);
@@ -314,7 +314,8 @@ __global__ void init_sm_p(const float* img, const int* seg_gpu,
                           spix_params* sp_params,
                           spix_helper_sm_v2* sm_helper,
                           const int nspix_buffer, const int nbatch,
-                          const int height, const int width,const int nftrs,
+                          const int height, const int width,
+                          const int nftrs, const int npix,
                           int* sm_pairs, int* nvalid) {
 	int k = threadIdx.x + blockIdx.x * blockDim.x;  // the label
 	if (k>=nspix_buffer) return;
@@ -349,9 +350,17 @@ __global__ void init_sm_p(const float* img, const int* seg_gpu,
 
     sm_helper[k].merge = false;
     sm_helper[k].remove = false;
-    sm_pairs[k*2+1] = -1;
-    sm_pairs[k*2] = -1;
-   
+
+    // -- invalidate --
+    sm_pairs[2*k] = -1;
+    sm_pairs[2*k+1] = -1;
+    // int k2 = 2*k;
+    // if (k2 < 2*npix){
+    //   sm_pairs[k2] = -1;
+    // }
+    // if (k2+1 < 2*npix){
+    //   sm_pairs[k2+1] = -1;
+    // }
 
 }
 __global__
@@ -527,13 +536,14 @@ void sample_estimates_p(spix_params* sp_params,
     // count_f = count_k + count_s;
 
     // -- shape info --
+    // note! using "prior_count/2" worked well.
     float prior_count = sp_params[k].prior_count;
     double3 sigma_k = compute_sigma_shape(sm_helper[k].sum_shape,
                                           sm_helper[k].sq_sum_shape,
-                                          count_k,prior_count/2.,sp_size);
+                                          count_k,prior_count,sp_size);
     double3 sigma_s = compute_sigma_shape(sm_helper[s].sum_shape,
                                           sm_helper[s].sq_sum_shape,
-                                          count_s,prior_count/2.,sp_size);
+                                          count_s,prior_count,sp_size);
     int2 sum_shape_f = get_sum_shape(sm_helper[s].sum_shape,sm_helper[k].sum_shape);
     longlong3 sq_sum_shape_f = get_sq_sum_shape(sm_helper[s].sq_sum_shape,
                                                 sm_helper[k].sq_sum_shape);
@@ -675,20 +685,23 @@ void split_marginal_likelihood_p(spix_params* sp_params,
     // double lprob_f = 0;
 
     // -- append appearance to cond --
-    // double sigma2_prior_var = 1.;
-    // lprob_s_cond += compute_l2norm_mu_app_p(sum_s,prior_mu_app,
-    //                                         count_s,sigma2_prior_var);
-    // lprob_k_cond += compute_l2norm_mu_app_p(sum_k,prior_mu_app,
-    //                                         count_k,sigma2_prior_var);
-    // lprob_f += compute_l2norm_mu_app_p(sum_f,prior_mu_app,
-    //                                    count_f,sigma2_prior_var);
+    double sigma2_prior_var = 1.;
+    lprob_s_cond += compute_l2norm_mu_app_p(sum_s,prior_mu_app,
+                                            count_s,sigma2_prior_var);
+    lprob_k_cond += compute_l2norm_mu_app_p(sum_k,prior_mu_app,
+                                            count_k,sigma2_prior_var);
+    lprob_f += compute_l2norm_mu_app_p(sum_f,prior_mu_app,
+                                       count_f,sigma2_prior_var);
 
     // -- include size term --
-    lprob_f += size_likelihood_p(count_f,sp_size,sigma2_size);
-    lprob_s_cond += size_likelihood_p(count_s,sp_size,sigma2_size);
-    lprob_s_ucond += size_likelihood_p(count_s,sp_size,sigma2_size);
-    lprob_k_cond += size_likelihood_p(count_k,sp_size,sigma2_size);
-    lprob_k_ucond += size_likelihood_p(count_k,sp_size,sigma2_size);
+    // float _sp_size = 1.*sp_size;
+    float _sp_size_v0 = 1.*prior_count;
+    float _sp_size_v1 = 1.*sp_size;
+    lprob_f += size_likelihood_p(count_f,_sp_size_v0,sigma2_size);
+    lprob_s_cond += size_likelihood_p(count_s,_sp_size_v0,sigma2_size);
+    lprob_s_ucond += size_likelihood_p(count_s,_sp_size_v1,sigma2_size);
+    lprob_k_cond += size_likelihood_p(count_k,_sp_size_v0,sigma2_size);
+    lprob_k_ucond += size_likelihood_p(count_k,_sp_size_v1,sigma2_size);
 
     // -- include size term --
     // lprob_k += size_beta_likelihood_p(count_k,sp_size,sigma2_size,npix);
@@ -702,14 +715,15 @@ void split_marginal_likelihood_p(spix_params* sp_params,
     sm_helper[k].lprob_k_cond_shape = lprob_k_cond;
     sm_helper[k].lprob_k_ucond_shape = lprob_k_ucond;
 
-    printf("[%d]: %lf %lf %lf | %lf %lf | %lf %lf %lf\n",
-           k,lprob_f,lprob_s_cond,lprob_k_cond,
-           lprob_s_ucond,lprob_k_ucond,
-           sigma_f.x,sigma_f.y,sigma_f.z);
+    // printf("[%d]: %lf %lf %lf | %lf %lf | %lf %lf %lf | %lf %lf %lf\n",
+    //        k,lprob_f,lprob_s_cond,lprob_k_cond,
+    //        lprob_s_ucond,lprob_k_ucond,
+    //        sigma_f.x,sigma_f.y,sigma_f.z,
+    //        prior_sigma_shape.x,prior_sigma_shape.y,prior_sigma_shape.z);
 
 }
 
-__device__ double size_likelihood_p(int curr_count, int tgt_count, double sigma2) {
+__device__ double size_likelihood_p(int curr_count, float tgt_count, double sigma2) {
   double delta = 1.*(sqrt(1.*curr_count) - tgt_count);
   double lprob = - log(2*M_PI*sigma2)/2. - delta*delta/(2*sigma2);
   return lprob;
@@ -1191,10 +1205,10 @@ void split_hastings_ratio_p(const float* img, int* sm_pairs,
     // -- determine if any splitting --
 
     // -- [looks good] --
-    // double hastings = log_alpha + lprob_sel_cond + lprob_sel_ucond - lprob_f;
+    double hastings = log_alpha + lprob_sel_cond + lprob_sel_ucond - lprob_f;
 
-    // -- [???] --
-    double hastings = log_alpha + lprob_sel_cond - lprob_f;
+    // -- [bad; too many long cuts] --
+    // double hastings = log_alpha + lprob_sel_cond - lprob_f;
 
     sm_helper[k].hasting = hastings;
     sm_helper[k].merge = (sm_helper[k].hasting > 0);

@@ -16,16 +16,16 @@ from einops import rearrange
 from easydict import EasyDict as edict
 
 # -- load models --
-from spix_paper.models import load_model as _load_model
+from st_spix.models import load_model as _load_model
 
 # -- project imports --
-import spix_paper
-from spix_paper import metrics
-from spix_paper.data import load_data
-from spix_paper.losses import load_loss
-from spix_paper.models import load_model
-import spix_paper.trte_utils as utils
-import spix_paper.utils as base_utils
+import st_spix
+from st_spix import metrics
+from st_spix.data import load_data
+from st_spix.losses import load_loss
+from st_spix.models import load_model
+import st_spix.trte_utils as utils
+import st_spix.utils as base_utils
 
 # SAVE_ROOT = Path("output/eval_superpixels/")
 
@@ -35,7 +35,8 @@ def run(cfg):
     defs = {"data_path":"./data/","data_augment":False,
             "patch_size":128,"data_repeat":1,"colors":3,
             "use_connected":False,"save_output":False,"seed":0,
-            "num_samples":0,"load_checkpoint":True}
+            "num_samples":0,"load_checkpoint":True,
+            "flow_method":"raft","window_time":1}
     cfg = base_utils.extract_defaults(cfg,defs)
     device = "cuda"
     save_root = Path(cfg.save_root) / cfg.tr_uuid
@@ -82,12 +83,15 @@ def run(cfg):
 
     # -- load --
     if cfg.load_checkpoint:
-        loaded_epoch = utils.load_checkpoint(chkpt,model)
+        loaded_epoch = utils.load_checkpoint(chkpt,model,skip_module=False)
         print("Restoring State from [%s]" % chkpt_fn)
 
     # -- to device --
     model = model.to(device)
     model = model.eval()
+
+    # -- load flow function --
+    flow_fxn = utils.load_flow_fxn(cfg,device)
 
     # -- init info --
     ifields = ["asa","br","bp","nsp_og","nsp","hw","name",
@@ -97,27 +101,42 @@ def run(cfg):
     for f in ifields: info[f] = []
 
     # -- each sample --
-    for ix,(img,seg) in enumerate(dataloader):
+    data_iter = iter(dataloader)
+    for ix in range(len(dataloader)):
 
         # -- garbage collect --
         gc.collect()
         th.cuda.empty_cache()
 
         # -- unpack --
-        img, seg = img.to(device)/255., seg.to(device)
-        img, seg = img[:,:,:-1,:-1], seg[:,:-1,:-1]
-        name = dset.names[ix]
+        batch = next(data_iter)
+        img,seg = batch['clean'][0],batch['seg'][0]
+        img,seg = img.to(device)/255.,seg.to(device)
+        # img, seg = img[:,:,:-1,:-1], seg[:,:-1,:-1]
+        name = dset.vid_names[ix]
         B,F,H,W = img.shape
-        assert B == 1,"Testing metrics are not currently batch-able."
-        # print(img.shape,seg.shape)
+        # print(img.shape)
+        # assert B == 1,"Testing metrics are not currently batch-able."
+        # print(img.shape)
+        # exit()
 
         # -- optional noise --
         noisy,ninfo = pre_process(img)
 
+        # -- compute flows --
+        flows,fflow = flow_fxn(noisy)
+
         # -- compute superpixels --
         with th.no_grad():
-            output = model(noisy)
-
+            output = crop_test(model,noisy,flows,fflow,ninfo)
+        # with th.no_grad():
+        #     output = model(noisy,flows,fflow,ninfo)['deno']
+            # output = []
+            # for t in range(len(noisy)):
+            #     output.append(model(noisy[[t]],flows[:,[t]],fflow[[t]],ninfo)['deno'])
+            # output = th.cat(output)
+        # print("output.shape: ",output.shape)
+        # exit()
         # -- unpack --
         deno = base_utils.optional(output,'deno',None)
         sims = base_utils.optional(output,'sims',None)
@@ -142,7 +161,7 @@ def run(cfg):
             # _img = img[0].cpu().numpy().transpose(1,2,0)
             # print("img.shape: ",img.shape)
             entropy = th.mean(-sims*th.log(sims+1e-15)).item()
-            pooled = spix_paper.spix_utils.sp_pool(img,sims)
+            pooled = st_spix.spix_utils.sp_pool(img,sims)
 
         else:
             spix = th.zeros_like(img[:,0]).long()
@@ -174,19 +193,23 @@ def run(cfg):
             save_image(smoothed,save_fn)
 
         # -- eval deno --
-        deno_psnr = metrics.compute_psnrs(img,deno,div=1.).item()
-        deno_ssim = metrics.compute_ssims(img,deno,div=1.).item()
+        deno_psnr = metrics.compute_psnrs(img,deno,div=1.)
+        deno_ssim = metrics.compute_ssims(img,deno,div=1.)
 
         # -- eval pool --
-        pooled_psnr = metrics.compute_psnrs(img,pooled,div=1.).item()
-        pooled_ssim = metrics.compute_ssims(img,pooled,div=1.).item()
+        pooled_psnr = metrics.compute_psnrs(img,pooled,div=1.)
+        pooled_ssim = metrics.compute_ssims(img,pooled,div=1.)
+
+        # -- expand to too big --
+        out = expand_ndarrays(130,deno_psnr,deno_ssim,pooled_psnr,pooled_ssim)
+        deno_psnr,deno_ssim,pooled_psnr,pooled_ssim = out
 
         # -- eval & collect info --
         iinfo = edict()
         for f in ifields: iinfo[f] = []
-        iinfo.asa = metrics.compute_asa(spix[0],seg[0])
-        iinfo.br = metrics.compute_br(spix[0],seg[0],r=1)
-        iinfo.bp = metrics.compute_bp(spix[0],seg[0],r=1)
+        iinfo.asa = -1#metrics.compute_asa(spix[0],seg[0])
+        iinfo.br = -1#metrics.compute_br(spix[0],seg[0],r=1)
+        iinfo.bp = -1#metrics.compute_bp(spix[0],seg[0],r=1)
         iinfo.nsp = int(len(th.unique(spix)))
         iinfo.nsp_og = int(len(th.unique(spix_og)))
         iinfo.deno_psnr = deno_psnr
@@ -202,3 +225,53 @@ def run(cfg):
             break
 
     return info
+
+def expand_ndarrays(size,*ndarrays):
+    out = []
+    for ndarray in ndarrays:
+        ndarray_e = -np.ones(size)
+        ndarray_e[:len(ndarray)] = ndarray
+        out.append(ndarray_e)
+    return out
+
+def crop_test(model,img,flows,fflow,ninfo,cropsize=64,overlap=0.10):
+    fwd_fxn = lambda a,b,c,d: model(a,b,c,d)['deno']
+    deno = run_grouped_spatial_chunks(fwd_fxn,img,flows,fflow,ninfo,cropsize,overlap)
+    return {"deno":deno,"sims":None}
+
+# -- simpler one --
+def run_grouped_spatial_chunks(fwd_fxn,img,flows,fflow,ninfo,size,overlap):
+
+    # -- imports --
+    from dev_basics.net_chunks.shared import get_chunks
+
+    # -- unpack --
+    shape = img.shape
+    B,F,H,W = img.shape
+
+    # -- alloc --
+    deno = th.zeros(shape,device=img.device)
+    count = th.zeros((1,1,H,W),device=img.device)
+
+    # -- get chunks --
+    h_chunks = get_chunks(H,size,overlap)
+    w_chunks = get_chunks(W,size,overlap)
+
+    # -- loop --
+    for h_chunk in h_chunks:
+        for w_chunk in w_chunks:
+
+            # -- forward --
+            img_chunk = img[...,h_chunk:h_chunk+size,w_chunk:w_chunk+size]
+            flows_chunk = flows[...,h_chunk:h_chunk+size,w_chunk:w_chunk+size]
+            fflow_chunk = fflow[...,h_chunk:h_chunk+size,w_chunk:w_chunk+size]
+            deno_chunk = fwd_fxn(img_chunk,flows_chunk,fflow_chunk,ninfo)
+
+            # -- fill --
+            sizeH,sizeW = deno_chunk.shape[-2:]
+            deno[...,h_chunk:h_chunk+sizeH,w_chunk:w_chunk+sizeW] += deno_chunk
+            count[...,h_chunk:h_chunk+sizeH,w_chunk:w_chunk+sizeW] += 1
+    # -- normalize --
+    deno = deno / count
+    return deno
+

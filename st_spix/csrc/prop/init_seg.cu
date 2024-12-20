@@ -11,21 +11,22 @@
 __host__ int nspix_from_spsize(int sp_size, int width, int height){
   double H = sqrt( double(pow(sp_size, 2)) / (1.5 *sqrt(3.0)) );
   double w = sqrt(3.0) * H;
-  int max_num_sp_x = (int) floor(double(width)/w) + 1;
-  int max_num_sp_y = (int) floor(double(height)/(1.5*H)) + 1;
-  int nspix = max_num_sp_x * max_num_sp_y * 4;
+  int max_num_sp_x = (int) floor(double(width)/w) + 2;
+  int max_num_sp_y = (int) floor(double(height)/(1.5*H)) + 2;
+  int nspix = max_num_sp_x * max_num_sp_y;
   return nspix;
 }
 
 __host__ int init_seg(int* seg, int sp_size, int width, int height, int nbatch){
 
   // -- superpixel info --
+  // -- sp_size is the square-root of the hexagon's area --
   int npix = height * width;
   double H = sqrt( double(pow(sp_size, 2)) / (1.5 *sqrt(3.0)) );
   double w = sqrt(3.0) * H;
-  int max_num_sp_x = (int) floor(double(width)/w) + 1;
-  int max_num_sp_y = (int) floor(double(height)/(1.5*H)) + 1;
-  int nspix = max_num_sp_x * max_num_sp_y * 4; //Roy -Change
+  int max_num_sp_x = (int) floor(double(width)/w) + 2; // an extra "1" for edges
+  int max_num_sp_y = (int) floor(double(height)/(1.5*H)) + 2; // an extra "1" for edges
+  int nspix = max_num_sp_x * max_num_sp_y; //Roy -Change
 
   // -- launch params --
   dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
@@ -44,10 +45,10 @@ __host__ int init_seg(int* seg, int sp_size, int width, int height, int nbatch){
 
 }
 
-__global__ void InitHexCenter(double* centers, double H, double w, int npix,
+__global__ void InitHexCenter(double* centers, double H, double w, int nspix,
                               int max_num_sp_x, int xdim, int ydim){
 	int idx = threadIdx.x + blockIdx.x * blockDim.x; 
-	if (idx >= npix) return;
+	if (idx >= nspix) return;
     int x = idx % max_num_sp_x; 
     int y = idx / max_num_sp_x; 
     double xx = double(x) * w;

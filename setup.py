@@ -117,6 +117,7 @@ setup(
             "st_spix/csrc/prop/sparams_io.cu",
             "st_spix/csrc/prop/sp_video_pooling.cu",
             "st_spix/csrc/prop/simple_sparams_io.cu",
+            "st_spix/csrc/prop/refine.cu",
             # -- prop utils --
             "st_spix/csrc/prop/rgb2lab.cu",
             "st_spix/csrc/prop/seg_utils.cu",
@@ -136,6 +137,7 @@ setup(
             "st_spix/csrc/prop/update_params.cu",
             "st_spix/csrc/prop/update_seg.cu",
             "st_spix/csrc/prop/split_merge.cu",
+            "st_spix/csrc/prop/split_merge_orig.cu",
             "st_spix/csrc/prop/simple_split_merge.cu",
             # -- prop bass spix  --
             "st_spix/csrc/prop/simple_refine_missing.cu",
@@ -153,7 +155,7 @@ setup(
         ],
         extra_compile_args={'cxx':['-g','-w',"-O0"],
                             # 'nvcc':['-w','-rdc=true']},
-                            'nvcc':["-O0",'-w']},
+                            'nvcc':["-G","-O0",'-w']},
         )
 
         # 'nvcc':['-w','-G']},)

@@ -5,11 +5,14 @@ from . import unet_ssn
 from . import empty_net
 from .sp_net import SuperpixelNetwork
 from .simple_deno import SimpleDenoiser
+from .simple_conv import SimpleConv
 from .conv_deno import ConvDenoiser
+from .sconv_deno import SpixConvDenoiser
 from .conv_only import ConvOnlyDenoiser
 from .lin_deno import LinearDenoiser
 from .attn_only import AttentionOnlyDenoiser
 from .attn_scale_net import AttnScaleNet
+from .bass import get_sims
 from ..utils import optional,get_fxn_kwargs,extract_defaults_new
 
 def load_model(cfg):
@@ -27,6 +30,10 @@ def load_model(cfg):
         fxn = SimpleDenoiser.defs
         kwargs = extract_defaults_new(cfg,fxn)
         model = SimpleDenoiser(in_dim,cfg.dim,**kwargs)
+    elif mname == "simple_conv":
+        fxn = SimpleConv.defs
+        kwargs = extract_defaults_new(cfg,fxn)
+        model = SimpleConv(in_dim,cfg.dim,**kwargs)
     elif mname == "lin_deno":
         fxn = LinearDenoiser.defs
         kwargs = extract_defaults_new(cfg,fxn)
@@ -39,6 +46,10 @@ def load_model(cfg):
         fxn = ConvOnlyDenoiser.defs
         kwargs = extract_defaults_new(cfg,fxn)
         model = ConvOnlyDenoiser(in_dim,cfg.dim,**kwargs)
+    elif mname == "sconv_deno":
+        fxn = SpixConvDenoiser.defs
+        kwargs = extract_defaults_new(cfg,fxn)
+        model = SpixConvDenoiser(in_dim,cfg.dim,**kwargs)
     elif mname == "attn_only":
         fxn = AttentionOnlyDenoiser.defs
         kwargs = extract_defaults_new(cfg,fxn)

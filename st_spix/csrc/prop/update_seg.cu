@@ -31,7 +31,7 @@ void update_seg_subset(float* img, int* seg, bool* border,
                        spix_params* sp_params,
                        const float sigma2_app, const float potts,
                        const int npix, const int nbatch,
-                       const int xdim, const int ydim, const int nftrs,
+                       const int width, const int height, const int nftrs,
                        const int xmod3, const int ymod3){
 
     int label_check;
@@ -42,9 +42,9 @@ void update_seg_subset(float* img, int* seg, bool* border,
     if (pix_idx>=npix)  return;
     // todo; add batch info here.
 
-    int x = pix_idx % xdim;  
+    int x = pix_idx % width;  
     if (x % 2 != xmod3) return;
-    int y = pix_idx / xdim;   
+    int y = pix_idx / width;   
     if (y % 2 != ymod3) return;
     
     if (border[pix_idx]==0) return;
@@ -54,9 +54,9 @@ void update_seg_subset(float* img, int* seg, bool* border,
     //printf("(%d, %d) - %d, %d, %d \n", x,y , idx_cache,threadIdx.x );
     const bool x_greater_than_1 = (x>0);
     const bool y_greater_than_1 = (y>0);
-    const bool x_smaller_than_xdim_minus_1 = x<(xdim-1);
-    const bool y_smaller_than_ydim_minus_1 = y<(ydim-1);
-    if ((!x_greater_than_1)||(!y_greater_than_1)||(!x_smaller_than_xdim_minus_1)||(!y_smaller_than_ydim_minus_1)) return;
+    const bool x_smaller_than_width_minus_1 = x<(width-1);
+    const bool y_smaller_than_height_minus_1 = y<(height-1);
+    // if ((!x_greater_than_1)||(!y_greater_than_1)||(!x_smaller_than_width_minus_1)||(!y_smaller_than_height_minus_1)) return;
    
     bool nbrs[9];
     //float potts_term[4];
@@ -76,66 +76,102 @@ void update_seg_subset(float* img, int* seg, bool* border,
     //-- init max --
     float2 res_max;
     res_max.x = -9999;
+    int C = __ldg(&seg[pix_idx]);
+
+    // --> north, south, east, west <--
+    int N = -1, S = -1, E = -1, W = -1;
+    if (x>0){ W = __ldg(&seg[idx-1]); } // left
+    if (y>0){ N = __ldg(&seg[idx-width]); }// top
+    if (x<(width-1)){ E = __ldg(&seg[idx+1]); } // right
+    if (y<(height-1)){ S = __ldg(&seg[idx+width]); } // below
+
+    // --> diags [north (east, west), south (east, west)] <--
+    int NE = -1, NW = -1, SE = -1, SW = -1;
+    if ((y>0) and (x<(width-1))){ NE = __ldg(&seg[idx-width+1]); } // top-right
+    if ((y>0) and (x>0)){  NW = __ldg(&seg[idx-width-1]); } // top-left
+    if ((x<(width-1)) and (y<(height-1))){SE = __ldg(&seg[idx+width+1]); } // btm-right
+    if ((x>0) and (y<(height-1))){ SW = __ldg(&seg[idx+width-1]); } // btm-left
 
     // -- read superpixel labels --
-    int NW =__ldg(&seg[pix_idx-xdim-1]);
-    int N = __ldg(&seg[pix_idx-xdim]);
-    int NE = __ldg(&seg[pix_idx-xdim+1]);
-    int W = __ldg(&seg[pix_idx-1]);
-    int E = __ldg(&seg[pix_idx+1]);
-    int SW = __ldg(&seg[pix_idx+xdim-1]);
-    int S = __ldg(&seg[pix_idx+xdim]);
-    int SE =__ldg(&seg[pix_idx+xdim+1]);  
+    // int NW =__ldg(&seg[pix_idx-width-1]);
+    // int N = __ldg(&seg[pix_idx-width]);
+    // int NE = __ldg(&seg[pix_idx-width+1]);
+    // int W = __ldg(&seg[pix_idx-1]);
+    // int E = __ldg(&seg[pix_idx+1]);
+    // int SW = __ldg(&seg[pix_idx+width-1]);
+    // int S = __ldg(&seg[pix_idx+width]);
+    // int SE =__ldg(&seg[pix_idx+width+1]);  
+    // int C = __ldg(&seg[pix_idx]);
+    res_max.y = C;
 
     //N :
-    set_nbrs(NW, N, NE,  W, E, SW, S, SE, N, nbrs);
+    // printf("NW, N, NE,  W, E, SW, S, SE: %d,%d,%d,%d,%d,%d,%d,%d\n",
+    //        NW, N, NE,  W, E, SW, S, SE);
+    set_nbrs_v1(NW, N, NE,  W, E, SW, S, SE, N, nbrs);
     count_diff_nbrs_N = ischangbale_by_nbrs(nbrs);
     isNvalid = nbrs[8];
-    if(!isNvalid) return;
     
     //W :
-    set_nbrs(NW, N, NE,  W, E, SW, S, SE, W, nbrs);
+    set_nbrs_v1(NW, N, NE,  W, E, SW, S, SE, W, nbrs);
     count_diff_nbrs_W = ischangbale_by_nbrs(nbrs);
     isWvalid = nbrs[8];
-    if(!isWvalid) return;
 
     //S :
-    set_nbrs(NW, N, NE,  W, E, SW, S, SE, S, nbrs);
+    set_nbrs_v1(NW, N, NE,  W, E, SW, S, SE, S, nbrs);
     count_diff_nbrs_S = ischangbale_by_nbrs(nbrs);
     isSvalid = nbrs[8];
-    if(!isSvalid) return;
 
     //E:
-    set_nbrs(NW, N, NE,  W, E, SW, S, SE, E, nbrs);
+    set_nbrs_v1(NW, N, NE,  W, E, SW, S, SE, E, nbrs);
     count_diff_nbrs_E = ischangbale_by_nbrs(nbrs);
     isEvalid = nbrs[8];
+
+    // printf("NW, N, NE,  W, E, SW, S, SE: %d,%d,%d,%d,%d,%d,%d,%d\n",
+    //        NW, N, NE,  W, E, SW, S, SE);
+    // printf("NW, N, NE,  W, E, SW, S, SE: %d,%d,%d,%d,%d,%d,%d,%d | %d,%d,%d,%d\n",
+    //        NW, N, NE,  W, E, SW, S, SE,
+    //        isNvalid ? 1 : 0,isWvalid ? 1 : 0,
+    //        isSvalid ? 1 : 0,isEvalid ? 1 : 0);
+    if(!isNvalid) return;
+    if(!isWvalid) return;
+    if(!isSvalid) return;
     if(!isEvalid) return;
-   
+    // printf("idx: %d\n",pix_idx);
+
     // -- index image --
     float* imgC = img + idx * 3;
 
     // -- compute posterior --
+    bool valid = N >= 0;
     label_check = N;
-    assert(label_check >= 0);
-    res_max = calc_joint(imgC,seg,x,y,sp_params,label_check,
-                         sigma2_app,count_diff_nbrs_N,potts,res_max);
+    // assert(label_check >= 0);
+    if (valid){
+      res_max = calc_joint(imgC,seg,x,y,sp_params,label_check,
+                           sigma2_app,count_diff_nbrs_N,potts,res_max);
+    }
+
+    valid = S>=0;
     label_check = S;
-    assert(label_check >= 0);
-    if(label_check!=N)
+    // assert(label_check >= 0);
+    if((label_check!=N)&&valid)
       res_max = calc_joint(imgC,seg,x,y,sp_params,label_check,
                            sigma2_app,count_diff_nbrs_S,potts,res_max);
 
+    valid = W>=0;
     label_check = W;
-    assert(label_check >= 0);
-    if ( (label_check!=S)&&(label_check!=N))
+    // assert(label_check >= 0);
+    if ( (label_check!=S)&&(label_check!=N)&&valid)
       res_max = calc_joint(imgC,seg,x,y,sp_params,label_check,
                            sigma2_app,count_diff_nbrs_W,potts,res_max);
     
+    valid = E >=0;
     label_check = E;
-    assert(label_check >= 0);
-    if((label_check!=W)&&(label_check!=S)&&(label_check!=N))
+    // assert(label_check >= 0);
+    if((label_check!=W)&&(label_check!=S)&&(label_check!=N)&&valid)
       res_max = calc_joint(imgC,seg,x,y,sp_params,label_check,
                            sigma2_app,count_diff_nbrs_E,potts,res_max);
+    
+    // printf("[b] idx: %d\n",pix_idx);
     seg[pix_idx] = res_max.y;
     return;
 }
@@ -177,7 +213,8 @@ __device__ float2 calc_joint(float* imgC, int* seg,
     // res = res - logdet_sigma_app;
 
     // -- shape [sigma is actually \Sigma^{(-1)}, the inverse] --
-    res=res - d0*d0*sigma_s_x - d1*d1*sigma_s_z - 2*d0*d1*sigma_s_y; // sign(s_y) = -1
+    res = res - d0*d0*sigma_s_x - d1*d1*sigma_s_z - 2*d0*d1*sigma_s_y; // sign(s_y) = -1
+    // res=res - d0*d0*sigma_s_x - d1*d1*sigma_s_z - d0*d1*sigma_s_y; // sign(s_y) = -1
     res = res - logdet_sigma_shape;
 
     // -- prior --
@@ -218,25 +255,32 @@ __host__ void set_border(int* seg, bool* border, int height, int width){
 __host__ void update_seg(float* img, int* seg, bool* border,
                          spix_params* sp_params, const int niters,
                          const float sigma2_app, const float potts,
-                         const int npix, int nbatch, int xdim, int ydim, int nftrs){
+                         const int npix, int nbatch, int width, int height, int nftrs){
     
+    // printf("npix, nbatch, width, height, nftrs: %d,%d,%d,%d,%d\n",
+    //        npix, nbatch, width, height, nftrs);
     int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
     dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
     dim3 BlockPerGrid(num_block,nbatch);
     assert(nbatch==1);
     for (int iter = 0 ; iter < niters; iter++){
         cudaMemset(border, 0, npix*sizeof(bool));
-        find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(seg,border,npix,xdim,ydim);
+        find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(seg,border,npix,width,height);
+
+        // auto opt_b = torch::TensorOptions().dtype(torch::kBool).device(torch::kCUDA);
+        // int b_sum = torch::sum(torch::from_blob(border,{npix},opt_b).to(torch::kInt)).item<int>();
+        // printf("b_sum: %d\n",b_sum);
+
         for (int xmod3 = 0 ; xmod3 <2; xmod3++){
             for (int ymod3 = 0; ymod3 <2; ymod3++){
                 update_seg_subset<<<BlockPerGrid,ThreadPerBlock>>>(img, seg, \
                      border, sp_params, sigma2_app, potts,\
-                     npix, nbatch, xdim, ydim, nftrs, xmod3, ymod3);
+                     npix, nbatch, width, height, nftrs, xmod3, ymod3);
             }
         }
     }
     cudaMemset(border, 0, npix*sizeof(bool));
-    find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(seg, border, npix, xdim, ydim);
+    find_border_pixels<<<BlockPerGrid,ThreadPerBlock>>>(seg, border, npix, width, height);
 }
 
 

@@ -23,7 +23,9 @@ void init_shift_tensor(py::module &m);
 void init_shift_tensor_ordered(py::module &m);
 void init_shift_order(py::module &m);
 void init_sparams_io(py::module &m);
-void init_relabel(py::module &m);
+void init_refine(py::module &m);
+
+// void init_relabel(py::module &m);
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
@@ -41,6 +43,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   init_shift_tensor_ordered(m);
   init_shift_order(m);
   init_sparams_io(m);
+  init_refine(m);
   // init_relabel(m);
 
   // -- nicer superpixel parameter IO --

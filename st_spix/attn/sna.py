@@ -142,6 +142,17 @@ class SuperpixelAttention(nn.Module):
         else:
             raise ValueError(f"Uknown dist type [{self.dist_type}]")
 
+    def get_sims_attn_map(self,sims):
+        # -- compute \sum_s p(s_i=s)p(s_j=s) --
+        ws = self.kernel_size
+        sims = sims[None,:].contiguous()
+        print("sims.shape: ",sims.shape)
+        search = stnls.search.NonLocalSearch(ws,0,dist_type="prod",itype="int")
+        T,B,F,H,W = sims.shape
+        flows = th.zeros((B,1,T,1,2,H,W),device=sims.device)
+        sim_attn = search(sims,sims,flows)[0]
+        return sim_attn
+
     def attn_rw_stnls(self,attn,sims,flows,ws,wt):
 
         # -- compute \sum_s p(s_i=s)p(s_j=s) --

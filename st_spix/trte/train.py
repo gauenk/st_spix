@@ -48,53 +48,13 @@ tr_defs = {"dim":12,"qk_dim":6,"mlp_dim":6,"stoken_size":[8],
            "resume":None,"log_name":"default_log","exp_name":"default_exp",
            "epochs":50,"log_every":100,"test_every":1,"batch_size":8,
            "colors":3,"base_path":"output/default_basepath/train/",
-           "resume_uuid":None,"resume_flag":False,
+           "resume_uuid":None,"resume_flag":True,
            "spatial_chunk_size":256,"spatial_chunk_overlap":0.25,
            "gradient_clip":0.,"spix_loss_target":"seg",
            "resume_weights_only":False,
            "nbatches_per_epoch":1000,
            "save_every_n_epochs":5,"noise_type":"gaussian",
            "nframes":3,"flow_method":"spynet","window_time":1}
-
-def load_flow_fxn(cfg,device):
-    import stnls
-    from dev_basics import flow as flow_pkg
-    from ..spynet import SpyNet
-    from ..flow_utils import load_raft,run_raft_on_video
-
-    wt = cfg.window_time
-    if cfg.flow_method == "raft":
-        model = load_raft().to(device)
-        def forward(video):
-            video = th.clip(255.*video,0.,255.)
-            fflow,bflow = run_raft_on_video(video,model)
-            # print(fflow.max(),fflow.min())
-            # print(bflow.max(),bflow.min())
-            # exit()
-            flows = stnls.nn.search_flow(fflow[None,:],bflow[None,:],wt,1)
-            return flows,fflow
-    elif cfg.flow_method == "spynet":
-        model = SpyNet().to(device)
-        def forward(video):
-            fflow,bflow = run_raft_on_video(video,model)
-            # print(fflow.max(),fflow.min())
-            # print(bflow.max(),bflow.min())
-            # print("fflow.shape: ",fflow.shape)
-            # exit()
-            flows = stnls.nn.search_flow(fflow[None,:],bflow[None,:],wt,1)
-            # print("flows.shape: ",flows.shape)
-            # # B,HD,T,W_t,_,fH,fW = flows.shape
-            # exit()
-            return flows,fflow
-    elif cfg.flow_method == "cv2":
-        def forward(video):
-            flows = flow_pkg.run(video.cpu().numpy(),sigma=0.0,ftype="cv2")
-            # fflow,bflow = flows.fflow[0,0][None,:],flows.bflow[0,0][None,:]
-            fflow,bflow = flows.fflow[None,:],flows.bflow[None,:]
-            # print("fflow.shape,bflow.shape: ",fflow.shape,bflow.shape)
-            flows = stnls.nn.search_flow(fflow,bflow,wt,1)
-            return flows,fflow
-    return forward
 
 
 def run(cfg):
@@ -155,7 +115,7 @@ def run(cfg):
         print('select {}, resume training from epoch {}.'.format(chkpt_fn, start_epoch))
 
     # -- load flow function --
-    flow_fxn = load_flow_fxn(cfg,device)
+    flow_fxn = utils.load_flow_fxn(cfg,device)
 
     # -- init stat dict --
     stat_dict = utils.init_stat_dict(chkpt,reset=cfg.resume_weights_only)
@@ -205,6 +165,8 @@ def run(cfg):
             # exit()
 
             # -- forward --
+            # print("noisy.shape: ",noisy.shape)
+            # exit()
             timer.sync_start("fwd")
             output = model(noisy,flows,fflow,ninfo)
             timer.sync_stop("fwd")
@@ -293,7 +255,11 @@ def run(cfg):
         scheduler.step()
 
     # -- unpack psnrs/ssims into each frame --
-    info = utils.format_return_info(info,cfg.nframes)
+    print(info)
+    try:
+        info = utils.format_return_info(info,cfg.nframes)
+    except:
+        pass
 
     return info
 

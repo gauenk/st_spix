@@ -138,6 +138,7 @@ def run_raft_on_video(vid,model):
     from easydict import EasyDict as edict
 
     # -- run/collect flow --
+    H,W = vid.shape[-2:]
     fflow,bflow = [],[]
     for ti in range(vid.shape[0]-1):
 
@@ -148,11 +149,12 @@ def run_raft_on_video(vid,model):
         # img1 = (img1*255.)
         # img2 = (img2*255.)
 
+        # -- padding --
+        padder = InputPadder(img1.shape)
+        img1, img2 = padder.pad(img1, img2)
+
         if "RAFT" in model.__class__.__name__:
 
-            # -- padding --
-            padder = InputPadder(img1.shape)
-            img1, img2 = padder.pad(img1, img2)
             # print(img1.shape,img2.shape)
 
             # -- compute padding --
@@ -171,8 +173,8 @@ def run_raft_on_video(vid,model):
             # print("bflow_ti.shape: ",bflow_ti.shape)
             # exit()
 
-        fflow.append(fflow_ti)
-        bflow.append(bflow_ti)
+        fflow.append(fflow_ti[...,:H,:W])
+        bflow.append(bflow_ti[...,:H,:W])
 
     # -- pad with zeros [for compatibility; dev only] --
     zflow = th.zeros_like(fflow[0])

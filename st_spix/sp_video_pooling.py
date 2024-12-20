@@ -20,7 +20,7 @@ class SuperpixelPooling(th.autograd.Function):
 
         # -- end compare --
         ctx.save_for_backward(spix)
-        return pooled,downsampled
+        return pooled,downsampled,counts
 
     @staticmethod
     def backward(ctx, pooled_grad, ds_grad):

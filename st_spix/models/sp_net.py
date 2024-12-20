@@ -29,7 +29,8 @@ class SuperpixelNetwork(nn.Module):
     # sp_m is the "spatial" sigma
     defs = {"sp_type":None,"sp_niters":2,"sp_m":0.,"sp_stride":8,
             "sp_scale":1.,"sp_grad_type":"full","sp_nftrs":9,"unet_sm":True,
-            "attn_type":None,"use_bass_prop":True,"sp_proj_nftrs":0}
+            "attn_type":None,"use_bass_prop":True,"sp_proj_nftrs":0,
+            "bass_prop":False}
     defs.update(bass_kwargs)
 
     def __init__(self, dim, **kwargs):
@@ -111,8 +112,9 @@ class SuperpixelNetwork(nn.Module):
             # kwargs = {"use_bass_prop":True,"niters":30,"niters_seg":4,
             #           "sp_size":15,"pix_var":0.1,"alpha_hastings":0.01,
             #           "potts":8.,"sm_start":0,"rgb2lab":False}
-            kwargs = {"use_bass_prop":True,"niters":15,"niters_seg":4,
-                      "sp_size":15,"pix_var":0.01,"alpha_hastings":20.,
+            kwargs = {"use_bass_prop":self.bass_prop,"niters":15,"niters_seg":4,
+                      "sp_size":15,"sigma2_app":0.01,"sigma2_size":1.,
+                      "alpha_hastings":0.,
                       "potts":1.,"sm_start":0,"rgb2lab":False}
             # x_for_iters = rearrange(x_for_iters,'b f h w -> b h w f').contiguous()
             fflow = rearrange(fflow,'b f h w -> b h w f').contiguous()
