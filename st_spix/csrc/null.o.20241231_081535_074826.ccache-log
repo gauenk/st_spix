@@ -1,0 +1,61 @@
+[2024-12-31T08:15:35.074934 873990] === CCACHE master.a5e799a6 STARTED =========================================
+[2024-12-31T08:15:35.074967 873990] Configuration file: /home/gauenk/.ccache/ccache.conf
+[2024-12-31T08:15:35.074974 873990] System configuration file: /usr/local/etc/ccache.conf
+[2024-12-31T08:15:35.074974 873990] Config: (default) absolute_paths_in_stderr = false
+[2024-12-31T08:15:35.074974 873990] Config: (default) base_dir = 
+[2024-12-31T08:15:35.074974 873990] Config: (default) cache_dir = /home/gauenk/.ccache
+[2024-12-31T08:15:35.074974 873990] Config: (default) compiler = 
+[2024-12-31T08:15:35.074974 873990] Config: (default) compiler_check = mtime
+[2024-12-31T08:15:35.074974 873990] Config: (default) compiler_type = auto
+[2024-12-31T08:15:35.074974 873990] Config: (default) compression = true
+[2024-12-31T08:15:35.074974 873990] Config: (default) compression_level = 0
+[2024-12-31T08:15:35.074974 873990] Config: (default) cpp_extension = 
+[2024-12-31T08:15:35.074974 873990] Config: (environment) debug = true
+[2024-12-31T08:15:35.074974 873990] Config: (default) debug_dir = 
+[2024-12-31T08:15:35.074974 873990] Config: (default) debug_level = 2
+[2024-12-31T08:15:35.074974 873990] Config: (default) depend_mode = false
+[2024-12-31T08:15:35.074974 873990] Config: (default) direct_mode = true
+[2024-12-31T08:15:35.074974 873990] Config: (default) disable = false
+[2024-12-31T08:15:35.074974 873990] Config: (default) extra_files_to_hash = 
+[2024-12-31T08:15:35.074974 873990] Config: (default) file_clone = false
+[2024-12-31T08:15:35.074974 873990] Config: (default) hard_link = false
+[2024-12-31T08:15:35.074974 873990] Config: (default) hash_dir = true
+[2024-12-31T08:15:35.074974 873990] Config: (default) ignore_headers_in_manifest = 
+[2024-12-31T08:15:35.074974 873990] Config: (default) ignore_options = 
+[2024-12-31T08:15:35.074974 873990] Config: (default) inode_cache = true
+[2024-12-31T08:15:35.074974 873990] Config: (default) keep_comments_cpp = false
+[2024-12-31T08:15:35.074974 873990] Config: (environment) log_file = /tmp/ccache.log
+[2024-12-31T08:15:35.074974 873990] Config: (default) max_files = 0
+[2024-12-31T08:15:35.074974 873990] Config: (/home/gauenk/.ccache/ccache.conf) max_size = 5.0 GB
+[2024-12-31T08:15:35.074974 873990] Config: (default) msvc_dep_prefix = Note: including file:
+[2024-12-31T08:15:35.074974 873990] Config: (default) namespace = 
+[2024-12-31T08:15:35.074974 873990] Config: (default) path = 
+[2024-12-31T08:15:35.074974 873990] Config: (default) pch_external_checksum = false
+[2024-12-31T08:15:35.074974 873990] Config: (default) prefix_command = 
+[2024-12-31T08:15:35.074974 873990] Config: (default) prefix_command_cpp = 
+[2024-12-31T08:15:35.074974 873990] Config: (default) read_only = false
+[2024-12-31T08:15:35.074974 873990] Config: (default) read_only_direct = false
+[2024-12-31T08:15:35.074974 873990] Config: (default) recache = false
+[2024-12-31T08:15:35.074974 873990] Config: (default) remote_only = false
+[2024-12-31T08:15:35.074974 873990] Config: (default) remote_storage = 
+[2024-12-31T08:15:35.074974 873990] Config: (default) reshare = false
+[2024-12-31T08:15:35.074974 873990] Config: (environment) run_second_cpp = true
+[2024-12-31T08:15:35.074974 873990] Config: (default) sloppiness = 
+[2024-12-31T08:15:35.074974 873990] Config: (default) stats = true
+[2024-12-31T08:15:35.074974 873990] Config: (default) stats_log = 
+[2024-12-31T08:15:35.074974 873990] Config: (default) temporary_dir = /run/user/1000/ccache-tmp
+[2024-12-31T08:15:35.074974 873990] Config: (default) umask = 
+[2024-12-31T08:15:35.075015 873990] Command line: /usr/local/bin/c++ -v -E -x c++ /dev/null
+[2024-12-31T08:15:35.075035 873990] Hostname: kent-pc
+[2024-12-31T08:15:35.075041 873990] Working directory: /home/gauenk/Documents/packages/st_spix/st_spix/csrc
+[2024-12-31T08:15:35.075252 873990] Compiler: /usr/bin/c++
+[2024-12-31T08:15:35.075261 873990] Compiler type: gcc
+[2024-12-31T08:15:35.075277 873990] Detected input file: /dev/null
+[2024-12-31T08:15:35.075288 873990] Failed; falling back to running the real compiler
+[2024-12-31T08:15:35.075295 873990] Executing /usr/bin/c++ -v -E -x c++ /dev/null
+[2024-12-31T08:15:35.075301 873990] Result: called_for_preprocessing
+[2024-12-31T08:15:35.075311 873990] Acquiring /home/gauenk/.ccache/0/6/stats.lock
+[2024-12-31T08:15:35.075362 873990] Acquired /home/gauenk/.ccache/0/6/stats.lock
+[2024-12-31T08:15:35.075368 873990] Creating /home/gauenk/.ccache/0/6/stats.alive
+[2024-12-31T08:15:35.075514 873990] Releasing /home/gauenk/.ccache/0/6/stats.lock
+[2024-12-31T08:15:35.075537 873990] Released /home/gauenk/.ccache/0/6/stats.lock

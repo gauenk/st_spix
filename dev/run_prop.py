@@ -418,6 +418,23 @@ def read_bass_examples():
     vid = vid[:,:,:320,:480]
     return vid
 
+def read_tiny_vid():
+    from PIL import Image
+    root = Path("/home/gauenk/Documents/packages/st_spix_refactor/tiny_video/images/")
+    vid = []
+    for idx in range(10):
+        fname = "%05d.jpg" % idx
+        fname = root / fname
+        fname = str(fname)
+        img = np.array(Image.open(fname).convert("RGB"))/255.
+        vid.append(img)
+    vid = np.stack(vid)
+    vid = th.from_numpy(vid)
+    vid = rearrange(vid,'t h w c -> t c h w').float().cuda()
+    # print("vid.shape: ",vid.shape)
+    # vid = vid[:,:,:320,:480]
+    return vid
+
 
 def read_segtrack_video(vname):
     from PIL import Image
@@ -496,16 +513,19 @@ def main():
     # -- read img/flow --
     # vid = st_spix.data.davis_example(isize=None,nframes=-1,vid_names=['tennis'])
     # vid = st_spix.data.davis_example(isize="320_320",nframes=30,vid_names=['tennis'])
-    vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['tennis'])
+    # vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['tennis'])
     # vid = st_spix.data.davis_example(isize=None,nframes=30,vid_names=['tennis'])
     # vid = st_spix.data.davis_example(isize=None,nframes=10,vid_names=['baseball'])
     # vid = read_bass_examples()
     # vid = read_worm1()
-    size = 256
+    vid = read_tiny_vid()
+    # size = 256
     # vid = vid[0,5:7,:,50:50+size,300:300+size]
     # vid = vid[0,0:8,:,50:50+320,:480]
     # vid = vid[0,0:3,:,50:50+320,:480]
-    vid = vid[0,0:3,:,20:20+320,:480]
+
+    # vid = vid[0,0:3,:,20:20+320,:480]
+
     # vid = vid[0,0:30,:,50:50+320,:480]
     # vid = vid[0,0:30,:,50:50+320,:240]
     # vid = vid[0,0:,:,150+50:150+50+320,:240]

@@ -1,0 +1,61 @@
+[2025-01-05T19:35:04.782603 1110567] === CCACHE master.a5e799a6 STARTED =========================================
+[2025-01-05T19:35:04.782626 1110567] Configuration file: /home/gauenk/.ccache/ccache.conf
+[2025-01-05T19:35:04.782630 1110567] System configuration file: /usr/local/etc/ccache.conf
+[2025-01-05T19:35:04.782630 1110567] Config: (default) absolute_paths_in_stderr = false
+[2025-01-05T19:35:04.782630 1110567] Config: (default) base_dir = 
+[2025-01-05T19:35:04.782630 1110567] Config: (default) cache_dir = /home/gauenk/.ccache
+[2025-01-05T19:35:04.782630 1110567] Config: (default) compiler = 
+[2025-01-05T19:35:04.782630 1110567] Config: (default) compiler_check = mtime
+[2025-01-05T19:35:04.782630 1110567] Config: (default) compiler_type = auto
+[2025-01-05T19:35:04.782630 1110567] Config: (default) compression = true
+[2025-01-05T19:35:04.782630 1110567] Config: (default) compression_level = 0
+[2025-01-05T19:35:04.782630 1110567] Config: (default) cpp_extension = 
+[2025-01-05T19:35:04.782630 1110567] Config: (environment) debug = true
+[2025-01-05T19:35:04.782630 1110567] Config: (default) debug_dir = 
+[2025-01-05T19:35:04.782630 1110567] Config: (default) debug_level = 2
+[2025-01-05T19:35:04.782630 1110567] Config: (default) depend_mode = false
+[2025-01-05T19:35:04.782630 1110567] Config: (default) direct_mode = true
+[2025-01-05T19:35:04.782630 1110567] Config: (default) disable = false
+[2025-01-05T19:35:04.782630 1110567] Config: (default) extra_files_to_hash = 
+[2025-01-05T19:35:04.782630 1110567] Config: (default) file_clone = false
+[2025-01-05T19:35:04.782630 1110567] Config: (default) hard_link = false
+[2025-01-05T19:35:04.782630 1110567] Config: (default) hash_dir = true
+[2025-01-05T19:35:04.782630 1110567] Config: (default) ignore_headers_in_manifest = 
+[2025-01-05T19:35:04.782630 1110567] Config: (default) ignore_options = 
+[2025-01-05T19:35:04.782630 1110567] Config: (default) inode_cache = true
+[2025-01-05T19:35:04.782630 1110567] Config: (default) keep_comments_cpp = false
+[2025-01-05T19:35:04.782630 1110567] Config: (environment) log_file = /tmp/ccache.log
+[2025-01-05T19:35:04.782630 1110567] Config: (default) max_files = 0
+[2025-01-05T19:35:04.782630 1110567] Config: (/home/gauenk/.ccache/ccache.conf) max_size = 5.0 GB
+[2025-01-05T19:35:04.782630 1110567] Config: (default) msvc_dep_prefix = Note: including file:
+[2025-01-05T19:35:04.782630 1110567] Config: (default) namespace = 
+[2025-01-05T19:35:04.782630 1110567] Config: (default) path = 
+[2025-01-05T19:35:04.782630 1110567] Config: (default) pch_external_checksum = false
+[2025-01-05T19:35:04.782630 1110567] Config: (default) prefix_command = 
+[2025-01-05T19:35:04.782630 1110567] Config: (default) prefix_command_cpp = 
+[2025-01-05T19:35:04.782630 1110567] Config: (default) read_only = false
+[2025-01-05T19:35:04.782630 1110567] Config: (default) read_only_direct = false
+[2025-01-05T19:35:04.782630 1110567] Config: (default) recache = false
+[2025-01-05T19:35:04.782630 1110567] Config: (default) remote_only = false
+[2025-01-05T19:35:04.782630 1110567] Config: (default) remote_storage = 
+[2025-01-05T19:35:04.782630 1110567] Config: (default) reshare = false
+[2025-01-05T19:35:04.782630 1110567] Config: (environment) run_second_cpp = true
+[2025-01-05T19:35:04.782630 1110567] Config: (default) sloppiness = 
+[2025-01-05T19:35:04.782630 1110567] Config: (default) stats = true
+[2025-01-05T19:35:04.782630 1110567] Config: (default) stats_log = 
+[2025-01-05T19:35:04.782630 1110567] Config: (default) temporary_dir = /run/user/1000/ccache-tmp
+[2025-01-05T19:35:04.782630 1110567] Config: (default) umask = 
+[2025-01-05T19:35:04.782664 1110567] Command line: /usr/local/bin/gcc -v -E -x c /dev/null
+[2025-01-05T19:35:04.782675 1110567] Hostname: kent-pc
+[2025-01-05T19:35:04.782679 1110567] Working directory: /home/gauenk/Documents/packages/st_spix/st_spix/csrc/prop
+[2025-01-05T19:35:04.782781 1110567] Compiler: /usr/bin/gcc
+[2025-01-05T19:35:04.782786 1110567] Compiler type: gcc
+[2025-01-05T19:35:04.782799 1110567] Detected input file: /dev/null
+[2025-01-05T19:35:04.782806 1110567] Failed; falling back to running the real compiler
+[2025-01-05T19:35:04.782811 1110567] Executing /usr/bin/gcc -v -E -x c /dev/null
+[2025-01-05T19:35:04.782815 1110567] Result: called_for_preprocessing
+[2025-01-05T19:35:04.782822 1110567] Acquiring /home/gauenk/.ccache/2/7/stats.lock
+[2025-01-05T19:35:04.782855 1110567] Acquired /home/gauenk/.ccache/2/7/stats.lock
+[2025-01-05T19:35:04.782860 1110567] Creating /home/gauenk/.ccache/2/7/stats.alive
+[2025-01-05T19:35:04.782961 1110567] Releasing /home/gauenk/.ccache/2/7/stats.lock
+[2025-01-05T19:35:04.782978 1110567] Released /home/gauenk/.ccache/2/7/stats.lock

@@ -342,6 +342,14 @@ def run_prop(img,flow,spix_tm1,params_tm1,niters,niters_seg,
     # print(params_tm1.mu_shape.dtype,params_tm1.prior_mu_shape.dtype)
     params_tm1.prior_mu_shape[...] = params_tm1.mu_shape[...]
 
+    # print(flow.shape)
+    # print("flow[0,32,32]: ",flow[0,32,32])
+    # print("flow[0,0,0]: ",flow[0,0,0])
+    # print("flow_sp[211,532]: ",flow_sp[0,211,532])
+    # print("flow_sp[211,532]: ",flow_sp[0,211,532])
+    # spix_id = spix_tm1[0,211,523]
+    # print(params_tm1['counts'][spix_id])
+    # exit()
 
     # print("OH.")
     # print(params_tm1.mu_s[:4]/th.tensor([[W-1,H-1]]).to(img.device))

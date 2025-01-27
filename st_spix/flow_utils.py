@@ -62,7 +62,8 @@ def flow_warp(x, flow, interp_mode='bilinear',
 
 
 def viz_flow_quiver(name,flow,step=8):
-    flow = flow.detach().cpu().numpy()
+    if th.is_tensor(flow):
+        flow = flow.detach().cpu().numpy()
     B,_,H,W = flow.shape
     assert B == 1
     flow = rearrange(flow,'1 f h w -> h w f')

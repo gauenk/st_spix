@@ -651,6 +651,70 @@ int compactify_new_superpixels(torch::Tensor spix,spix_params* sp_params,
 
 /*********************************************************************
 
+             -=-=-=-=- Python API  -=-=-=-=-=-
+
+              -> Compactify a batch of superpixels
+              independently so each frame starts at 0
+              -> This is helpful for testing and debugging
+
+**********************************************************************/
+
+// torch::Tensor compact_spacetime_spix(const torch::Tensor spix){
+
+//     // -- check --
+//     CHECK_INPUT(spix);
+//     auto compact_spix = spix.clone();
+
+//     // -- number and ids --
+//     int num_spix = torch::Tensor({nframes});
+
+//     // -- get new ids --
+//     auto unique_ids = std::get<0>(at::_unique(spix));
+//     auto ids = unique_ids.data<int>();
+//     int num_ids = unique_ids.sizes()[0];
+//     auto mask = unique_ids >= prev_nspix;
+//     auto prop_ids = unique_ids.masked_select(mask); // uncompressed and alive
+
+//     // -- update maximum number of superpixels --
+//     int num_new = prop_ids.size(0);
+//     int compact_nspix = prev_nspix + num_new;
+//     // fprintf(stdout,"num_new: %d\n",num_new);
+//     if (num_new == 0) {return compact_nspix;}
+
+//     // -- allocate spix for storing --
+//     spix_params* new_params=(spix_params*)easy_allocate(num_new,sizeof(spix_params));
+//     int* compression_map=(int*)easy_allocate(num_new,sizeof(int));
+
+//     // -- update spix labels and params to reflect compacted labeling --
+//     int* spix_ptr = spix.data<int>();
+//     int* prop_ids_ptr = prop_ids.data<int>();
+//     int num_blocks = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
+//     dim3 nblocks(num_blocks);
+//     dim3 nthreads(THREADS_PER_BLOCK);
+//     compact_new_spix<<<nblocks,nthreads>>>(spix_ptr,compression_map,
+//                                            prop_ids_ptr,num_new,prev_nspix,npix);
+
+//     // -- shift params into correct location --
+//     int num_blocks1 = ceil( double(num_new) / double(THREADS_PER_BLOCK) ); 
+//     dim3 nblocks1(num_blocks1);
+//     dim3 nthreads1(THREADS_PER_BLOCK);
+//     fill_new_params_from_old<<<nblocks1,nthreads1>>>(sp_params,new_params,
+//                                                      compression_map,num_new);
+//     fill_old_params_from_new<<<nblocks1,nthreads1>>>(sp_params,new_params,
+//                                                      prev_nspix,num_new);
+
+//     // -- free parameters --
+//     cudaFree(compression_map);
+//     cudaFree(new_params);
+
+//     return compact_nspix;
+
+// }
+
+
+
+/*********************************************************************
+
 
 
 

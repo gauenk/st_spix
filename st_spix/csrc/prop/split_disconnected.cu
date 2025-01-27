@@ -69,6 +69,8 @@ run_split_disconnected(int* seg, int nbatch, int height, int width, int nspix){
     auto [regions,region_ids] = get_regions(seg,nbatch,H,W,device);
     int nregions = region_ids.sizes()[0];
     torch::Tensor regions_spix = spix_th.index({region_ids}); // size = nregions
+    // "region_ids" are the minimum pixel indices associatd with each region.
+    // by indexing "spix" we find the superpixel associated with each region.
 
     // -- get size of each regions --
     torch::Tensor region_sizes = torch::zeros({nregions},options_i32);
@@ -320,7 +322,14 @@ void compute_region_sizes(int* size, int* regions, int npix, int nregions){
 __global__
 void find_spix_min(int* seg, int* curr, int* prev,
                    int* changes, int H, int W, int npix){
-  
+
+  /****************************************
+
+     Assign all pixels in a contiguous region to
+     the same (here minimum) x,y coordinate.
+
+  *****************************************/
+
   // -- get index --
   int idx = threadIdx.x + blockIdx.x*blockDim.x;
   // atomicAdd(&changes[0],1);
