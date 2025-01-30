@@ -82,6 +82,13 @@ def read_flo(filename):
 
     return flow
 
+
+def get_segtrackerv2_videos():
+    root = Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/in/SegTrackv2/GroundTruth/")
+    vid_names = list([v.name for v in root.iterdir()])
+    # vid_names = ["frog_2","girl"]
+    return vid_names
+
 def write_flows(root,flows,start_index=0):
     import torchvision.io as tvio
     name = "%05d.flo"
@@ -107,11 +114,11 @@ def viz_flows(flow_dir,viz_dir):
         viz_fn = viz_dir / ("%s.png"%flow_fn.stem)
         flow = rearrange(flow,'h w two -> 1 two h w')
         # print(flow_fn.stem)
-        if "00006" in flow_fn.stem:
-            print(flow[0,:,48,34])
-            print(flow[0,:,34,48])
-            print(flow[0,:,49,76])
-            exit()
+        # if "00006" in flow_fn.stem:
+        #     print(flow[0,:,48,34])
+        #     print(flow[0,:,34,48])
+        #     print(flow[0,:,49,76])
+        #     exit()
         # print(flow_fn.stem,np.mean(np.abs(flow)))
         # flow = flow / (np.mean(np.abs(flow))+1e-10)
         # print(flow.shape)
@@ -122,36 +129,73 @@ def main():
 
     # img_root=Path("/home/gauenk/Documents/packages/st_spix_refactor/tiny_video/images/")
     # flow_root = Path("/home/gauenk/Documents/packages/st_spix_refactor/tiny_video/flow/")
-    img_root=Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/in/SegTrackv2/PNGImages/frog_2/")
-    flow_root = img_root / "RAFT_flows"
-    viz_root = Path("./output/viz_flows/frog_2_raft")
-    # flow_root = img_root / "BIST_flows"
-    # viz_root = Path("./output/viz_flows/frog_2_bist")
-    # if not flow_root.exists():
-    #     flow_root.mkdir()
-    # viz_flows(flow_root,viz_root)
-    # return
+    # flow_str = "RAFT_flows"
+    flow_str = "SPYNET_flows"
+    vnames = get_segtrackerv2_videos()
+    for vname in vnames:
 
-    # vid,start_index = read_video(img_root,"jpg")
-    vid,start_index = read_video(img_root,"png")
-    # print(vid.max())
-    # exit()
+        # -- config --
+        img_root=Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/in/SegTrackv2/PNGImages/%s/"%vname)
+        # flow_root = img_root / "RAFT_flows"
+        flow_root = img_root / flow_str
+        if not flow_root.exists():
+            flow_root.mkdir()
 
-    print("vid.shape: ",vid.shape)
-    fflow,bflow = run_raft(th.clip(255.*vid,0.,255.).type(th.uint8))
-    fflow = th.clip(fflow,-20,20)
-    bflow = th.clip(bflow,-30,30)
-    print(fflow[0,:,0,0])
-    print(fflow[0,:,0,1])
-    print(fflow[0,:,1,0])
-    print(fflow[0,:,1,1])
-    # print(fflow[0,:,0,0])
-    # print(fflow[1,:,0,0])
-    print("fflow.shape: ",fflow.shape)
-    print("bflow.shape: ",bflow.shape)
+        # -- viz --
+        # viz_root = Path("./output/viz_flows/frog_2_raft")
+        # flow_root = img_root / "BIST_flows"
+        # viz_root = Path("./output/viz_flows/frog_2_bist")
+        # viz_flows(flow_root,viz_root)
+        # return
 
-    # write_flows(flow_root,fflow)
-    write_flows(flow_root,-bflow,start_index)
+        # -- read video --
+        # vid,start_index = read_video(img_root,"jpg")
+        vid,start_index = read_video(img_root,"png")
+
+        # -- run raft --
+        if "raft" in flow_str.lower():
+            fflow,bflow = run_raft(th.clip(255.*vid,0.,255.).type(th.uint8))
+        elif "spynet" in flow_str.lower():
+            fflow,bflow = run_spynet(vid)
+        else:
+            raise ValueError(".")
+
+        # -- [dev] checking on spynet --
+        # fflow,bflow = run_raft(th.clip(255.*vid,0.,255.).type(th.uint8))
+        # # _fflow,_bflow = run_spynet(2*(vid-0.5))
+        # _fflow,_bflow = run_spynet(vid)
+        #
+        # # -- difference --
+        # b_delta = th.abs(bflow[1:2] - _bflow[1:2]).ravel()
+        # b_delta = th.quantile(b_delta,0.8).item()
+        # # b_delta = th.mean(th.abs(bflow - _bflow)).item()
+        # print(b_delta)
+        # # f_delta = th.abs(fflow[1:2] - _fflow[1:2]).ravel()
+        # # f_delta = th.quantile(f_delta,0.8).item()
+        # # print(f_delta)
+        #
+        # print(bflow[1,0,100:103,100:103])
+        # print(bflow[1,1,100:103,100:103])
+        # print(_bflow[1,0,100:103,100:103])
+        # print(_bflow[1,1,100:103,100:103])
+        # exit()
+
+        # -- clip for sanity --
+        fmax = 30
+        fflow = th.clip(fflow,-fmax,fmax)
+        bflow = th.clip(bflow,-fmax,fmax)
+        # print(fflow[0,:,0,0])
+        # print(fflow[0,:,0,1])
+        # print(fflow[0,:,1,0])
+        # print(fflow[0,:,1,1])
+        # print(fflow[0,:,0,0])
+        # print(fflow[1,:,0,0])
+        # print("fflow.shape: ",fflow.shape)
+        # print("bflow.shape: ",bflow.shape)
+
+        # -- write --
+        # write_flows(flow_root,fflow)
+        write_flows(flow_root,-bflow,start_index)
 
 
 if __name__ == "__main__":

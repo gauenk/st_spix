@@ -95,7 +95,7 @@ def run_raft(vid):
     model = model.module
     model.to(vid.device)
     model.eval()
-    fflow,bflow = run_raft_on_video(vid,model)
+    fflow,bflow = run_model_on_video(vid,model)
 
     if fflow.shape[-1] != vid.shape[-1]:
         print("RAFT wants image size to be a multiple of 8.")
@@ -106,7 +106,7 @@ def run_raft(vid):
 def run_spynet(vid):
     from .spynet import SpyNet
     model = SpyNet().to(vid.device).eval()
-    fflow,bflow = run_raft_on_video(vid,model)
+    fflow,bflow = run_model_on_video(vid,model)
     return fflow,bflow
 
 def load_raft():
@@ -130,11 +130,14 @@ def load_raft():
     return model
 
 def run_raft_on_video(vid,model):
+    return run_model_on_video(vid,model)
+
+def run_model_on_video(vid,model):
 
     # -- raft imports --
     import torch
     import torch as th
-    from raft.raft import RAFT
+    # from raft.raft import RAFT
     from raft.utils.utils import InputPadder
     from easydict import EasyDict as edict
 

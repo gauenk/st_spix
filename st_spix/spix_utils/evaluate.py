@@ -57,8 +57,8 @@ def count_spix(spix):
     nspix = spix.max().item()+1
 
     # -- allocate --
-    counts = th.zeros((nframes, nspix), dtype=th.int32)
-    ones = th.ones_like(spix, dtype=th.int32)
+    counts = th.zeros((nframes, nspix), dtype=th.int32, device=device)
+    ones = th.ones_like(spix, dtype=th.int32, device=device)
     counts.scatter_add_(1, spix, ones)
 
     return counts
@@ -76,7 +76,19 @@ def computeSummary(vid,seg,spix):
     # seg_sizes = segSizeByFrame(seg, np.arange(0,seg.max()+2))[1:]
     sizes = count_spix(spix)
     seg_sizes = count_spix(seg)[:,1:] # skip 0 for seg
-    gt_ids = np.unique(seg)[1:] # skip 0 for seg
+    # gt_ids = np.unique(seg)[1:] # skip 0 for seg
+    gt_ids = np.unique(seg) # keep 0 for seg
+
+
+    # -- info --
+    device = "cuda:0"
+    vid = th.from_numpy(vid).to(device).float()
+    spix = th.from_numpy(spix).to(device).int()
+    seg = th.from_numpy(seg).to(device).int()
+    sizes = sizes.to(device)
+    seg_sizes = seg_sizes.to(device)
+    # print(vid.shape,spix.shape,seg.shape,sizes.shape,seg_sizes.shape)
+    # exit()
 
 
     # -- summary --
@@ -87,19 +99,20 @@ def computeSummary(vid,seg,spix):
     summ.pooling = scoreSpixPoolingQuality(vid,spix)
 
     # -- rearrange --
-    spix = rearrange(spix,'t h w -> h w t')
-    seg = rearrange(seg,'t h w -> h w t')
-    sizes = sizes.cpu().numpy().T
-    seg_sizes = seg_sizes.cpu().numpy().T
+    # spix = rearrange(spix,'t h w -> h w t')
+    # seg = rearrange(seg,'t h w -> h w t')
+    # sizes = sizes.cpu().numpy().T
+    # seg_sizes = seg_sizes.cpu().numpy().T
 
-    mode = "3d"
-    summ.ue3d,summ.sa3d = scoreUnderErrorAndSegAccuracy(spix, sizes,
-                                                        seg, seg_sizes,
-                                                        gt_ids, gtpos, mode)
-    mode = "2d"
-    summ.ue2d,summ.sa2d = scoreUnderErrorAndSegAccuracy(spix, sizes,
-                                                        seg, seg_sizes,
-                                                        gt_ids, gtpos, mode)
+    # mode = "3d"
+    # summ.ue3d,summ.sa3d = scoreUnderErrorAndSegAccuracy(spix, sizes,
+    #                                                     seg, seg_sizes,
+    #                                                     gt_ids, gtpos, mode)
+    # mode = "2d"
+    # summ.ue2d,summ.sa2d = scoreUnderErrorAndSegAccuracy(spix, sizes,
+    #                                                     seg, seg_sizes,
+    #                                                     gt_ids, gtpos, mode)
+
     # print(summ.ue2d,summ.sa2d)
     # mode = "2d_old"
     # summ.ue2d,summ.sa2d = scoreUnderErrorAndSegAccuracy(spix, sizes,
@@ -107,14 +120,26 @@ def computeSummary(vid,seg,spix):
     #                                                     gt_ids, gtpos, mode)
     # print(summ.ue2d,summ.sa2d)
 
+    outs = scoreUEandSA(spix, sizes, seg, seg_sizes, gt_ids, gtpos)
+    # print(outs)
+    summ.ue2d,summ.sa2d,summ.ue3d,summ.sa3d = outs
+    # exit()
+
     # -- summary stats --
     summ.spnum = spix.max().item()+1
-    summ.ave_nsp = averge_unique_spix(spix)
+    # summ.ave_nsp = averge_unique_spix(spix)
+    summ.ave_nsp = averge_unique_spix_v1(sizes)
+    # v0 = averge_unique_spix(rearrange(spix.cpu().numpy(),'t h w -> h w t'))
+    # print(summ.ave_nsp,v0)
+    # exit()
     # print(summ)
 
     # exit()
 
     return summ
+
+def averge_unique_spix_v1(sizes):
+    return th.mean(1.*th.sum(sizes>0,-1)).item() # sum across spix; ave across time
 
 def averge_unique_spix(spix):
     nsp = []
@@ -123,15 +148,19 @@ def averge_unique_spix(spix):
     return np.mean(nsp)
 
 def scoreSpixPoolingQuality(vid,spix):
+    # -- setup --
     device = "cuda:0"
-    vid = th.tensor(vid).to(device)
-    spix = th.tensor(spix.astype(np.int32)).to(device)
+    if not th.is_tensor(vid):
+        vid = th.tensor(vid).to(device).double()
+    if not th.is_tensor(spix):
+        spix = th.tensor(spix.astype(np.int32)).to(device)
 
+    # -- pooling --
     pooled,down = sp_pooling(vid,spix)
     vid = rearrange(vid,'t h w f -> t f h w')
     pooled = rearrange(pooled,'t h w f -> t f h w')
     from st_spix import metrics
-    psnr = metrics.compute_psnrs(vid,pooled,div=1.).mean()
+    psnr = metrics.compute_psnrs(vid,pooled,div=1.).mean().item()
     return psnr
 
 def scoreExplainedVariance(vid,spix):
@@ -140,12 +169,12 @@ def scoreExplainedVariance(vid,spix):
 
     # -- setup --
     device = "cuda:0"
-    vid = th.tensor(vid).to(device).double()
-    spix = th.tensor(spix.astype(np.int32)).to(device)
-    # spix = rearrange(spix,'h w b -> b h w')
+    if not th.is_tensor(vid):
+        vid = th.tensor(vid).to(device).double()
+    if not th.is_tensor(spix):
+        spix = th.tensor(spix.astype(np.int32)).to(device)
 
     # -- Global mean --
-    # vid = 255.*vid
     mean_global = vid.mean(dim=(1,2),keepdim=True)  # Mean across pixels (dim=0)
 
     # -- pixels vs mean --
@@ -162,10 +191,13 @@ def scoreExplainedVariance3D(vid,spix):
     # roughly: var(sp_mean) / var(pix)
     # but sp_mean is computed across all frames
 
+
     # -- setup --
     device = "cuda:0"
-    vid = th.tensor(vid).to(device).float()
-    spix = th.tensor(spix.astype(np.int32)).to(device)
+    if not th.is_tensor(vid):
+        vid = th.tensor(vid).to(device).double()
+    if not th.is_tensor(spix):
+        spix = th.tensor(spix.astype(np.int32)).to(device)
 
     # -- get global mean per frame --
     vid = 255.*vid
@@ -257,57 +289,234 @@ def scoreMeanDurationAndSizeVariation_v0(svMap):
 
     return TEX, SZV
 
-def scoreUnderErrorAndSegAccuracy(svMap, svSize, gtMap, gtSize, gtList, gtPos, mode):
+def scoreUEandSA(spix, counts, gtSeg, gtSize, gtList, gtPos):
+    """
+    This function is used to score 3D Undersegmentation Error and 3D
+    Segmentation Accuracy for supervoxels.
+    """
+
+    # In case ground-truth is sparsely annotated
+    spix = spix[gtPos, :, :] # T H W
+    if spix.shape != gtSeg.shape:
+        print('Error: gtSeg and spix dimension mismatch!')
+        return -1., -1., -1., -1.
+
+    # -- init --
+    device = spix.device
+    T,H,W = spix.shape
+    # frameNum = gtSeg.shape[0]
+    T,S = counts.shape
+    numGT = len(gtList)
+    gtUE = th.zeros((T,numGT),device=device)
+    gtUE3D = th.zeros((numGT),device=device)
+    gtSA = th.zeros((T,numGT),device=device)
+    gtSA3D = th.zeros((numGT),device=device)
+
+    # gtUE = th.zeros((len(gtList), frameNum),device=device)
+    # gtSA = th.zeros((len(gtList), frameNum),device=device)
+
+    # -- setup for alt --
+    counts = counts.long()
+    spix = spix.long()
+    gtSeg = gtSeg.long()
+    gtSize = gtSize.long()
+    invalid = spix.max().item()+1
+
+    # th.from_numpy(counts).T.long()
+    # spix = th.from_numpy(spix).clone().long()
+    # spix = rearrange(spix,'h w t -> t h w')
+    # gtSeg = th.from_numpy(gtSeg).clone().long()
+    # gtSize = th.from_numpy(gtSize).clone().long()
+    # gtSeg = rearrange(gtSeg,'h w t -> t h w')
+    # T,S = counts.shape
+    # invalid = spix.max()+1
+
+    for i in range(len(gtList)): # number of masks
+
+        # -- get counts overlapping with mask --
+        gt_id = gtList[i]
+        invalid_mask = gtSeg != int(gt_id)
+        spix_i = spix.clone()
+        spix_i[th.where(invalid_mask)] = invalid
+        in_counts = count_spix(spix_i)[:,:-1].long() # remove invalid
+        # assert th.all(in_counts <= counts).item() # true
+
+        # -- get spix ids and counts which overlap with the gtSeg --
+        # mask = (gtSeg == gtList[i])
+        # svOnMask = spix[mask]
+        # svOnID, svOnSize = np.unique(svOnMask, return_counts=True)
+
+        # -- compute ue --
+        # gtUE_i = th.zeros((T,S),device=device,dtype=th.long)
+        # args = th.where(in_counts>0)
+        # gtUE_i[args] = counts[args]
+        # gtUE[:,i] = gtUE_i.sum(-1)
+
+        # -- corrected ue --
+        out_counts = th.zeros((T,S),device=device,dtype=th.long)
+        min_counts = th.zeros((T,S),device=device,dtype=th.long)
+        args = th.where(in_counts>0)
+        out_counts[args] = counts[args] - in_counts[args]
+        min_counts[args] = th.minimum(out_counts[args],in_counts[args])
+        gtUE[:,i] = min_counts.sum(-1)
+        # print(counts[args])
+        # print(in_counts[args])
+        # print(out_counts[args])
+        # print(min_counts[args])
+        # exit()
+
+        # -- compute ue 3D --
+        min_counts_s = th.zeros((S),device=device,dtype=th.long)
+        out_counts_s = out_counts.sum(0)
+        in_counts_s = in_counts.sum(0)
+        args = th.where(in_counts_s>0)
+        min_counts_s[args] = th.minimum(out_counts_s[args],in_counts_s[args])
+        gtUE3D[i] = min_counts_s.sum()
+
+
+        # -- compute sa 2d --
+        gtSA_i = th.zeros((T,S),device=device,dtype=th.long)
+        args = th.where(in_counts >= (0.5 * counts))
+        gtSA_i[args] = in_counts[args]
+        gtSA[:,i] = gtSA_i.sum(-1)
+
+        # -- compute sa 3d --
+        in_counts = in_counts.sum(0)
+        args = th.where(in_counts >= (0.5 * counts.sum(0)))
+        gtSA3D[i] = in_counts[args].sum()
+
+        # -- ue and sa --
+        # gtUE[i] = counts[svOnID].sum()  # Corrected for zero-based indexing
+        # gtSA[i] = svOnSize[svOnSize >= 0.5 * counts[svOnID]].sum()
+
+    # UE = how many extra pixels for all spix in the GT.
+    # SA = how many pixels are more than half in the GT
+    # UE_2d = th.mean((gtUE - gtSize) / gtSize)
+    # SA_2d = th.mean(gtSA / gtSize)
+
+    # -- remove gtlabel "0" for SA --
+    gtSA = gtSA[:,1:]
+    gtSA3D = gtSA3D[1:]
+
+    # -- 2d metrics ["masked" average dropping the "0" frames --
+    # print(gtUE)
+    # print(gtSize)
+    # print(gtUE.shape,gtSize.shape)
+    gtSize_mask = gtSize + (gtSize == 0)
+    # UE_2d = th.mean(th.sum((gtUE - gtSize) / gtSize_mask, axis=0) / th.sum(gtSize > 0, axis=0))
+    # UE_2d = th.mean(th.sum(gtUE / gtSize_mask, axis=0) / th.sum(gtSize > 0, axis=0))
+    UE_2d = th.mean(gtUE / (H*W))
+    SA_2d = th.mean(th.sum(gtSA / gtSize_mask, axis=0) / th.sum(gtSize > 0, axis=0))
+
+    # -- 3d metrics --
+    gtUE = gtUE.sum(0)
+    gtSA = gtSA.sum(0)
+    gtSize = gtSize.sum(0)
+    # print(gtUE)
+    # print(gtUE3D)
+    # print(gtSA)
+    # print(gtSA3D)
+    # print(gtSize)
+    assert th.all(gtSize>0).item()
+    # UE_3d = th.mean((gtUE - gtSize) / gtSize)
+    # UE_3d = th.mean(gtUE / gtSize)
+    # UE_3d = th.mean(gtUE / gtSize)
+    UE_3d = th.mean(gtUE3D / (T*H*W))
+    SA_3d = th.mean(gtSA3D / gtSize)
+
+    return UE_2d.item(),SA_2d.item(),UE_3d.item(),SA_3d.item()
+
+
+def scoreUnderErrorAndSegAccuracy(spix, counts, gtSeg, gtSize, gtList, gtPos, mode):
     """
     This function is used to score 3D Undersegmentation Error and 3D
     Segmentation Accuracy for supervoxels.
     """
 
     # -- ensure shape --
-    assert svSize.shape[-1] == svMap.shape[-1]
+    assert counts.shape[-1] == spix.shape[-1]
 
     # In case ground-truth is sparsely annotated
-    svMap = svMap[:, :, gtPos] # H W T
-    if svMap.shape != gtMap.shape:
-        print('Error: gtMap and svMap dimension mismatch!')
+    spix = spix[:, :, gtPos] # H W T
+    if spix.shape != gtSeg.shape:
+        print('Error: gtSeg and spix dimension mismatch!')
         return None, None
-    svMap = svMap.astype(np.uint32)
+    spix = spix.astype(np.uint32)
 
     # -- 3d ue and sa --
     if mode.lower() == '3d':
-        svSize = svSize.sum(axis=1)
-        gtSize = gtSize.sum(axis=1)
-        gtUE = np.zeros(len(gtList))
-        gtSA = np.zeros(len(gtList))
+        # counts = counts.sum(axis=1)
+        # gtSize = gtSize.sum(axis=1)
+        # gtUE = np.zeros(len(gtList))
+        # gtSA = np.zeros(len(gtList))
+
+        # -- init --
+        device = spix.device
+        frameNum = gtSeg.shape[2]
+        gtUE = th.zeros((len(gtList), frameNum),device=device)
+        gtSA = th.zeros((len(gtList), frameNum),device=device)
+
+        # -- setup for alt --
+        counts = th.from_numpy(counts).T.long()
+        spix = th.from_numpy(spix).clone().long()
+        spix = rearrange(spix,'h w t -> t h w')
+        gtSeg = th.from_numpy(gtSeg).clone().long()
+        gtSize = th.from_numpy(gtSize).clone().long()
+        gtSeg = rearrange(gtSeg,'h w t -> t h w')
+        T,S = counts.shape
+        invalid = spix.max()+1
 
         for i in range(len(gtList)): # number of masks
 
-            # -- get spix ids and counts which overlap with the gtMap --
-            mask = (gtMap == gtList[i])
-            svOnMask = svMap[mask]
-            svOnID, svOnSize = np.unique(svOnMask, return_counts=True)
+            # -- get counts overlapping with mask --
+            gt_id = gtList[i]
+            invalid_mask = gtSeg != int(gt_id)
+            spix_i = spix.clone()
+            spix_i[th.where(invalid_mask)] = invalid
+            on_counts = count_spix(spix_i)[:,:-1].long() # remove invalid
+
+            # -- get spix ids and counts which overlap with the gtSeg --
+            # mask = (gtSeg == gtList[i])
+            # svOnMask = spix[mask]
+            # svOnID, svOnSize = np.unique(svOnMask, return_counts=True)
+
+            # -- compute ue --
+            gtUE_i = th.zeros(T,S).long()
+            args = th.where(on_counts>0)
+            gtUE_i[args] = counts[args]
+            gtUE[i] = gtUE_i.sum()
+
+            # -- compute sa --
+            gtSA_i = th.zeros(T,S).long()
+            args = th.where(on_counts >= (0.5 * counts))
+            gtSA_i[args] = on_counts[args]
+            gtSA[i] = gtSA_i.sum()
 
             # -- ue and sa --
-            gtUE[i] = svSize[svOnID].sum()  # Corrected for zero-based indexing
-            gtSA[i] = svOnSize[svOnSize >= 0.5 * svSize[svOnID]].sum()
+            # gtUE[i] = counts[svOnID].sum()  # Corrected for zero-based indexing
+            # gtSA[i] = svOnSize[svOnSize >= 0.5 * counts[svOnID]].sum()
 
         # UE = how many extra pixels for all spix in the GT.
         # SA = how many pixels are more than half in the GT
-        UE = np.mean((gtUE - gtSize) / gtSize)
-        SA = np.mean(gtSA / gtSize)
+        gtSize = gtSize.sum(-1)
+        assert th.all(gtSize>0).item()
+        # gtSize_mask = gtSize + (gtSize == 0)
+        UE = th.mean((gtUE - gtSize) / gtSize)
+        SA = th.mean(gtSA / gtSize)
 
     elif mode.lower() == '2d':
 
-        frameNum = gtMap.shape[2]
+        # -- init --
+        frameNum = gtSeg.shape[2]
         gtUE = np.zeros((len(gtList), frameNum))
         gtSA = np.zeros((len(gtList), frameNum))
         ue = 0.
 
         # -- setup for alt --
-        counts = th.from_numpy(svSize).T.long()
-        spix = th.from_numpy(svMap).clone().long()
+        counts = th.from_numpy(counts).T.long()
+        spix = th.from_numpy(spix).clone().long()
         spix = rearrange(spix,'h w t -> t h w')
-        gtSeg = th.from_numpy(gtMap).clone().long()
+        gtSeg = th.from_numpy(gtSeg).clone().long()
         gtSeg = rearrange(gtSeg,'h w t -> t h w')
         T,S = counts.shape
         invalid = spix.max()+1
@@ -322,7 +531,6 @@ def scoreUnderErrorAndSegAccuracy(svMap, svSize, gtMap, gtSize, gtList, gtPos, m
             on_counts = count_spix(spix_i)[:,:-1].long() # remove invalid
 
             # -- compute ue --
-            cond_ue = 0
             gtUE_i = th.zeros(T,S).long()
             args = th.where(on_counts>0)
             gtUE_i[args] = counts[args]
@@ -340,14 +548,15 @@ def scoreUnderErrorAndSegAccuracy(svMap, svSize, gtMap, gtSize, gtList, gtPos, m
         SA = np.mean(np.sum(gtSA / gtSize_mask, axis=1) / np.sum(gtSize > 0, axis=1))
 
     elif mode.lower() == '2d_old':
-        frameNum = gtMap.shape[2]
+
+        frameNum = gtSeg.shape[2]
         gtUE = np.zeros((len(gtList), frameNum))
         gtSA = np.zeros((len(gtList), frameNum))
         ue = 0.
 
         for i in range(frameNum):
-            thisGtMap = gtMap[:, :, i]
-            thisSvMap = svMap[:, :, i]
+            thisGtMap = gtSeg[:, :, i]
+            thisSvMap = spix[:, :, i]
             GtOn = np.unique(thisGtMap)
 
             for j in range(len(gtList)):
@@ -358,14 +567,14 @@ def scoreUnderErrorAndSegAccuracy(svMap, svSize, gtMap, gtSize, gtList, gtPos, m
                 svOnMask = thisSvMap[np.where(mask)]
                 svOnID, svOnSize = np.unique(svOnMask, return_counts=True)
                 # if i < 30:
-                #     print(i,svOnID[:10],svSize[svOnID, i].sum())
-                gtUE[j, i] = svSize[svOnID, i].sum()  # Corrected indexing
-                gtSA[j, i] = svOnSize[svOnSize >= 0.5 * svSize[svOnID, i]].sum()
+                #     print(i,svOnID[:10],counts[svOnID, i].sum())
+                gtUE[j, i] = counts[svOnID, i].sum()  # Corrected indexing
+                gtSA[j, i] = svOnSize[svOnSize >= 0.5 * counts[svOnID, i]].sum()
 
         gtSize_mask = gtSize + (gtSize == 0)
-        print("\n")
+        # print("\n")
         # print(gtUE[0,:10])
-        print(gtSA[0,:10])
+        # print(gtSA[0,:10])
         UE = np.mean(np.sum((gtUE - gtSize) / gtSize_mask, axis=1) / np.sum(gtSize > 0, axis=1))
         SA = np.mean(np.sum(gtSA / gtSize_mask, axis=1) / np.sum(gtSize > 0, axis=1))
 
