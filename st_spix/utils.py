@@ -20,6 +20,9 @@ def vid_rgb2lab(vid,normz=True):
     return vid_lab
 
 def vid_rgb2lab_th(vid,normz=True):
+    is_tensor = th.is_tensor(vid)
+    if not(is_tensor):
+        vid = th.from_numpy(vid)
     vid_lab = rgb2lab(vid.contiguous())
     if normz:
         vid_lab = vid_lab - vid_lab.min()
@@ -147,8 +150,9 @@ def rgb2lab(image: torch.Tensor) -> torch.Tensor:
     xyz_normalized = torch.div(xyz_im, xyz_ref_white)
 
     threshold = 0.008856
+    kappa_div_116 = 7.787068965517241
     power = torch.pow(xyz_normalized.clamp(min=threshold), 1 / 3.0)
-    scale = 7.787 * xyz_normalized + 4.0 / 29.0
+    scale = kappa_div_116 * xyz_normalized + 4.0 / 29.0
     xyz_int = torch.where(xyz_normalized > threshold, power, scale)
 
     x,y,z = xyz_int[..., 0,:,:],xyz_int[..., 1,:,:],xyz_int[..., 2,:,:]

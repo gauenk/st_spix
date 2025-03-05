@@ -129,13 +129,15 @@ def main():
 
     # img_root=Path("/home/gauenk/Documents/packages/st_spix_refactor/tiny_video/images/")
     # flow_root = Path("/home/gauenk/Documents/packages/st_spix_refactor/tiny_video/flow/")
-    # flow_str = "RAFT_flows"
-    flow_str = "SPYNET_flows"
+    flow_str = "RAFT_flows"
+    # flow_str = "SPYNET_flows"
     vnames = get_segtrackerv2_videos()
+    vnames = ["."]
     for vname in vnames:
 
         # -- config --
         img_root=Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/in/SegTrackv2/PNGImages/%s/"%vname)
+        img_root=Path("/home/gauenk/Documents/packages/st_spix_refactor/data/rep/")
         # flow_root = img_root / "RAFT_flows"
         flow_root = img_root / flow_str
         if not flow_root.exists():
@@ -151,25 +153,32 @@ def main():
         # -- read video --
         # vid,start_index = read_video(img_root,"jpg")
         vid,start_index = read_video(img_root,"png")
+        vid = vid[:,:3].contiguous()
 
         # -- run raft --
         if "raft" in flow_str.lower():
+            fmax = 20
             fflow,bflow = run_raft(th.clip(255.*vid,0.,255.).type(th.uint8))
         elif "spynet" in flow_str.lower():
+            fmax = 30
             fflow,bflow = run_spynet(vid)
         else:
             raise ValueError(".")
 
         # -- [dev] checking on spynet --
         # fflow,bflow = run_raft(th.clip(255.*vid,0.,255.).type(th.uint8))
+        # fflow,bflow = run_raft(th.clip(255.*vid,0.,255.))
         # # _fflow,_bflow = run_spynet(2*(vid-0.5))
         # _fflow,_bflow = run_spynet(vid)
-        #
-        # # -- difference --
+
+        # -- difference --
         # b_delta = th.abs(bflow[1:2] - _bflow[1:2]).ravel()
         # b_delta = th.quantile(b_delta,0.8).item()
+        # print(b_delta)
+        # b_delta = th.mean(th.abs(fflow - _bflow)).item()
         # # b_delta = th.mean(th.abs(bflow - _bflow)).item()
         # print(b_delta)
+        # exit()
         # # f_delta = th.abs(fflow[1:2] - _fflow[1:2]).ravel()
         # # f_delta = th.quantile(f_delta,0.8).item()
         # # print(f_delta)
@@ -181,7 +190,6 @@ def main():
         # exit()
 
         # -- clip for sanity --
-        fmax = 30
         fflow = th.clip(fflow,-fmax,fmax)
         bflow = th.clip(bflow,-fmax,fmax)
         # print(fflow[0,:,0,0])

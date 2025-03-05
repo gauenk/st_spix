@@ -94,6 +94,8 @@ def run_raft(vid):
     model.load_state_dict(torch.load(args.model,weights_only=False))
     model = model.module
     model.to(vid.device)
+    # print(vid.min(),vid.max())
+
     model.eval()
     fflow,bflow = run_model_on_video(vid,model)
 
@@ -163,9 +165,11 @@ def run_model_on_video(vid,model):
 
             # -- compute padding --
             with th.no_grad():
+                # _, fflow_ti = model(img1, img2, iters=20, test_mode=True)
+                # _, bflow_ti = model(img2, img1, iters=20, test_mode=True)
+                # print("flow_low.shape,flow_up.shape: ",flow_low.shape,flow_up.shape)
                 _, fflow_ti = model(img1, img2, iters=20, test_mode=True)
                 _, bflow_ti = model(img2, img1, iters=20, test_mode=True)
-            # print("flow_low.shape,flow_up.shape: ",flow_low.shape,flow_up.shape)
 
         else:
 

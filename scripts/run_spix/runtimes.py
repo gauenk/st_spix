@@ -24,14 +24,14 @@ def plot_runtime(ax):
     # names0 = ["ETPS","SEEDS","ERS","FGCS","M-BASS","BASS"]
     # times0 = [1000,1000,1000,20,100,80]
     names0 = ["SLIC","SEEDS","BASS"]
-    times0 = [0.1001,0.1737,0.0491]
+    times0 = [0.1001,0.1737,0.0399]
     bars = ax.bar(names0,times0,color="#D6C0B3",label="Space")
     # names1 = ["TSP","S-GBH","CCS","TCS","BIST"]
     # times1 = [500,400,300,600,40]
     # names1 = ["TSP","S-GBH","BIST"]
     # names1 = ["TSP","S-GBH","BIST"]
     names1 = ["TSP","BIST"]
-    times1 = [0.4312,0.0175]
+    times1 = [0.4312,0.0122]
     bars += ax.bar(names1,times1,color="#AB886D",label="Space-Time")
     names = names0 + names1
     times = times0 + times1
@@ -68,7 +68,7 @@ ginfo = {'wspace':0.01, 'hspace':0.1,
          "top":0.96,"bottom":0.20,"left":.165,"right":0.99}
 fig,ax = plt.subplots(1,1,figsize=(3.5,2.5),gridspec_kw=ginfo,dpi=dpi)
 plot_runtime(ax)
-plt.savefig("output/run_eval/runtime.png",transparent=True)
+plt.savefig("output/run_eval/runtimes.png",transparent=True)
 
 
 

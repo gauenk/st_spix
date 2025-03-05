@@ -1,6 +1,6 @@
 
 
-import os
+import os,glob
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -18,6 +18,27 @@ from st_spix.sp_video_pooling import video_pooling
 def cvlbmap(ndarray):
     codes,_ = pd.factorize(ndarray.ravel())
     return codes.reshape(ndarray.shape)
+
+
+def read_spix(root,vname,offset):
+    nframes = len(glob.glob(str(root/"*_params.csv")))
+    spix = []
+    for frame_index in range(offset,nframes+offset):
+        fn = root / ("%05d.csv" % frame_index)
+        spix_t = pd.read_csv(str(fn),header=None).to_numpy()
+        spix.append(spix_t)
+    spix = np.stack(spix)
+    return spix
+
+def read_anno_video(root,vname,offset):
+    nframes = len(glob.glob(str(root/"border*png")))
+    vid = []
+    for frame_index in range(offset,nframes+offset):
+        fn = root / ("border_%05d.png" % frame_index)
+        img = np.array(Image.open(fn).convert("RGB"))/255.
+        vid.append(img)
+    vid = np.stack(vid)
+    return vid
 
 def segSizeByFrame(svmap,seg_ids):
     # max_id = np.max(seg_ids)+1
@@ -59,6 +80,10 @@ def count_spix(spix):
     # -- allocate --
     counts = th.zeros((nframes, nspix), dtype=th.int32, device=device)
     ones = th.ones_like(spix, dtype=th.int32, device=device)
+    if spix.min() < 0:
+        print("invalid spix!")
+        print(th.where(spix == spix.min()))
+        exit()
     counts.scatter_add_(1, spix, ones)
 
     return counts
@@ -78,7 +103,6 @@ def computeSummary(vid,seg,spix):
     seg_sizes = count_spix(seg)[:,1:] # skip 0 for seg
     # gt_ids = np.unique(seg)[1:] # skip 0 for seg
     gt_ids = np.unique(seg) # keep 0 for seg
-
 
     # -- info --
     device = "cuda:0"
@@ -146,6 +170,27 @@ def averge_unique_spix(spix):
     for t in range(spix.shape[-1]):
         nsp.append(len(np.unique(spix[:,:,t])))
     return np.mean(nsp)
+
+def scoreSpixPoolingQualityByFrame(vid,spix,metric="psnr"):
+    # -- setup --
+    device = "cuda:0"
+    if not th.is_tensor(vid):
+        vid = th.tensor(vid).to(device).double()
+    if not th.is_tensor(spix):
+        spix = th.tensor(spix.astype(np.int32)).to(device)
+
+    # -- pooling --
+    pooled,down = sp_pooling(vid,spix)
+    vid = rearrange(vid,'t h w f -> t f h w')
+    pooled = rearrange(pooled,'t h w f -> t f h w')
+    from st_spix import metrics
+    if metric == "psnr":
+        res = metrics.compute_psnrs(vid,pooled,div=1.)
+    elif metric == "ssim":
+        res = metrics.compute_ssims(vid,pooled,div=1.)
+    else:
+        raise ValueError(f"Uknown metric name [{metric}]")
+    return res
 
 def scoreSpixPoolingQuality(vid,spix):
     # -- setup --
@@ -240,7 +285,23 @@ def scoreMeanDurationAndSizeVariation(counts):
     # -- compute average variance of only valid points --
     args = th.where(num_valid>1)
     stds = stds[args]
-    SZV = th.mean(stds).item()
+    SZV = th.mean(stds)
+    # if th.isnan(SZV):
+    #     SZV = th.tensor([0.])
+    #     # print(num_valid[11])
+    #     # print(sum_counts[11])
+    #     # print(sum_counts_sq[11])
+    #     # N = num_valid[11]
+    #     # print("."*10)
+    #     # print(sum_counts_sq[11]/N)
+    #     # print((sum_counts[11]/N)**2)
+    #     # print(variance[11])
+    #     # # print(sum_counts)
+    #     # # print(sum_counts_sq)
+    #     # # print(variance)
+    #     # print("SZV is nan!")
+    #     # exit()
+    SZV = SZV.item()
     # num_valid = num_valid[args]
     # SZV = ((num_valid * stds).sum()/th.sum(num_valid)).item() # weighted by size
     return TEX, SZV
@@ -338,8 +399,10 @@ def scoreUEandSA(spix, counts, gtSeg, gtSize, gtList, gtPos):
         invalid_mask = gtSeg != int(gt_id)
         spix_i = spix.clone()
         spix_i[th.where(invalid_mask)] = invalid
-        in_counts = count_spix(spix_i)[:,:-1].long() # remove invalid
+        in_counts = count_spix(spix_i)[:,:S].long() # remove invalid
         # assert th.all(in_counts <= counts).item() # true
+        # print(in_counts.shape,counts.shape)
+
 
         # -- get spix ids and counts which overlap with the gtSeg --
         # mask = (gtSeg == gtList[i])
@@ -373,7 +436,6 @@ def scoreUEandSA(spix, counts, gtSeg, gtSize, gtList, gtPos):
         min_counts_s[args] = th.minimum(out_counts_s[args],in_counts_s[args])
         gtUE3D[i] = min_counts_s.sum()
 
-
         # -- compute sa 2d --
         gtSA_i = th.zeros((T,S),device=device,dtype=th.long)
         args = th.where(in_counts >= (0.5 * counts))
@@ -395,14 +457,18 @@ def scoreUEandSA(spix, counts, gtSeg, gtSize, gtList, gtPos):
     # SA_2d = th.mean(gtSA / gtSize)
 
     # -- remove gtlabel "0" for SA --
+    # print(gtSA.shape,gtSA3D.shape)
     gtSA = gtSA[:,1:]
     gtSA3D = gtSA3D[1:]
+    # print(gtSA.shape,gtSA3D.shape)
+    # print(gtSize.shape)
 
     # -- 2d metrics ["masked" average dropping the "0" frames --
     # print(gtUE)
     # print(gtSize)
     # print(gtUE.shape,gtSize.shape)
     gtSize_mask = gtSize + (gtSize == 0)
+    # print(gtSize,gtSize_mask)
     # UE_2d = th.mean(th.sum((gtUE - gtSize) / gtSize_mask, axis=0) / th.sum(gtSize > 0, axis=0))
     # UE_2d = th.mean(th.sum(gtUE / gtSize_mask, axis=0) / th.sum(gtSize > 0, axis=0))
     UE_2d = th.mean(gtUE / (H*W))
@@ -720,3 +786,46 @@ def read_vid(root):
         seg.append(img_f)
     seg = np.stack(seg)
     return seg
+
+def get_video_names(dname):
+    if "segtrack" in dname.lower():
+        return get_segtrackerv2_videos()
+    elif "davis" in dname.lower():
+        return get_davis_videos()
+    else:
+        raise KeyError(f"Uknown dataset name [{dname}]")
+
+def get_segtrackerv2_videos():
+    root = Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/in/SegTrackv2/GroundTruth/")
+    vid_names = list([v.name for v in root.iterdir()])
+    # vid_names = ["frog_2","girl"]
+    return vid_names
+
+def get_davis_videos():
+    try:
+        # names = np.loadtxt("/app/in/DAVIS/ImageSets/2017/train-val.txt",dtype=str)
+        names = np.loadtxt("/app/in/DAVIS/ImageSets/2017/val.txt",dtype=str)
+    except:
+        # fn = "/home/gauenk/Documents/data/davis/DAVIS/ImageSets/2017/train-val.txt"
+        fn = "/home/gauenk/Documents/data/davis/DAVIS/ImageSets/2017/val.txt"
+        names = np.loadtxt(fn,dtype=str)
+    # names = names[:10]
+    # names = ["bmx-trees","breakdance"]
+    # names = ["bmx-trees"]
+    # names = names[:4]
+    # names = ["bike-packing","blackswan","bmx-trees",
+    #          "breakdance","camel","car-roundabout"]
+    # names = ["bmx-trees","car-roundabout"]
+    # names = ["bike-packing","bmx-trees"]
+    # names = ["car-roundabout"]
+    # names = ["bmx-trees"]
+    # exit()
+    return names
+
+# def get_segtrackerv2_videos():
+#     root = Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/in/SegTrackv2/GroundTruth/")
+#     vid_names = list([v.name for v in root.iterdir()])
+#     # vid_names = ["frog_2","girl"]
+#     return vid_names
+
+
