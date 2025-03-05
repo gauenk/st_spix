@@ -179,7 +179,13 @@ def to_th(tensor):
 def swap_c(img):
     return rearrange(img,'... h w f -> ... f h w')
 
-def mark_spix_vid(vid,spix,mode=None,color="red"):
+def mark_spix_vid(vid,spix,mode=None,color="blue"):
+    if color == "blue":
+        color = (0,0,1)
+    else:
+        color = (1,0,0)
+    if mode is None:
+        mode = "inner"
     # mode = "thick"
     # mode = "subpixel"
     if vid.ndim == 5:
@@ -193,9 +199,9 @@ def mark_spix_vid(vid,spix,mode=None,color="red"):
     for ix,spix_t in enumerate(spix):
         img = rearrange(vid[ix],'f h w -> h w f')
         if mode is None:
-            marked_t = mark_boundaries(img,spix_t,color=(0,1,0))
+            marked_t = mark_boundaries(img,spix_t,color=color,mode=mode)
         else:
-            marked_t = mark_boundaries(img,spix_t,color=(0,1,0),mode=mode)
+            marked_t = mark_boundaries(img,spix_t,color=color,mode=mode)
         marked_t = to_th(swap_c(marked_t))
         marked.append(marked_t)
     marked = th.stack(marked)

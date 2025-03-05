@@ -30,6 +30,9 @@ def davis_example(nframes=5,isize=480,vid_names=None,data_set="all"):
         # vid_names = ["bus","boxing-fisheye","dancing"]
         # vid_names = ["dancing"]
         vid_names = ["drone","boxing-fisheye","dancing"]
+    # vid_names = ["libby"]
+    vid_names = ["blackswan"]
+    # vid_names = ["scooter-black"]
     # isel = {"bmx-bumps":[150,240],"boxing-fisheye":[200,200]}
     vid = []
     for name in vid_names:

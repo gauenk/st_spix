@@ -18,6 +18,9 @@ from st_spix.utils import extract_self
 from st_spix.spix_utils import run_slic,sparse_to_full
 from st_spix.spix_utils import compute_slic_params
 
+# -- bist --
+import bist_cuda
+
 # -- superpixel --
 from .ssn_net import SsnUNet
 from .attn_scale_net import AttnScaleNet
@@ -112,16 +115,32 @@ class SuperpixelNetwork(nn.Module):
             # kwargs = {"use_bass_prop":True,"niters":30,"niters_seg":4,
             #           "sp_size":15,"pix_var":0.1,"alpha_hastings":0.01,
             #           "potts":8.,"sm_start":0,"rgb2lab":False}
-            kwargs = {"use_bass_prop":self.bass_prop,"niters":15,"niters_seg":4,
-                      "sp_size":15,"sigma2_app":0.01,"sigma2_size":1.,
+            kwargs = {"use_bass_prop":self.bass_prop,"niters":20,"niters_seg":4,
+                      "sp_size":20,"sigma2_app":0.011,"sigma2_size":1.,
                       "alpha_hastings":0.,
-                      "potts":1.,"sm_start":0,"rgb2lab":False}
+                      "potts":10.,"sm_start":0,"rgb2lab":False}
+            video_mode = self.bass_prop
             # x_for_iters = rearrange(x_for_iters,'b f h w -> b h w f').contiguous()
             fflow = rearrange(fflow,'b f h w -> b h w f').contiguous()
             with th.no_grad():
                 x_for_iters = x_for_iters - x_for_iters.mean((1,2),keepdim=True)
                 x_for_iters = x_for_iters/x_for_iters.std((1,2),keepdim=True)
-                spix = run_bass(x_for_iters,fflow,kwargs)
+                # spix = run_bass(x_for_iters,fflow,kwargs)
+                # spix = run_bass(x_for_iters,fflow,kwargs)
+                # print(spix.shape)
+                sp_size = kwargs['sp_size']
+                niters = sp_size
+                potts = kwargs['potts']
+                # sigma2_app = kwargs['sigma2_app']*kwargs['sigma2_app']
+                sigma2_app = 0.008 # this is WAY bigger than it seems
+                alpha = 0.
+
+                # -- bist --
+                x_for_iters = rearrange(x_for_iters,'t c h w -> t h w c')
+                x_for_iters = x_for_iters.contiguous()
+                spix = bist_cuda.bist_forward(x_for_iters,fflow,sp_size,niters,potts,
+                                              sigma2_app,alpha,video_mode)
+                spix = spix[:,None].contiguous()
             # sims = th.zeros(0)
             sims = get_bass_sims(x,spix,temp_est)
             # print(sims)

@@ -36,21 +36,30 @@ def get_kstr(method,k):
         kstr = "%02dsp"%(k//100)
     else:
         kstr = "sp%d"%k
-        if method in ["mbass","st_spix"]:
-            kstr = "sp%d"%400
+        # if method in ["mbass","st_spix"]:
+        #     kstr = "sp%d"%400
     return kstr
+
+def get_base(method):
+    if method in ["etps","seeds","ers",'tsp']:
+        base = Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/out")
+        return base
+    else:
+        base = Path("/home/gauenk/Documents/packages/st_spix_refactor/result/")
+        return base
 
 def read_all_spix(vid_name,frames,k,methods):
 
     # -- run script --
     dname = "segtrackerv2"
-    base = Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/")
+    # base = Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/")
     # vid_names = get_video_names(dname)
     # methods = ["etps","seeds","ers","mbass","st_spix","tsp"]
     spix = {}
     for method in methods:
+        base = get_base(method)
         kstr = get_kstr(method,k)
-        sp_dir = base/Path("out/%s/%s/%s/%s/" % (dname,method,kstr,vid_name))
+        sp_dir = base/Path("%s/%s/%s/%s/" % (dname,method,kstr,vid_name))
         spix_m = read_spix(sp_dir,frames)
         spix[method] = spix_m
     return spix
@@ -92,10 +101,11 @@ def compare_single_video():
 
     # -- read --
     vid = read_video(data_root,vname,frames)[...,20:-20,100:-100]
-    methods = ["tsp","st_spix"]
+    # methods = ["tsp","st_spix"]
+    methods = ["tsp","bist"]
     spix = read_all_spix(vname,frames,k,methods)
     spix_tsp = spix['tsp'][...,20:-20,100:-100]
-    spix_stb = spix['st_spix'][...,20:-20,100:-100]
+    spix_stb = spix['bist'][...,20:-20,100:-100]
     T,F,H,W = vid.shape
 
     # -- mark --
@@ -116,6 +126,7 @@ def compare_single_video():
     # -- save --
     mgrid = th.cat([vid.cpu(),marked_tsp,marked_stb])
     mgrid = tv_utils.make_grid(mgrid,nrow=len(vid))
+    print(f"Saving to {str(root)}")
     tv_utils.save_image(mgrid,root/"compare_single_video.png")
 
 
@@ -135,7 +146,8 @@ def compare_many_images():
     frames = [10]
     H,W = 200,250
     k = 800
-    methods = ["seeds","ers","tsp","mbass","st_spix"]
+    # methods = ["seeds","ers","tsp","mbass","st_spix"]
+    methods = ["seeds","ers","tsp","bass","bist"]
 
     # -- read --
     vid,spix = [],{}
@@ -177,7 +189,8 @@ def main():
     frames = [10,11,12]
     k = 800
     H,W = 200,250
-    methods = ["seeds","ers","tsp","mbass","st_spix"]
+    # methods = ["seeds","ers","tsp","mbass","st_spix"]
+    methods = ["seeds","ers","tsp","bass","bist"]
 
     # -- read --
     vid = read_video(data_root,vname,frames)
