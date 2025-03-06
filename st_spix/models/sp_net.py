@@ -137,7 +137,11 @@ class SuperpixelNetwork(nn.Module):
 
                 # -- bist --
                 x_for_iters = rearrange(x_for_iters,'t c h w -> t h w c')
-                x_for_iters = x_for_iters.contiguous()
+                x_for_iters = x_for_iters.contiguous()/10.
+                fflow = th.clamp(fflow,-20,20)
+                # print("fflow.shape: ",fflow.shape)
+                # print("stats: ",x_for_iters.min(),x_for_iters.max())
+                # print("fflow: ",fnorm.min(),fnorm.max())
                 spix = bist_cuda.bist_forward(x_for_iters,fflow,sp_size,niters,potts,
                                               sigma2_app,alpha,video_mode)
                 spix = spix[:,None].contiguous()

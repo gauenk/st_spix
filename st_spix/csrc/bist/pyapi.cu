@@ -671,8 +671,8 @@ bist_forward_cuda(const torch::Tensor vid, const torch::Tensor flows,
 
 
 
-__global__ void GetImageOverlaid(float* filled, float* image, const bool* border,
-                                 const int npix, const int xdim){
+__global__ void GetImageOverlaid(float* filled, float* image, float* color,
+                                 const bool* border, const int npix, const int xdim){
   int t = threadIdx.x + blockIdx.x * blockDim.x;  
   if (t>=npix) return;
   t = t + npix*blockIdx.y; // offset via batch
@@ -683,9 +683,12 @@ __global__ void GetImageOverlaid(float* filled, float* image, const bool* border
     // filled[3*t+1] = 50;
     // filled[3*t+2] = 50;
     // -- for a sharp blue --
-    filled[3*t] = 0.0;
-    filled[3*t+1] = 0;
-    filled[3*t+2] = 1.0;
+    // filled[3*t] = 0.0;
+    // filled[3*t+1] = 0;
+    // filled[3*t+2] = 1.0;
+    filled[3*t] = color[0];
+    filled[3*t+1] = color[1];
+    filled[3*t+2] = color[2];
   }else{
     filled[3*t] = max(min(image[3*t],1.),0.0);
     filled[3*t+1] = max(min(image[3*t+1],1.),0.0);
@@ -696,21 +699,24 @@ __global__ void GetImageOverlaid(float* filled, float* image, const bool* border
 
 
 __host__ void
-CUDA_get_image_overlaid(float* filled, float* image,
+CUDA_get_image_overlaid(float* filled, float* image, float* color,
                         const bool* border, const int npix,
                         const int xdim, const int nbatch){
   int num_block = ceil( double(npix) / double(THREADS_PER_BLOCK) ); 
   dim3 ThreadPerBlock(THREADS_PER_BLOCK,1);
   dim3 BlockPerGrid(num_block,nbatch);
-  GetImageOverlaid<<<BlockPerGrid,ThreadPerBlock>>>(filled, image, border, npix, xdim);
+  GetImageOverlaid<<<BlockPerGrid,ThreadPerBlock>>>(filled, image, color,
+                                                    border, npix, xdim);
 }
 
 
-torch::Tensor get_marked_video(torch::Tensor vid, torch::Tensor spix){
+torch::Tensor get_marked_video(torch::Tensor vid,
+                               torch::Tensor spix, torch::Tensor color){
   
   // -- check --
   CHECK_INPUT(vid);
   CHECK_INPUT(spix);
+  CHECK_CONTIGUOUS(color);
 
   // -- unpack shape --
   int nframes = vid.size(0);
@@ -720,6 +726,11 @@ torch::Tensor get_marked_video(torch::Tensor vid, torch::Tensor spix){
   int npix = height*width;
   int nbatch = 1;
 
+  // -- manage color input --
+  long long ncolors = at::numel(color);
+  assert(nftrs==ncolors);
+  color = color.to(vid.device());
+
   // -- alloc border and marked image --
   auto options_f32 = torch::TensorOptions().dtype(torch::kFloat32)
     .layout(torch::kStrided).device(vid.device());
@@ -728,6 +739,7 @@ torch::Tensor get_marked_video(torch::Tensor vid, torch::Tensor spix){
   // -- unpack pointers --
   float* _vid = vid.data_ptr<float>();
   int* _spix = spix.data_ptr<int>();
+  float* _color = color.data_ptr<float>();
   float* _marked = marked.data_ptr<float>();
 
   // -- get the border --
@@ -735,7 +747,7 @@ torch::Tensor get_marked_video(torch::Tensor vid, torch::Tensor spix){
   CudaFindBorderPixels_end(_spix, border, npix, nframes, width, height);
 
   // -- fill with marked values --
-  CUDA_get_image_overlaid(_marked, _vid, border, npix, width, nframes);
+  CUDA_get_image_overlaid(_marked, _vid, _color, border, npix, width, nframes);
 
   // -- free memory --
   cudaFree(border);

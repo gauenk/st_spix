@@ -10,6 +10,8 @@ import torch
 import torch as th
 import numpy as np
 from torchvision.utils import save_image
+import torch.nn.functional as thF
+
 
 from pathlib import Path
 from einops import rearrange
@@ -112,6 +114,15 @@ def run(cfg):
         batch = next(data_iter)
         img,seg = batch['clean'][0],batch['seg'][0]
         img,seg = img.to(device)/255.,seg.to(device)
+        # print(img.shape,seg.shape)
+
+        # -- accomodate "small" GPU memory --
+        # -- reduce the size of the flow so we can process the 64x64 regions --
+        img = thF.interpolate(img, scale_factor=0.5, mode='bilinear', align_corners=False)
+        seg = thF.interpolate(seg, scale_factor=0.5, mode='bilinear', align_corners=False)
+        # print(img.shape,seg.shape)
+        # exit()
+
         # img, seg = img[:,:,:-1,:-1], seg[:,:-1,:-1]
         name = dset.vid_names[ix]
         B,F,H,W = img.shape

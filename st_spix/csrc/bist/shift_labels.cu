@@ -69,8 +69,8 @@ void shift_labels_kernel(int* spix, float* flow,
   // int flow_h = 0;
 
   // -- dest index --
-  int h_dest = h_idx+flow_h;
   int w_dest = w_idx+flow_w;
+  int h_dest = h_idx+flow_h;
 
   // -- info --
   // if ((h_dest = 211) and (w_dest == 532)){
@@ -78,9 +78,9 @@ void shift_labels_kernel(int* spix, float* flow,
   // }
 
   // -- check boundary; skip if oob --
-  bool valid_h = (0<=h_dest) and (h_dest<height);
   bool valid_w = (0<=w_dest) and (w_dest<width);
-  bool valid = valid_h and valid_w;
+  bool valid_h = (0<=h_dest) and (h_dest<height);
+  bool valid = valid_w and valid_h;
   if (not valid){ return; }
 
   // -- write to destination --

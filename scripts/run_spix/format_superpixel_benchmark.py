@@ -12,7 +12,7 @@ import torch as th
 from pathlib import Path
 
 def check_davis_complete(dname,root):
-    fn = "/home/gauenk/Documents/data/davis/DAVIS/ImageSets/2017/train-val.txt"
+    fn = "/home/gauenk/Documents/data/davis/DAVIS/ImageSets/2017/val.txt"
     names = np.loadtxt(fn,dtype=str)
     N = len(names)
     Ncurr = len(list(root.iterdir()))

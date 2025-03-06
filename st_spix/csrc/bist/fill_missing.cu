@@ -29,6 +29,7 @@
 
 ***********************************************************/
 
+// todo: what if entire superpixel is invalid?; catch this and fill it here.
 
 __host__
 void fill_missing(int* seg,  double* centers, bool* border,

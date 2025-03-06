@@ -116,15 +116,15 @@ def main():
         exps += _exps
         uuids += _uuids
 
-        # -- remove bass_prop --
-        tr_exp = cache_io.fill_test_shell(tr_fn,te_fn)
-        del tr_exp["train_grid"]["mesh0"]["listed8"]["bass_prop"]
-        _exps = read_test(tr_exp,".cache_io_exps/trte_deno/test",
-                          reset=refresh,skip_dne=False,keep_dne=is_empty)
-        _exps,_uuids = cache_io.get_uuids(_exps,".cache_io/trte_deno/test",
-                                          read=not(refresh),no_config_check=False)
-        exps += _exps
-        uuids += _uuids
+        # # -- remove bass_prop --
+        # tr_exp = cache_io.fill_test_shell(tr_fn,te_fn)
+        # del tr_exp["train_grid"]["mesh0"]["listed8"]["bass_prop"]
+        # _exps = read_test(tr_exp,".cache_io_exps/trte_deno/test",
+        #                   reset=refresh,skip_dne=False,keep_dne=is_empty)
+        # _exps,_uuids = cache_io.get_uuids(_exps,".cache_io/trte_deno/test",
+        #                                   read=not(refresh),no_config_check=False)
+        # exps += _exps
+        # uuids += _uuids
 
 
     # -- info --
