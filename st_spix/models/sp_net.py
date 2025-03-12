@@ -17,6 +17,7 @@ from st_spix.utils import extract_self
 # -- superpixel utils --
 from st_spix.spix_utils import run_slic,sparse_to_full
 from st_spix.spix_utils import compute_slic_params
+from st_spix.spix_utils.evaluate import computeSummary
 
 # -- bist --
 import bist_cuda
@@ -71,13 +72,159 @@ class SuperpixelNetwork(nn.Module):
         else:
             return self.sp_stride
 
-    def forward(self, x, fflow=None):
+    def get_spix(self, x, fflow=None):
+
+        # -- unpack --
+        B,F,H,W = x.shape
+        sp_stride = self._get_stride()
+        sH = H//sp_stride
+        # sims,num_spixels,ftrs,s_sims = None,None,None,None
+        with th.no_grad():
+            x_for_iters = self.sp_proj(x)
+
+        if self.use_slic:
+
+            # # -- use [learned or fixed] slic parameters --
+            # if self.use_lmodel:
+            #     ssn_params = self.lmodel(x).reshape(x.shape[0],2,-1)
+            #     m_est,temp_est = ssn_params[:,[0]],ssn_params[:,[1]]
+            #     m_est = m_est.reshape((B,1,H,W))
+            # else:
+            #     m_est,temp_est = self.sp_m,self.sp_scale
+
+            # # -- run slic iterations --
+            # output = run_slic(x_for_iters, x, self.sp_stride, self.sp_niters,
+            #                   m_est, temp_est, self.sp_grad_type)
+            # s_sims, sims, num_spixels, ftrs = output
+            # sims = self._reshape_sims(x,sims)
+            # B,H,W,nH,nW = sims.shape
+            # spix = sims.reshape(B,H,W,nH*nW).argmax(-1).reshape(B,1,H,W)
+            # # sims = get_bass_sims(x,spix[:,0],temp_est) # debug only.
+            # # # print("sims.shape: ",sims.shape)
+            raise NotImplementedError("Incomp now.")
+
+        elif self.use_bass:
+
+            # -- use [learned or fixed] slic parameters --
+            if self.use_lmodel:
+                ssn_params = self.lmodel(x).reshape(x.shape[0],2,-1)
+                m_est,temp_est = ssn_params[:,[0]],ssn_params[:,[1]]
+                m_est = m_est.reshape((B,1,H,W))
+            else:
+                m_est,temp_est = self.sp_m,self.sp_scale
+
+            # assert F==3,"Must be three channels for BASS."
+            # kwargs = {"use_bass_prop":True,"niters":30,"niters_seg":4,
+            #           "sp_size":15,"pix_var":0.1,"alpha_hastings":0.01,
+            #           "potts":8.,"sm_start":0,"rgb2lab":False}
+
+            # -- "old" parameters -> gave lower psnr after update --
+            # kwargs = {"use_bass_prop":self.bass_prop,"niters":20,"niters_seg":4,
+            #           "sp_size":15,"sigma2_app":0.011,"sigma2_size":1.,
+            #           "alpha_hastings":0.,
+            #           "potts":1.,"sm_start":0,"rgb2lab":False}
+
+            kwargs = {"use_bass_prop":self.bass_prop,"niters":20,"niters_seg":4,
+                      "sp_size":15,"sigma2_app":0.009,"sigma2_size":1.,
+                      "alpha_hastings":2.0,"potts":1.,"sm_start":0,"rgb2lab":False,
+                      "split_alpha":2.0}
+
+
+            # -- train_sconv.cfg: "v1.10" --
+            # kwargs = {"use_bass_prop":self.bass_prop,
+            #           "niters":20,"niters_seg":4,
+            #           "sp_size":20,"sigma2_app":0.009,
+            #           "sigma2_size":1.,"alpha_hastings":0.,
+            #           "split_alpha":0.0,"potts":10.,
+            #           "sm_start":0,"rgb2lab":False}
+
+            # -- train_sconv.cfg: "v1.12" --
+            # kwargs = {"use_bass_prop":self.bass_prop,
+            #           "niters":20,"niters_seg":4,
+            #           "sp_size":15,"sigma2_app":0.009,
+            #           "sigma2_size":1.,"alpha_hastings":2.0,
+            #           "split_alpha":2.0,"potts":10.,
+            #           "sm_start":0,"rgb2lab":False}
+
+            # -- train_sconv.cfg: "v1.14" --
+            # kwargs = {"use_bass_prop":self.bass_prop,
+            #           "niters":20,"niters_seg":4,
+            #           "sp_size":15,"sigma2_app":0.002,
+            #           "sigma2_size":1.,"alpha_hastings":2.0,
+            #           "split_alpha":2.0,"potts":1.,
+            #           "sm_start":0,"rgb2lab":False}
+
+
+            # kwargs = {"use_bass_prop":self.bass_prop,"niters":20,"niters_seg":4,
+            #           "sp_size":20,"sigma2_app":0.008,"sigma2_size":1.,
+            #           "alpha_hastings":0.,
+            #           "potts":10.,"sm_start":0,"rgb2lab":False}
+
+            video_mode = self.bass_prop
+            # x_for_iters = rearrange(x_for_iters,'b f h w -> b h w f').contiguous()
+            fflow = rearrange(fflow,'b f h w -> b h w f').contiguous()
+            with th.no_grad():
+
+                # -- normalize --
+                x_for_iters = x_for_iters - x_for_iters.mean((1,2),keepdim=True)
+                x_for_iters = x_for_iters/x_for_iters.std((1,2),keepdim=True)
+
+                # -- original bass --
+                # spix = run_bass(x_for_iters,fflow,kwargs)
+                # spix = run_bass(x_for_iters,fflow,kwargs)
+
+                # -- unpack --
+                niters = kwargs['niters']
+                sp_size = kwargs['sp_size']
+                potts = kwargs['potts']
+                sigma2_app = kwargs['sigma2_app']
+                alpha = kwargs['alpha_hastings']
+                split_alpha = kwargs['split_alpha']
+                rgb2lab = True
+
+
+                # -- bist --
+                # x_for_iters = x_for_iters.contiguous()/10.
+                x_for_iters = rearrange(x_for_iters,'t c h w -> t h w c')
+                x_for_iters = x_for_iters.contiguous()
+                fflow = th.clamp(fflow,-25,25)
+                # fflow = th.clamp(fflow,0.,0.)
+                fxn = bist_cuda.bist_forward
+                spix = fxn(x_for_iters,fflow,niters,sp_size,potts,
+                           sigma2_app,alpha,split_alpha,video_mode,rgb2lab)
+                spix = spix[:,None].contiguous()
+
+                # -- info --
+                # x_for_iters = rearrange(x_for_iters,'t c h w -> t h w c')
+                # _x_for_iters = x_for_iters.cpu().numpy()
+                # _spix = spix[:,0].cpu().numpy()
+                # _seg = th.ones_like(spix)[:,0].cpu().numpy()
+                # # print(x_for_iters.shape,_seg.shape,spix.shape)
+                # summ = computeSummary(_x_for_iters,_seg,_spix)
+                # print(summ)
+                # exit()
+        return spix
+
+    def get_sims(self, x, spix):
+        m_est,temp_est = self.sp_m,self.sp_scale
+        sims = get_bass_sims(x,spix,temp_est)
+        return sims
+
+
+    def forward(self, x, fflow=None, spix=None):
 
         # -- unpack --
         B,F,H,W = x.shape
         sp_stride = self._get_stride()
         sH = H//sp_stride
         sims,num_spixels,ftrs,s_sims = None,None,None,None
+
+        # if spix is None:
+        #     spix = self.get_spix(x,fflow)
+        # sims = self.get_sims(x,spix)
+
+        # return sims, spix, num_spixels, ftrs, s_sims
+
         with th.no_grad():
             x_for_iters = self.sp_proj(x)
 
@@ -115,36 +262,93 @@ class SuperpixelNetwork(nn.Module):
             # kwargs = {"use_bass_prop":True,"niters":30,"niters_seg":4,
             #           "sp_size":15,"pix_var":0.1,"alpha_hastings":0.01,
             #           "potts":8.,"sm_start":0,"rgb2lab":False}
+
+            # -- "old" parameters -> gave lower psnr after update --
+            # kwargs = {"use_bass_prop":self.bass_prop,"niters":20,"niters_seg":4,
+            #           "sp_size":15,"sigma2_app":0.011,"sigma2_size":1.,
+            #           "alpha_hastings":0.,
+            #           "potts":1.,"sm_start":0,"rgb2lab":False}
+
+            self.bass_prop = True
             kwargs = {"use_bass_prop":self.bass_prop,"niters":20,"niters_seg":4,
-                      "sp_size":20,"sigma2_app":0.011,"sigma2_size":1.,
-                      "alpha_hastings":0.,
-                      "potts":10.,"sm_start":0,"rgb2lab":False}
+                      "sp_size":15,"sigma2_app":0.009,"sigma2_size":1.,
+                      "alpha_hastings":2.0,"potts":1.,"sm_start":0,"rgb2lab":False,
+                      "split_alpha":2.0}
+
+
+            # -- train_sconv.cfg: "v1.10" --
+            # kwargs = {"use_bass_prop":self.bass_prop,
+            #           "niters":20,"niters_seg":4,
+            #           "sp_size":20,"sigma2_app":0.009,
+            #           "sigma2_size":1.,"alpha_hastings":0.,
+            #           "split_alpha":0.0,"potts":10.,
+            #           "sm_start":0,"rgb2lab":False}
+
+            # -- train_sconv.cfg: "v1.12" --
+            # kwargs = {"use_bass_prop":self.bass_prop,
+            #           "niters":20,"niters_seg":4,
+            #           "sp_size":15,"sigma2_app":0.009,
+            #           "sigma2_size":1.,"alpha_hastings":2.0,
+            #           "split_alpha":2.0,"potts":10.,
+            #           "sm_start":0,"rgb2lab":False}
+
+            # -- train_sconv.cfg: "v1.14" --
+            # kwargs = {"use_bass_prop":self.bass_prop,
+            #           "niters":20,"niters_seg":4,
+            #           "sp_size":15,"sigma2_app":0.002,
+            #           "sigma2_size":1.,"alpha_hastings":2.0,
+            #           "split_alpha":2.0,"potts":1.,
+            #           "sm_start":0,"rgb2lab":False}
+
+
+            # kwargs = {"use_bass_prop":self.bass_prop,"niters":20,"niters_seg":4,
+            #           "sp_size":20,"sigma2_app":0.008,"sigma2_size":1.,
+            #           "alpha_hastings":0.,
+            #           "potts":10.,"sm_start":0,"rgb2lab":False}
+
             video_mode = self.bass_prop
             # x_for_iters = rearrange(x_for_iters,'b f h w -> b h w f').contiguous()
             fflow = rearrange(fflow,'b f h w -> b h w f').contiguous()
             with th.no_grad():
+
+                # -- normalize --
                 x_for_iters = x_for_iters - x_for_iters.mean((1,2),keepdim=True)
                 x_for_iters = x_for_iters/x_for_iters.std((1,2),keepdim=True)
-                # spix = run_bass(x_for_iters,fflow,kwargs)
-                # spix = run_bass(x_for_iters,fflow,kwargs)
-                # print(spix.shape)
-                sp_size = kwargs['sp_size']
-                niters = sp_size
-                potts = kwargs['potts']
-                # sigma2_app = kwargs['sigma2_app']*kwargs['sigma2_app']
-                sigma2_app = 0.008 # this is WAY bigger than it seems
-                alpha = 0.
 
-                # -- bist --
-                x_for_iters = rearrange(x_for_iters,'t c h w -> t h w c')
-                x_for_iters = x_for_iters.contiguous()/10.
-                fflow = th.clamp(fflow,-20,20)
-                # print("fflow.shape: ",fflow.shape)
-                # print("stats: ",x_for_iters.min(),x_for_iters.max())
-                # print("fflow: ",fnorm.min(),fnorm.max())
-                spix = bist_cuda.bist_forward(x_for_iters,fflow,sp_size,niters,potts,
-                                              sigma2_app,alpha,video_mode)
-                spix = spix[:,None].contiguous()
+                # -- original bass --
+                del kwargs['split_alpha']
+                spix = run_bass(x_for_iters,fflow,kwargs)
+                # spix = run_bass(x_for_iters,fflow,kwargs)
+
+                # # -- unpack --
+                # sp_size = kwargs['sp_size']
+                # niters = sp_size
+                # potts = kwargs['potts']
+                # sigma2_app = kwargs['sigma2_app']
+                # alpha = kwargs['alpha_hastings']
+                # split_alpha = kwargs['split_alpha']
+
+                # # -- bist --
+                # x_for_iters = rearrange(x_for_iters,'t c h w -> t h w c')
+                # # x_for_iters = x_for_iters.contiguous()/10.
+                # x_for_iters = x_for_iters.contiguous()
+                # fflow = th.clamp(fflow,-25,25)
+                # fxn = bist_cuda.bist_forward
+                # spix = fxn(x_for_iters,fflow,sp_size,niters,potts,
+                #            sigma2_app,alpha,split_alpha,video_mode)
+                # spix = spix[:,None].contiguous()
+
+                # -- info --
+                # # x_for_iters = rearrange(x_for_iters,'t c h w -> t h w c')
+                # _x_for_iters = x_for_iters.cpu().numpy()
+                # _spix = spix[:,0].cpu().numpy()
+                # _seg = th.ones_like(spix)[:,0].cpu().numpy()
+                # # print(x_for_iters.shape,_seg.shape,spix.shape)
+                # summ = computeSummary(_x_for_iters,_seg,_spix)
+                # print(summ)
+                # # exit()
+
+
             # sims = th.zeros(0)
             sims = get_bass_sims(x,spix,temp_est)
             # print(sims)

@@ -47,6 +47,8 @@ def main():
         exps += _exps
         uuids += _uuids
     print("[original] Num Exps: ",len(exps))
+    # print([(e.kernel_size,e.net_depth) for e in exps])
+    # exit()
 
     # -- run exps --
     results = cache_io.run_exps(exps,train.run,uuids=uuids,preset_uuids=True,

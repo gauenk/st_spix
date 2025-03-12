@@ -20,69 +20,208 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.patches import FancyArrow
 
+def get_video_names(dname):
+    if "segtrack" in dname.lower():
+        return get_segtrackerv2_videos()
+    elif "davis" in dname.lower():
+        return get_davis_videos()
+    else:
+        raise KeyError(f"Uknown dataset name [{dname}]")
 
-def read_video(vname):
-    root = Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/in/")
-    root = root /"SegTrackv2/PNGImages/" /vname
-    nframes = len([f for f in root.iterdir() if str(f).endswith(".png")])
+def get_segtrackerv2_videos():
+    root = Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/in/SegTrackv2/GroundTruth/")
+    vid_names = list([v.name for v in root.iterdir()])
+    # vid_names = ["frog_2","girl"]
+    # vid_names = ["worm_1"]
+    # vid_names = ["penguin","frog_2","cheetah"]
+    # vid_names = ["penguin","frog_2","cheetah"]
+    # vid_names = ["penguin"]
+    return vid_names
+
+def get_davis_videos():
+    try:
+        # names = np.loadtxt("/app/in/DAVIS/ImageSets/2017/train-val.txt",dtype=str)
+        names = np.loadtxt("/app/in/DAVIS/ImageSets/2017/val.txt",dtype=str)
+    except:
+        # fn = "/home/gauenk/Documents/data/davis/DAVIS/ImageSets/2017/train-val.txt"
+        fn = "/home/gauenk/Documents/data/davis/DAVIS/ImageSets/2017/val.txt"
+        names = np.loadtxt(fn,dtype=str)
+    # names = names[:10]
+    # names = names[10:]
+    # names = names[20:]
+    # names = names[-4:]
+    # names = names[-2:]
+    # names = ["bmx-trees","breakdance"]
+    # names = ["bmx-trees"]
+    # names = names[:4]
+    # names = ["bike-packing","blackswan","bmx-trees",
+    #          "breakdance","camel","car-roundabout"]
+    # names = ["bmx-trees","car-roundabout"]
+    # names = ["bike-packing","bmx-trees"]
+    # names = ["car-roundabout"]
+    # names = ["bmx-trees"]
+    # print(names)
+    # exit()
+    # names = names[2:]
+    return names
+
+
+def read_video(dname,vname):
+    if "segtrack" in dname.lower():
+        root = Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/in/")
+        root = root /"SegTrackv2/PNGImages/" / vname
+        suffix = ".png"
+        return _read_video(root,suffix,1)
+    elif "davis" in dname.lower():
+        root = Path("/home/gauenk/Documents/data/davis/DAVIS/")
+        root = root /"JPEGImages/480p/" / vname
+        suffix = ".jpg"
+        return _read_video(root,suffix,0)
+    else:
+        raise KeyError(f"Uknown dataset name [{dname}]")
+
+def _read_video(root,suffix,offset):
+    # root = Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/in/")
+    # root = root /"SegTrackv2/PNGImages/" /vname
+    # root = root / vname
+    nframes = len([f for f in root.iterdir() if str(f).endswith(suffix)]) # ".png"
+    if suffix.startswith("."): suffix = suffix[1:]
     vid = []
     for frame_ix in range(nframes):
-        fname = root/("%05d.png" % (frame_ix+1))
+        fname = root/("%05d.%s" % (frame_ix+offset,suffix))
         img = np.array(Image.open(fname).convert("RGB"))/255.
         vid.append(img)
     vid = np.stack(vid)
     return vid
 
-def read_seg_loop(root):
-    nframes = len([f for f in root.iterdir() if str(f).endswith(".png")])
-    vid = []
-    for frame_ix in range(nframes):
-        fname = root/("%05d.png" % (frame_ix+1))
-        img = 1.*(np.array(Image.open(fname).convert("L")) >= 128)
-        vid.append(img)
-    vid = np.stack(vid)
-    return vid
+# def read_video(vname):
+#     root = Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/in/")
+#     root = root /"SegTrackv2/PNGImages/" /vname
+#     nframes = len([f for f in root.iterdir() if str(f).endswith(".png")])
+#     vid = []
+#     for frame_ix in range(nframes):
+#         fname = root/("%05d.png" % (frame_ix+1))
+#         img = np.array(Image.open(fname).convert("RGB"))/255.
+#         vid.append(img)
+#     vid = np.stack(vid)
+#     return vid
 
-def read_seg(vname):
-    root = Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/in/")
-    root = root /"SegTrackv2/GroundTruth/" /vname
+
+def read_seg(dname,vname):
+    if "segtrack" in dname.lower():
+        root = Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/in/")
+        root = root /"SegTrackv2/GroundTruth/" /vname
+        return _read_seg(dname,root)
+    elif "davis" in dname.lower():
+        root = Path("/home/gauenk/Documents/data/davis/DAVIS/")
+        root = root /"Annotations/480p/" / vname
+        return _read_seg(dname,root)
+    else:
+        raise KeyError(f"Uknown dataset name [{dname}]")
+
+def _read_seg(dname,root):
     has_subdirs = np.all([f.is_dir() for f in root.iterdir()])
     if has_subdirs:
         seg = None
         for ix,subdir in enumerate(root.iterdir()):
             if seg is None:
-                seg = read_seg_loop(subdir)
+                seg = read_seg_loop(dname,subdir)
             else:
-                tmp = read_seg_loop(subdir)
+                tmp = read_seg_loop(dname,subdir)
                 seg[np.where(tmp>0)] = ix+1
                 # tmp[np.where(tmp)>0] = ix
                 # print(ix,np.unique(tmp))
                 # seg = seg + (ix+1)*read_seg_loop(subdir)
     else:
-        seg = read_seg_loop(root)
+        seg = read_seg_loop(dname,root)
     # print(np.unique(seg))
     # exit()
+
+    # -- relabel --
+    if dname == "davis":
+        unique_vals = np.unique(seg)
+        # mapping = {val: i for i, val in enumerate(unique_vals)}
+        # seg = np.vectorize(mapping.get)(seg)
+        seg = np.searchsorted(unique_vals, seg)
+    # print(np.unique(seg))
+    # exit()
+
     return seg
+    # vnames = get_segtrackerv2_videos()
 
-def get_segtrackerv2_videos():
-    root = Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/in/")
-    root = root /"SegTrackv2/GroundTruth/"
-    vid_names = list([v.name for v in root.iterdir()])
-    return vid_names
+def read_seg_loop(dname,root):
+    if dname == "davis":
+        def read_img(fname):
+            return 1.*(np.array(Image.open(fname).convert("L")))
+        offset = 0
+    else:
+        offset = 1
+        def read_img(fname):
+            return 1.*(np.array(Image.open(fname).convert("L")) >= 128)
+    nframes = len([f for f in root.iterdir() if str(f).endswith(".png")])
+    vid = []
+    for frame_ix in range(nframes):
+        fname = root/("%05d.png" % (frame_ix+offset))
+        img = read_img(fname)
+        # _img = np.array(Image.open(fname).convert("L"))
+        vid.append(img)
+    vid = np.stack(vid)
+    return vid
 
 
-def get_sp_grid(group,root,method):
+
+# def read_seg_loop(root):
+#     nframes = len([f for f in root.iterdir() if str(f).endswith(".png")])
+#     vid = []
+#     for frame_ix in range(nframes):
+#         fname = root/("%05d.png" % (frame_ix+1))
+#         img = 1.*(np.array(Image.open(fname).convert("L")) >= 128)
+#         vid.append(img)
+#     vid = np.stack(vid)
+#     return vid
+
+# def read_seg(vname):
+#     root = Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/in/")
+#     root = root /"SegTrackv2/GroundTruth/" /vname
+#     has_subdirs = np.all([f.is_dir() for f in root.iterdir()])
+#     if has_subdirs:
+#         seg = None
+#         for ix,subdir in enumerate(root.iterdir()):
+#             if seg is None:
+#                 seg = read_seg_loop(subdir)
+#             else:
+#                 tmp = read_seg_loop(subdir)
+#                 seg[np.where(tmp>0)] = ix+1
+#                 # tmp[np.where(tmp)>0] = ix
+#                 # print(ix,np.unique(tmp))
+#                 # seg = seg + (ix+1)*read_seg_loop(subdir)
+#     else:
+#         seg = read_seg_loop(root)
+#     # print(np.unique(seg))
+#     # exit()
+#     return seg
+
+# def get_segtrackerv2_videos():
+#     root = Path("/home/gauenk/Documents/packages/superpixel-benchmark/docker/in/")
+#     root = root /"SegTrackv2/GroundTruth/"
+#     vid_names = list([v.name for v in root.iterdir()])
+#     return vid_names
+
+
+def get_sp_grid(group,dname,root,method):
     if group == "spix-bench":
         # path = root/"superpixel-benchmark/docker/out/segtrackerv2/"/method
         path = root / method
-        ids = [int(str(f.name).split("sp")[0]) for f in path.iterdir()]
+        ids = [int(str(f.name).split("sp")[0]) for f in path.iterdir() if str(f).endswith("sp")]
         return ids
     elif group == "libsvx":
-        vname = "birdfall"
+        vname = "bike-packing" if dname == "davis" else "birdfall"
         path = root / method / "Segments" / vname
         check = lambda f: str(f.name).endswith(".mat")
         proc = lambda f: int(str(f.name).split(".")[0])
         ids = [proc(f) for f in path.iterdir() if check(f)]
+        if dname == "davis":
+            ids = [300,500,800,1000,1200]
         return ids
     elif group == "stspix":
         # vname = "birdfall"
@@ -101,10 +240,22 @@ def get_sp_grid(group,root,method):
         ids = [proc(f) for f in path.iterdir() if check(f)]
         return ids
     elif group == "bist":
-        path = root / method
-        check = lambda f: str(f.name).startswith("sp")
-        proc = lambda f: int(str(f.name).split("sp")[1])
-        ids = [proc(f) for f in path.iterdir() if check(f)]
+        # path = root / method
+        # check = lambda f: str(f.name).startswith("sp")
+        # proc = lambda f: int(str(f.name).split("sp")[1])
+        # ids = [proc(f) for f in path.iterdir() if check(f)]
+        # ids = [300,500,800,1000,1200]
+        if dname == "davis":
+            ids = [500,800,1000,1200]
+        else:
+            ids = [200,500,800,1000,1200]
+        # ids = [1000]
+        return ids
+    elif group == "bass":
+        if dname == "davis":
+            ids = [300,500,800,1000,1200]
+        else:
+            ids = [200,500,800,1000,1200]
         return ids
     else:
         raise ValueError("")
@@ -124,17 +275,40 @@ def read_mat(fname):
     spix = rearrange(spix,'t w h -> t h w')
     return spix
 
-def read_spix(group,root,method,vname,sp,nframes):
+def read_spix(group,root,method,dname,vname,sp,nframes):
+    offset = 0 if dname == "davis" else 1
     if group == "spix-bench":
-        return read_csv(root / method / ("%02dsp"%sp) / vname,nframes,1)
+        fname = root / method / ("%02dsp"%sp) / vname
+        print(fname)
+        return read_csv(root / method / ("%02dsp"%sp) / vname,nframes,offset)
     elif group == "libsvx":
+        fname = root / method / "Segments" / vname / ("%02d.mat"%sp)
         return read_mat(root / method / "Segments" / vname / ("%02d.mat"%sp))
     elif group == "stspix":
         return read_csv(root / method / ("sp%d"%sp) / vname,nframes)
     elif group == "bist":
-        return read_csv(root / method / ("sp%d"%sp) / vname,nframes,1)
-    elif group == "gbass":
-        return read_csv(root / method / ("sp%d"%sp) / vname,nframes,1)
+        # fname = root / dname / method / ("sp%d"%sp) / vname
+        # print(fname)
+        # exit()
+        if isinstance(sp,int):
+            fname = root / dname/ method / ("sp%d"%sp) / vname
+        else:
+            fname = root / dname/ method / sp / vname
+        print(fname)
+        return read_csv(fname,nframes,offset)
+    elif group == "bass":
+        # fname = root / dname / method / ("sp%d"%sp) / vname
+        # print("...: ",fname)
+        # exit()
+        if isinstance(sp,int):
+            fname = root / dname/ method / ("sp%d"%sp) / vname
+        else:
+            fname = root / dname/ method / sp / vname
+        # fname = root / dname / method / ("sp%d"%sp) / vname
+        print(fname)
+        return read_csv(fname,nframes,offset)
+    # elif group == "gbass":
+    #     return read_csv(root / method / ("sp%d"%sp) / vname,nframes,1)
     else:
         raise ValueError("")
 
@@ -152,7 +326,7 @@ def save_cache(summs,cache_root,group,method):
     # exit()
     pd.DataFrame(summs).to_csv(cache_fn)
 
-def get_group_root(group):
+def get_group_root(group,dname):
     root = Path("/home/gauenk/Documents/packages/")
     if group == "stpix":
         base = root/"st_spix/output/run_segtrackerv2_spix/"
@@ -161,22 +335,28 @@ def get_group_root(group):
     elif group == "libsvx":
         base = root/"LIBSVXv4.0/Results/SegTrackv2/"
     elif group == "bist":
-        base = root/"st_spix_refactor/result/bist"
+        base = root/"st_spix_refactor/result/"/dname/"bist"
+    elif group == "bass":
+        base = root/"st_spix_refactor/result"/dname/"bass"
     else:
         raise ValueError("")
     return base
 
 
-def process_group(group,base,methods,refresh=False):
+def process_group(group,dname,base,methods,refresh=False):
 
 
     # -- init --
-    cache_root = Path("./output/run_eval/cache")
+    if dname == "segtackerv2":
+        cache_root = Path("./output/run_eval/cache")
+    else:
+        cache_root = Path("./output/run_eval/cache")/dname
     # refresh = False
 
     # -- run --
     summs_agg = []
-    vnames = get_segtrackerv2_videos()
+    # vnames = get_segtrackerv2_videos()
+    vnames = get_video_names(dname)
     # vnames = ["frog_2"]
     for method in tqdm.tqdm(methods,position=0):
 
@@ -188,14 +368,14 @@ def process_group(group,base,methods,refresh=False):
         else:
             summs = []
 
-        # base = get_group_root(group)
-        spgrid = get_sp_grid(group,base,method)
+        # base = get_group_root(group,dname)
+        spgrid = get_sp_grid(group,dname,base,method)
         for vname in tqdm.tqdm(vnames,position=1,leave=False):
-            vid = read_video(vname)
-            seg = read_seg(vname)
+            vid = read_video(dname,vname)
+            seg = read_seg(dname,vname)
             nframes = len(vid)
             for sp in tqdm.tqdm(spgrid,position=2,leave=False):
-                spix = read_spix(group,base,method,vname,sp,nframes)
+                spix = read_spix(group,base,method,dname,vname,sp,nframes)
                 # print(vname,method,sp)
                 # print(vid.shape,seg.shape,spix.shape)
                 # exit()
@@ -235,8 +415,13 @@ def plot_metric(ax,df,root,metric):
         dfm = df[df['method'] == method]
         if len(dfm) == 0: continue
         # x = dfm['nspix'].to_numpy()
-        x = dfm['ave_nsp'].to_numpy()
+        # x = dfm['ave_nsp'].to_numpy()
+        x = dfm['param'].to_numpy()
+        if x.min() < 100: x = x*100
+        if method == "streamGBH":
+            x = dfm['ave_nsp'].to_numpy()
         y = dfm[metric].to_numpy()
+
         # args = np.where(np.logical_and(x>200,x<1400))
         # args = np.where(np.logical_and(x>100,x<1400))
         # x,y = x[args],y[args]
@@ -256,6 +441,7 @@ def plot_metric(ax,df,root,metric):
         # if metric in ["ue2d","sa2d"
         colors = {"BIST":"blue", "BIST-v0":"black","BASS":"red","TSP":"green", "sGBH":"pink", "ETPS":"orange",  "SLIC":"grey", "ERS":"purple", "SEEDS":"brown"}
         # print(x[args],y[args])
+
         if len(x) == 1:
             ax.plot(np.r_[x[0]-10,x[0]],np.r_[y[0],y[0]],label=method,color=colors[method])
         else:
@@ -263,14 +449,36 @@ def plot_metric(ax,df,root,metric):
         _ymin,_ymax = y[args].min(),y[args].max()
         ymin = _ymin if _ymin < ymin else ymin
         ymax = _ymax if _ymax > ymax else ymax
+
         # print(x[args],y[args],method,ymin,ymax)
 
 
     # Set three y-ticks
-    yticks = np.linspace(ymin*0.95,ymax*1.1,3)
+
+    if metric in ["sa2d","sa3d"]:
+        ymin = 0.67
+        ymax = 0.90
+        yticks = np.linspace(ymin,ymax,3)
+        ax.set_yticklabels("%1.3f"%y for y in yticks)
+    elif metric in ["pooling"]:
+        ymin = 21
+        ymax = 28.5
+        yticks = np.linspace(ymin,ymax,3)
+        ax.set_yticklabels("%1.1f"%y for y in yticks)
+    elif metric in ["ev"]:
+        ymin = 0.76
+        ymax = 0.95
+        yticks = np.linspace(ymin,ymax,3)
+        ax.set_yticklabels("%1.2f"%y for y in yticks)
+    elif metric in ["szv"]:
+        yticks = np.linspace(ymin*0.95,ymax*1.1,3)
+        ax.set_yticklabels("%d"%round(y) for y in yticks)
+    else:
+        yticks = np.linspace(ymin*0.95,ymax*1.1,3)
+        ax.set_yticklabels("%1.3f"%y for y in yticks)
+
     # ax.grid(True)
     ax.set_yticks(yticks)
-    ax.set_yticklabels("%1.3f"%y for y in yticks)
     if metric == "asa":
         metric = "SA"
     if metric.lower() in ["sa2d","sa3d","pooling","ev"]:
@@ -324,7 +532,7 @@ def plot_arrows(fig,axes):
         #                               transform=fig.transFigure,
         #                               clip_on=False))
 
-def nice_plots(df):
+def nice_plots(df,dname,df_bass,df_bist):
     # df.groupby("name")
     # print(df)
     if "name" in list(df.columns):
@@ -339,7 +547,7 @@ def nice_plots(df):
     if not root.exists():
         root.mkdir(parents=True)
     dpi = 300
-    ginfo = {'wspace':0.5,"hspace":0.1,
+    ginfo = {'wspace':0.5,"hspace":0.15,
              "top":0.90,"bottom":0.12,"left":.07,"right":0.99}
     fig,axes = plt.subplots(2,4,figsize=(12,4),gridspec_kw=ginfo,dpi=dpi)
     metrics = ["ue2d","sa2d","pooling","ev",
@@ -363,6 +571,17 @@ def nice_plots(df):
             ax.set_xticklabels(kgrid)
             ax.set_xlabel("Number of Superpixels",fontsize=12)
 
+        # -- plot single bass/bist on axis --
+        x_bass = df_bass['ave_nsp'].to_numpy().mean()
+        y_bass = df_bass[metric].to_numpy().mean()
+        x_bist = df_bass['ave_nsp'].to_numpy().mean()
+        y_bist = df_bist[metric].to_numpy().mean()
+        if metric == "pooling":
+            y_bist -= 0.05*np.abs(np.random.randn(1))
+        ax.scatter(x_bist,y_bist,color="BLUE",marker='x',s=100)
+        if not(metric in ["tex","szv","ue3d","sa3d"]):
+            ax.scatter(x_bass,y_bass,color="RED",marker='x',s=100)
+
         # -- arrows --
         # plt_arrows(fig,ax,a,b)
 
@@ -372,7 +591,7 @@ def nice_plots(df):
     axes[0][0].legend(ncols=len(metrics),framealpha=0.0,fontsize=10,
                       loc='upper center', bbox_to_anchor=(2.8, 1.28))
 
-    plt.savefig(root/("spix_summary.png"),transparent=True)
+    plt.savefig(root/("spix_summary_%s.png"%dname),transparent=True)
 
 
     # axes[1][1].legend(ncols=3,framealpha=0.0,fontsize=10)
@@ -408,52 +627,153 @@ def nice_plots(df):
     # fig,axes = plt.subplots(3,1,figsize=(6,5),gridspec_kw=ginfo,dpi=dpi)
 
 
+def read_single(base,group,dname,method,refresh=False):
+
+    # -- init --
+    if dname == "segtackerv2":
+        cache_root = Path("./output/run_eval/cache/single")
+    else:
+        cache_root = Path("./output/run_eval/cache/single")/dname
+    # refresh = False
+
+    # -- run --
+    summs_agg = []
+    # vnames = get_segtrackerv2_videos()
+    vnames = get_video_names(dname)
+    # vnames = ["frog_2"]
+    methods = [method]
+    for method in tqdm.tqdm(methods,position=0):
+
+        # -- reading cache --
+        summs = read_cache(cache_root,group,method)
+        if not(summs is None) and (refresh is False):
+            summs_agg.append(summs)
+            continue
+        else:
+            summs = []
+
+        # base = get_group_root(group,dname)
+        # spgrid = get_sp_grid(group,dname,base,method)
+        for vname in tqdm.tqdm(vnames,position=1,leave=False):
+            vid = read_video(dname,vname)
+            seg = read_seg(dname,vname)
+            nframes = len(vid)
+
+            sp = "param0"
+            spix = read_spix(group,base,method,dname,vname,sp,nframes)
+            # print(vname,method,sp)
+            # print(vid.shape,seg.shape,spix.shape)
+            # exit()
+            # print(seg.min(),seg.max())
+            _summ = computeSummary(vid,seg,spix)
+            _summ.name = vname
+            _summ.method = method
+            _summ.nspix = len(np.unique(spix))
+            _summ.param = sp
+            summs.append(_summ)
+
+        # -- caching --
+        # print(summs)
+        save_cache(summs,cache_root,group,method)
+        summs_agg.append(pd.DataFrame(summs))
+
+    # print(summs_agg)
+    return pd.concat(summs_agg)
+
 def main():
 
     print("PID: ",os.getpid())
     root = Path("/home/gauenk/Documents/packages/")
     # base = root/"st_spix/output/run_segtrackerv2_spix/"
+    # dname = "segtrackerv2"
+    dname = "davis"
+
+    # -- adaptive-k --
+    base = root/"st_spix_refactor/result/"
+    group = "bist"
+    method = "bist"
+    df_bist = read_single(base,group,dname,method,False)
+    print(df_bist)
+
+    base = root/"st_spix_refactor/result/"
+    group = "bass"
+    method = "bass"
+    df_bass = read_single(base,group,dname,method,False)
+    print(df_bass)
+
 
     # -- group 0 --
-    group = "stspix"
-    base = root/"st_spix/output/run_segtrackerv2_spix/"
-    methods = ["mbass","st_spix","bist"]
+    # group = "stspix"
+    # base = root/"st_spix/output/run_segtrackerv2_spix/"
     # methods = ["mbass","st_spix","bist"]
-    methods = ["st_spix"]
-    df0 = process_group(group,base,methods)
+    # # methods = ["mbass","st_spix","bist"]
+    # methods = ["st_spix"]
+    # df0 = process_group(group,dname,base,methods)
 
     # -- group 1 --
-    # group = "spix-bench"
-    # base = root/"superpixel-benchmark/docker/out/segtrackerv2/"
-    # # methods = ["ccs","ers","etps","seeds","slic"]
+    group = "spix-bench"
+    if dname == "davis":
+        base = root/"superpixel-benchmark/docker/out/davis/"
+    else:
+        base = root/"superpixel-benchmark/docker/out/segtrackerv2/"
+    # methods = ["ccs","ers","etps","seeds","slic"]
     # methods = ["ers","etps","seeds","slic"]
-    # df1 = process_group(group,base,methods)
+    # methods = ["ers","etps","seeds","slic"]
+    # methods = ["ers","etps","seeds","slic"]
+    methods = ["ers","etps","seeds","slic"]
+    # methods = ["ers","etps","slic"]
+    # methods = ["ers"]
+    # methods = ["seeds"]
+    df1 = process_group(group,dname,base,methods,False)
 
     # -- group 2 --
     group = "libsvx"
-    base = root/"LIBSVXv4.0/Results/SegTrackv2/"
-    # methods = ["TSP","streamGBH"]
-    methods = ["TSP"]
-    df2 = process_group(group,base,methods)
+    if dname == "davis":
+        base = root/"LIBSVXv4.0/Results/DAVIS/"
+    else:
+        base = root/"LIBSVXv4.0/Results/SegTrackv2/"
+    methods = ["TSP","streamGBH"]
+    if dname == "segtrackerv2":
+        methods = ["TSP","streamGBH"]
+    else:
+        methods = ["TSP"]
+    df2 = process_group(group,dname,base,methods,False)
 
     # -- group 3 --
-    group = "gbass"
-    base = root/"/home/gauenk/Documents/packages/BASS_check/result/"
+    # group = "gbass"
+    # base = root/"/home/gauenk/Documents/packages/BASS_check/result/"
+    # methods = ["bass"]
+    # df3 = process_group(group,base,methods)
+
+    # -- group 3 --
+    group = "bass"
+    base = root/"st_spix_refactor/result/"
     methods = ["bass"]
-    df3 = process_group(group,base,methods)
+    df3 = process_group(group,dname,base,methods,False)
+    # return
 
     # -- group 4 --
     group = "bist"
     methods = ["bist"]
     base = root/"st_spix_refactor/result/"
-    df4 = process_group(group,base,methods,True)
+    df4 = process_group(group,dname,base,methods,False)
+
+    # for g,gdf in df4.groupby("name"):
+    #     print(len(gdf))
+    # for g,gdf in df4.groupby("param"):
+    #     print(gdf['ave_nsp'].mean())
+    #     print(len(gdf))
+
+    # return
 
     # -- plots --
     # df = pd.concat([df0,df1,df2,df3])
-    df = pd.concat([df0,df2,df3,df4])
+    # df = pd.concat([df0,df2,df3,df4])
     # df = pd.concat([df0,df3,df4])
     # df = pd.concat([df0,df1,df2])
     # df = df3
+    # df = df4
+    df = pd.concat([df1,df2,df3,df4])
 
     #
     # --
@@ -465,14 +785,17 @@ def main():
     # -- b --
     df.drop("name",axis=1,inplace=True)
     df = df.groupby(["method", "param"]).mean().reset_index()
+    # print(df)
+    # exit()
 
     # df = df[ (df['ave_nsp'] > 200) & (df['ave_nsp']<500)].reset_index(drop=True)
-    df = df[ (df['ave_nsp'] > 200) & (df['ave_nsp']<1000)].reset_index(drop=True)
+    # df = df[ (df['ave_nsp'] > 200) & (df['ave_nsp']<1000)].reset_index(drop=True)
+    df = df[ (df['ave_nsp'] >= 180) & (df['ave_nsp']<1400)].reset_index(drop=True)
     # print(df.columns)
     cols = ['method','ave_nsp','pooling','ue2d','sa2d','ue3d','sa3d','tex']
     print(df[cols])
     # exit()
-    nice_plots(df)
+    nice_plots(df,dname,df_bass,df_bist)
 
 if __name__ == "__main__":
     main()

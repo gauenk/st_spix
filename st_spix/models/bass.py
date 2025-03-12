@@ -86,11 +86,27 @@ def get_sims(vid,spix,scale=1.):
         pwd = th.cdist(vid,down)**2 # sum-of-squared differences
         pwd = rearrange(pwd,'1 (t h w) s -> t s h w',t=T,h=H)
     else:
+
+        # -- downsample --
         vid = rearrange(vid,'t f h w -> t h w f')
         means,down = sp_pooling(vid,spix)
+
+        # -- only keep the "down" from this video subsequence --
+        spids = th.arange(down.shape[1]).to(vid.device)
+        # print("pre: ",spids.shape,down.shape)
+        vmask = (spix.unsqueeze(-1) == spids.view(1, 1, 1, 1, -1)).any((0,1,2,3))
+        spids = spids[vmask]
+        down = down[:,vmask]
+        # print(spids.shape,down.shape)
+
+        # -- pwd --
         vid = rearrange(vid,'t h w f -> t (h w) f')
         pwd = th.cdist(vid,down)**2 # sum-of-squared differences
         pwd = rearrange(pwd,'t (h w) s -> t s h w',t=T,h=H)
+
+        # -- mask invalid ["empty" spix in down have "0" value] --
+        mask = ~(spix.unsqueeze(-1) == spids.view(1, 1, 1, 1, -1)).any((1, 2, 3))
+        pwd[mask] = th.inf
 
     # -- normalize --
     sims = th.softmax(-scale*pwd,1)

@@ -22,6 +22,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import MultiStepLR, StepLR
 from einops import rearrange,repeat
+import torch.nn.functional as thF
+
 
 # -- helper --
 from dev_basics.utils.timer import ExpTimer
@@ -155,6 +157,10 @@ def run(cfg):
             batch = next(data_iter)
             img,seg = batch['clean'][0],batch['seg'][0]
             img,seg = img.to(device)/255.,seg.to(device)
+
+            # -- downsample to restrict motion since we work on small crops due to GPU memory limitations --
+            # img = thF.interpolate(img, scale_factor=0.5, mode='bilinear', align_corners=False)
+            # seg = thF.interpolate(seg, scale_factor=0.5, mode='bilinear', align_corners=False)
 
             # -- optional noise --
             noisy,ninfo = pre_process(img)

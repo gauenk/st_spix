@@ -168,17 +168,17 @@ def save_triplet_collection():
               "dname":"davis",
               "vname":"bike-packing",
               "frames":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]}
-    entry1 = {"save_name":"bike_long",
+    entry1 = {"save_name":"bike-packing",
               "dname":"davis",
               "vname":"bike-packing",
               "frames":np.arange(20)+1,
               "alpha":0.5}
-    entry2 = {"save_name":"mbike-trick_seq",
+    entry2 = {"save_name":"mbike-trick",
               "dname":"davis",
               "vname":"mbike-trick",
               "frames":np.arange(20)+20,
               "alpha":1.0}
-    entry3 = {"save_name":"blackswan_seq",
+    entry3 = {"save_name":"blackswan",
               "dname":"davis",
               "vname":"blackswan",
               "frames":np.arange(25)+1,
@@ -271,11 +271,15 @@ def save_triplet_seq(save_name,dname,vname,frames,gif_alpha):
     # kwargs = { 'duration': 1 }
     # imageio.mimsave(fname, gif_list, **kwargs)
 
-def format_triplet(vid,anno,spix_tsp,spix_bist,spix_bass,alpha=0.5):
+def format_triplet(vid,anno,spix_tsp,spix_bist,spix_bass,
+                   alpha=0.5,bndry_color="grey"):
 
     # -- mark --
     # color = th.tensor([0.0,0.0,0.8])
-    color = th.tensor([1.0,1.0,1.0])*0.7
+    if bndry_color == "grey":
+        color = th.tensor([1.0,1.0,1.0])*0.7
+    else:
+        color = bndry_color
     _vid = rearrange(vid,'t c h w -> t h w c').contiguous()
     # print("_vid.shape,spix_tsp.shape :",_vid.shape,spix_tsp.shape)
     _marked_tsp = bist_cuda.get_marked_video(_vid,spix_tsp,color)
@@ -312,14 +316,14 @@ def format_triplet(vid,anno,spix_tsp,spix_bist,spix_bass,alpha=0.5):
     # color = th.tensor([255/255., 165/255., 0])
     # color = th.tensor([1.0,0.0,0])
     color = th.tensor([1.0,1.0,1.0])*0.7
-    alpha = 0.5
+    alpha = 0.5 if alpha > 0 else 0.
     for i in range(len(spix_bass)):
         spix_ids_bass = th.unique(spix_bass[i][th.where(anno[i]>0)])
         marked_bass[[i]]=color_spix(marked_bass[[i]],spix_bass[[i]],
                                     spix_ids_bass,color,alpha)
 
     # -- anno mask --
-    alpha = 0.5
+    alpha = 0.5 if alpha > 0. else 0.
     mask_rgb = th.tensor([1.0,1.0,1.0])
     mask_rgb = th.tensor(mask_rgb, device=vid.device).view(1, 3, 1, 1) * anno[:,None]
     vid = th.where(mask_rgb > 0, (1 - alpha) * vid + alpha * mask_rgb, vid)
@@ -353,44 +357,70 @@ def compare_many_images():
     # -- execute summary for each sequence --
     root = Path("output/run_spix/gather_examples_sb/")
     if not root.exists(): root.mkdir(parents=True)
-    dname = "segtrackerv2"
-    vnames = ["frog_3","penguin","cheetah"]
-    frames = [10]
+    # vnames = ["frog_2","penguin","cheetah","parachute","girl"]
+    # frames = [8]
+
+    # dname = "segtrackerv2"
+    # frames_dict = {"frog_2":[60],"penguin":[10],"cheetah":[10],
+    #                "parachute":[10],"girl":[5]}
+    # crop_dict = {"frog_2":[0,200,0,200],"penguin":[0,200,0,200],
+    #              "cheetah":[0,200,75,275],"parachute":[0,200,50,250],
+    #              "girl":[50,250,150-10,350-10]}
+
+    dname = "davis"
+    frames_dict = {"blackswan":[20],"bmx-trees":[20],"scooter-black":[32],
+                   "car-roundabout":[20],"lab-coat":[20]}
+    crop_dict = {"blackswan":[80,480,150,550],
+                 "bmx-trees":[80,480,150,550],
+                 "scooter-black":[80,480,200+40,600+40],
+                 "car-roundabout":[80,480,150+140,550+140],
+                 "lab-coat":[0,400,150+50,550+50]}
+
+    vnames = list(frames_dict.keys())
     H,W = 200,250
     k = 800
+    data_root = get_data_root(dname)
     # methods = ["seeds","ers","tsp","mbass","st_spix"]
-    methods = ["seeds","ers","tsp","bass","bist"]
+    methods = ["bist","bass","tsp","ers","seeds"]
+    # bnd_color = th.tensor([1.0,1.0,1.0])*1.0
+    bnd_color = th.tensor([0.0,0.0,1.0])*1.0
 
     # -- read --
     vid,spix = [],{}
     for vname in vnames:
-        vid_v = read_video(data_root,vname,frames)[...,:H,:W]
-
-
+        frames = frames_dict[vname]
+        hs,he,ws,we = crop_dict[vname]
+        vid_v = read_video(data_root,vname,frames)[...,hs:he,ws:we]
         spix_v = read_all_spix(dname,vname,frames,k,methods)
         vid.append(vid_v)
         if len(spix) == 0:
-            spix = {_k:[v[...,:H,:W]] for _k,v in spix_v.items()}
+            spix = {_k:[v[...,hs:he,ws:we]] for _k,v in spix_v.items()}
         else:
-            for _k,v in spix_v.items(): spix[_k].append(v[...,:H,:W])
-    for _k in spix: spix[_k] = th.cat(spix[_k])
+            for _k,v in spix_v.items():
+                spix[_k].append(v[...,hs:he,ws:we])
+    for _k in spix:
+        spix[_k] = th.cat(spix[_k]).int().contiguous().to("cuda")
     vid = th.cat(vid)
 
     # -- mark --
-    _vid = rearrange(vid,'t h w c -> t c h w').contiguous()
+    _vid = rearrange(vid,'t c h w -> t h w c').contiguous().to("cuda")
+    # vid = vid.contiguous().to("cuda")
     marked = {}
     for method in spix:
-        print(spix[method].shape,vid.shape)
-        _marked = bist_cuda.get_marked_video(_vid,spix)
+        # print(_vid.shape,spix[method].shape)
+        # exit()
+        _marked = bist_cuda.get_marked_video(_vid,spix[method].int(),bnd_color)
         marked[method] = rearrange(_marked,'t h w c -> t c h w').contiguous()
         # marked[method] = mark_spix_vid(vid,spix[method])
 
     # -- save --
     names = list(marked.keys())
-    mgrid = th.cat([vid.cpu(),]+list(marked.values()))
+    mgrid = th.cat([vid]+list(marked.values())).cpu()
     mgrid = tv_utils.make_grid(mgrid,nrow=len(vid))
-    tv_utils.save_image(mgrid,root/"compare_many_images.png")
-    print(names)
+    fname = root/("compare_many_images_%s.png"%dname)
+    print(f"Saving to {fname}")
+    tv_utils.save_image(mgrid,fname)
+    # print(names)
 
 
 def main():
@@ -473,8 +503,345 @@ def main():
     # plot_arrows(fig,axes)
     # plt.savefig(root/("single_image_summary.png"),transparent=True)
 
+def show_limitations():
+    # show_motion_bubbling_limitation()
+    show_temporal_fragmentation_limitation()
+
+def show_motion_bubbling_limitation():
+
+    # -- info --
+    dname = "davis"
+    # vname = "bmx-trees"
+    # frames = [12,13,14,15,16,17]
+    vname = "breakdance"
+    # frames = [3,4,5,6,7,8,9,10,11,12,13]
+    frames = [7,8,9,10,11]
+
+    def setup_trip(vid,marked_bist,marked_tsp,marked_bass):
+        _mgrid = th.stack([marked_bist,marked_bass,],1).cpu()
+        mgrid = []
+        for ti in range(vid.shape[0]):
+            mgrid.append(tv_utils.make_grid(_mgrid[ti],nrow=2))
+        mgrid = th.stack(mgrid)
+        return mgrid
+
+    def apply_crops(hs,he,ws,we,*vids):
+        crops = []
+        for vid in vids:
+            crops.append(vid[...,hs:he,ws:we])
+        return crops
+
+    # -- read --
+    data_root = get_data_root(dname)
+    vid = read_video(data_root,vname,frames)#[...,20:-20,100:-100]
+    anno = read_anno(data_root,vname,frames)#[...,20:-20,100:-100]
+    methods = ["tsp","bist","bass"]
+    k = 800
+    spix = read_all_spix(dname,vname,frames,k,methods)
+    spix_tsp = spix['tsp'].contiguous().int()
+    spix_bist = spix['bist'].contiguous().int()
+    spix_bass = spix['bass'].contiguous().int()
+
+    # -- format --
+    bndry_color = th.tensor([0.,0.,1.0])
+    trip = format_triplet(vid,anno,spix_tsp,spix_bist,spix_bass,0.0,bndry_color)
+    _vid,marked_bist,marked_tsp,marked_bass = trip
+    # outs = apply_crops(150,400,350,550,_vid,marked_bist,marked_tsp,marked_bass)
+    outs = apply_crops(50,500,100,500,_vid,marked_bist,marked_tsp,marked_bass)
+    _vid_c0,marked_bist_c0,marked_tsp_c0,marked_bass_c0 = outs
+    _vid_cc = _vid_c0
+    mgrid = setup_trip(_vid_c0,marked_bist_c0,marked_tsp_c0,marked_bass_c0)
+
+    # -- cropped region --
+    outs = apply_crops(50,200,200,300,_vid,marked_bist,marked_tsp,marked_bass)
+    _vid_c0,marked_bist_c0,marked_tsp_c0,marked_bass_c0 = outs
+    mgrid_c0 = setup_trip(_vid_c0,marked_bist_c0,marked_tsp_c0,marked_bass_c0)
+
+    # -- save image sequence --
+    root = Path("output/run_spix/gather_examples_sb/")
+    if not root.exists(): root.mkdir(parents=True)
+    root = root / "show_limitations/motion_bubling/"/vname
+    if not root.exists(): root.mkdir(parents=True)
+    print(f"Saving images to {str(root)}")
+
+    # -- save frame 0 --
+    fname = root/("vid_%05d.png"%0)
+    tv_utils.save_image(_vid_cc[0],fname)
+
+    # -- save --
+    for t in range(vid.shape[0]):
+        fname = root/("%05d.png"%t)
+        tv_utils.save_image(mgrid[t],fname)
+        fname = root/("%05d_c.png"%t)
+        tv_utils.save_image(mgrid_c0[t],fname)
+
+
+def show_temporal_fragmentation_limitation():
+
+    # -- info --
+    dname = "davis"
+    # vname = "bmx-trees"
+    # frames = [12,13,14,15,16,17]
+    vname = "blackswan"
+    # frames = [3,4,5,6,7,8,9,10,11,12,13]
+    # frames = [1,5,10,20]
+    frames = [1,5]
+
+    def setup_trip(vid,marked_bist,marked_tsp,marked_bass):
+        return marked_bist
+        _mgrid = th.stack([marked_bist,marked_bass,],1).cpu()
+        mgrid = []
+        for ti in range(vid.shape[0]):
+            mgrid.append(tv_utils.make_grid(_mgrid[ti],nrow=2))
+        mgrid = th.stack(mgrid)
+        return mgrid
+
+    def apply_crops(hs,he,ws,we,*vids):
+        crops = []
+        for vid in vids:
+            crops.append(vid[...,hs:he,ws:we])
+        return crops
+
+    # -- read --
+    data_root = get_data_root(dname)
+    vid = read_video(data_root,vname,frames)#[...,20:-20,100:-100]
+    anno = read_anno(data_root,vname,frames)#[...,20:-20,100:-100]
+    methods = ["tsp","bist","bass"]
+    k = 800
+    spix = read_all_spix(dname,vname,frames,k,methods)
+    spix_tsp = spix['tsp'].contiguous().int()
+    spix_bist = spix['bist'].contiguous().int()
+    spix_bass = spix['bass'].contiguous().int()
+
+    # -- format --
+    bndry_color = "grey"#th.tensor([0.,0.,1.0])
+    trip = format_triplet(vid,anno,spix_tsp,spix_bist,spix_bass,0.0,bndry_color)
+    _vid,marked_bist,marked_tsp,marked_bass = trip
+    # outs = apply_crops(150,400,350,550,_vid,marked_bist,marked_tsp,marked_bass)
+    # outs = apply_crops(50,500,100,500,_vid,marked_bist,marked_tsp,marked_bass)
+    outs = apply_crops(50,450,150,550,_vid,marked_bist,marked_tsp,marked_bass)
+    _vid_c0,marked_bist_c0,marked_tsp_c0,marked_bass_c0 = outs
+    _vid_cc = _vid_c0
+    mgrid = setup_trip(_vid_c0,marked_bist_c0,marked_tsp_c0,marked_bass_c0)
+    spix_bist = spix_bist[:,50:450,150:550]
+
+    def get_crop0():
+
+        # -- get that spix --
+        print(spix_bist.shape)
+        _spix_bist = spix_bist[:,232:328-8,232-16:328-8]
+        _spix_bist = th.unique(_spix_bist[:,-50:-40,-80:-60])
+        spix_ids = th.unique(_spix_bist)
+        print("spix_ids: ",spix_ids)
+        _marked_bist_c0 = marked_bist_c0
+
+        # -- mask with spix --
+        spix_ids[...] = 943
+        alpha = 1.0
+        mask_rgb = th.tensor([1.0,0.0,0.0])
+        # mask = 1.0*(spix_bist[:,None] == 995)
+        mask = 1.0*(th.isin(spix_bist[:,None],spix_ids))
+        print(mask.shape,marked_bist_c0.shape)
+        mask_rgb = th.tensor(mask_rgb, device=vid.device).view(1, 3, 1, 1) * mask
+        # vid = th.where(mask_rgb > 0, (1 - alpha) * vid + alpha * mask_rgb, vid)
+        _marked_bist_c0 = th.where(mask_rgb > 0, \
+                                  (1 - alpha) * _marked_bist_c0 +\
+                                  alpha * mask_rgb,_marked_bist_c0)
+
+        # -- mask with spix --
+        spix_ids[...] = 995
+        alpha = 1.0
+        mask_rgb = th.tensor([0.0,0.0,1.0])
+        # mask = 1.0*(spix_bist[:,None] == 995)
+        mask = 1.0*(th.isin(spix_bist[:,None],spix_ids))
+        print(mask.shape,marked_bist_c0.shape)
+        mask_rgb = th.tensor(mask_rgb, device=vid.device).view(1, 3, 1, 1) * mask
+        # vid = th.where(mask_rgb > 0, (1 - alpha) * vid + alpha * mask_rgb, vid)
+        _marked_bist_c0 = th.where(mask_rgb > 0, \
+                                  (1 - alpha) * _marked_bist_c0 +\
+                                  alpha * mask_rgb,_marked_bist_c0)
+
+        # -- mask with spix --
+        spix_ids[...] = 1393
+        alpha = 1.0
+        mask_rgb = th.tensor([0.0,1.0,1.0])
+        mask = 1.0*(th.isin(spix_bist[:,None],spix_ids))
+        mask_rgb = th.tensor(mask_rgb, device=vid.device).view(1, 3, 1, 1) * mask
+        # vid = th.where(mask_rgb > 0, (1 - alpha) * vid + alpha * mask_rgb, vid)
+        _marked_bist_c0 = th.where(mask_rgb > 0, \
+                                  (1 - alpha) * _marked_bist_c0 +\
+                                  alpha * mask_rgb,_marked_bist_c0)
+
+        # -- cropped region --
+        outs = apply_crops(232,328-8,232-16,328-8,_vid_c0,_marked_bist_c0,
+                           marked_tsp_c0,marked_bass_c0)
+        _vid_cc0,_marked_bist_c0,_marked_tsp_c0,_marked_bass_c0 = outs
+        mgrid_c0 = setup_trip(_vid_cc0,_marked_bist_c0,_marked_tsp_c0,_marked_bass_c0)
+
+        return mgrid_c0
+
+
+    def get_crop1():
+
+        # -- get that spix --
+        print(spix_bist.shape)
+        _spix_bist = spix_bist[:,15:115,250:350]
+        # _spix_bist = th.unique(_spix_bist[0,40:60,40:60])
+        _spix_bist = _spix_bist[0,40:60,40:60]
+        spix_ids = th.bincount(_spix_bist.ravel())
+        print(th.where(spix_ids>0),spix_ids[th.where(spix_ids>0)])
+        print(spix_ids)
+        # spix_ids[...] = 701
+        spix_ids[...] = 681
+
+        # -- mask with spix --
+        alpha = 1.0
+        mask_rgb = th.tensor([1.0,0.0,0.0])
+        # mask = 1.0*(spix_bist[:,None] == 995)
+        mask = 1.0*(th.isin(spix_bist[:,None],spix_ids))
+        print(mask.shape,marked_bist_c0.shape)
+        mask_rgb = th.tensor(mask_rgb, device=vid.device).view(1, 3, 1, 1) * mask
+        # vid = th.where(mask_rgb > 0, (1 - alpha) * vid + alpha * mask_rgb, vid)
+        _marked_bist_c0 = th.where(mask_rgb > 0, \
+                                  (1 - alpha) * marked_bist_c0 +\
+                                  alpha * mask_rgb,marked_bist_c0)
+
+
+        # -- mask with spix --
+        alpha = 1.0
+        spix_ids[...] = 701
+        mask_rgb = th.tensor([1.0,0.0,1.0])
+        # mask = 1.0*(spix_bist[:,None] == 995)
+        mask = 1.0*(th.isin(spix_bist[:,None],spix_ids))
+        print(mask.shape,marked_bist_c0.shape)
+        mask_rgb = th.tensor(mask_rgb, device=vid.device).view(1, 3, 1, 1) * mask
+        # vid = th.where(mask_rgb > 0, (1 - alpha) * vid + alpha * mask_rgb, vid)
+        _marked_bist_c0 = th.where(mask_rgb > 0, \
+                                  (1 - alpha) * _marked_bist_c0 +\
+                                  alpha * mask_rgb,_marked_bist_c0)
+
+        # -- cropped region --
+        outs = apply_crops(15,115,250,350,_vid_c0,_marked_bist_c0,
+                           marked_tsp_c0,marked_bass_c0)
+        _vid_cc0,_marked_bist_c0,_marked_tsp_c0,_marked_bass_c0 = outs
+        mgrid_c0 = setup_trip(_vid_cc0,_marked_bist_c0,_marked_tsp_c0,_marked_bass_c0)
+
+        return mgrid_c0
+
+
+    # -- get crops --
+    mgrid_c0 = get_crop0()
+    mgrid_c1 = get_crop1()
+
+    # -- save image sequence --
+    root = Path("output/run_spix/gather_examples_sb/")
+    if not root.exists(): root.mkdir(parents=True)
+    root = root / "show_limitations/temporal_fragmentation/"/vname
+    if not root.exists(): root.mkdir(parents=True)
+    print(f"Saving images to {str(root)}")
+
+    # -- save frame 0 --
+    fname = root/("vid_%05d.png"%0)
+    tv_utils.save_image(_vid_cc[0],fname)
+
+    # -- save --
+    for t in range(vid.shape[0]):
+        fname = root/("%05d.png"%t)
+        tv_utils.save_image(mgrid[t],fname)
+        fname = root/("%05d_c.png"%t)
+        tv_utils.save_image(mgrid_c0[t],fname)
+        fname = root/("%05d_c1.png"%t)
+        tv_utils.save_image(mgrid_c1[t],fname)
+
+
+
+def show_nice_seq(dname,vname,frames,hs,he,ws,we):
+
+    def setup_trip(vid,marked_bist,marked_tsp,marked_bass):
+        _mgrid = th.stack([vid,marked_bist,marked_tsp,marked_bass],1).cpu()
+        mgrid = []
+        for ti in range(vid.shape[0]):
+            mgrid.append(tv_utils.make_grid(_mgrid[ti],nrow=4))
+        mgrid = th.stack(mgrid)
+        return mgrid
+
+    def apply_crops(hs,he,ws,we,*vids):
+        crops = []
+        for vid in vids:
+            crops.append(vid[...,hs:he,ws:we])
+        return crops
+
+
+    # -- read --
+    data_root = get_data_root(dname)
+    vid = read_video(data_root,vname,frames)#[...,20:-20,100:-100]
+    anno = read_anno(data_root,vname,frames)#[...,20:-20,100:-100]
+    methods = ["tsp","bist","bass"]
+    k = 800
+    spix = read_all_spix(dname,vname,frames,k,methods)
+    spix_tsp = spix['tsp'].contiguous().int()
+    spix_bist = spix['bist'].contiguous().int()
+    spix_bass = spix['bass'].contiguous().int()
+
+    # -- mark with boundary --
+    bndry_color = "grey"
+    trip = format_triplet(vid,anno,spix_tsp,spix_bist,spix_bass,0.5,bndry_color)
+    vid,marked_bist,marked_tsp,marked_bass = trip
+
+    # -- crop em all --
+    outs = apply_crops(hs,he,ws,we,vid,marked_bist,marked_tsp,marked_bass)
+    vid,marked_bist,marked_tsp,marked_bass = outs
+    mgrid = setup_trip(vid,marked_bist,marked_tsp,marked_bass)
+
+    # -- save image sequence --
+    root = Path("output/run_spix/gather_examples_sb/")
+    if not root.exists(): root.mkdir(parents=True)
+    root = root / "show_nice_seq/"/vname
+    if not root.exists(): root.mkdir(parents=True)
+
+    # -- save frames --
+    print(f"Saving frames to {str(root)}")
+    for frame_index in range(len(mgrid)):
+        frame = mgrid[frame_index]
+        fname = root / ("%05d.png"%frame_index)
+        tv_utils.save_image(frame,fname)
+
+
+def nice_sequences():
+    # frames = [1,8,15]
+    # show_nice_seq("davis","bike-packing",frames,0,480,250,650)
+    # frames = [1,8,15]
+    # show_nice_seq("davis","mbike-trick",frames,120,360,350+20,550+20)
+
+    # frames = [1,3,6]
+    # show_nice_seq("davis","libby",frames,80,480,250,650)
+    # frames = [1,8,15]
+    # show_nice_seq("davis","kite-surf",frames,0,400,200,600)
+    # frames = [1,5,10]
+    # show_nice_seq("davis","dance-twirl",frames,40,440,200,600)
+    # frames = [1,8,15]
+
+    # -- a little worse temporal coherence --
+    # frames = [1,8,15]
+    # show_nice_seq("davis","paragliding-launch",frames,40,440,200,600)
+
+    # -- a little worse temporal coherence --
+    # frames = [30,35,40]
+    # show_nice_seq("davis","paragliding-launch",frames,40,440,200,600)
+    pass
+
+
+def compare_several_method():
+    pass
+
+
 if __name__ == "__main__":
     # main()
     # compare_single_video()
-    save_triplet_collection()
-    # compare_many_images()
+    compare_many_images()
+
+    # -- qualitative results --
+    # save_triplet_collection()
+    # show_limitations()
+    # nice_sequences()
+    # compare_several_method()

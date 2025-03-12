@@ -13,6 +13,8 @@ from einops import rearrange
 
 from st_spix.sp_pooling import sp_pooling
 from st_spix.sp_video_pooling import video_pooling
+from skvideo import measure
+
 
 
 def cvlbmap(ndarray):
@@ -114,13 +116,12 @@ def computeSummary(vid,seg,spix):
     # print(vid.shape,spix.shape,seg.shape,sizes.shape,seg_sizes.shape)
     # exit()
 
-
     # -- summary --
     summ.tex,summ.szv = scoreMeanDurationAndSizeVariation(sizes)
     # summ.tex,summ.szv = scoreMeanDurationAndSizeVariation_v0(spix+1)
     summ.ev = scoreExplainedVariance(vid,spix)
     summ.ev3d = scoreExplainedVariance3D(vid,spix)
-    summ.pooling = scoreSpixPoolingQuality(vid,spix)
+    summ.pooling,pooled = scoreSpixPoolingQuality(vid,spix)
 
     # -- rearrange --
     # spix = rearrange(spix,'t h w -> h w t')
@@ -158,9 +159,27 @@ def computeSummary(vid,seg,spix):
     # exit()
     # print(summ)
 
+
+    # -- optional strred --
+    summ.strred0 = -1
+    summ.strred1 = -1
+    strred = True
+    if strred:
+        _pooled = rearrange(pooled,'t c h w -> t h w c')
+        _pooled = rgb_to_luminance_torch(_pooled)
+        _vid = rgb_to_luminance_torch(vid)
+        _,score0,score1 = measure.strred(_vid.cpu().numpy(),_pooled.cpu().numpy())
+        summ.strred0 = float(score0)
+        summ.strred1 = float(score1)
     # exit()
 
     return summ
+
+
+def rgb_to_luminance_torch(rgb):
+    # Rec. 709 coefficients (sRGB)
+    weights = th.tensor([0.2126, 0.7152, 0.0722], dtype=rgb.dtype, device=rgb.device)
+    return th.tensordot(rgb, weights, dims=([-1], [0]))[...,None]  # Sum along RGB channels
 
 def averge_unique_spix_v1(sizes):
     return th.mean(1.*th.sum(sizes>0,-1)).item() # sum across spix; ave across time
@@ -190,7 +209,7 @@ def scoreSpixPoolingQualityByFrame(vid,spix,metric="psnr"):
         res = metrics.compute_ssims(vid,pooled,div=1.)
     else:
         raise ValueError(f"Uknown metric name [{metric}]")
-    return res
+    return res,pooled
 
 def scoreSpixPoolingQuality(vid,spix):
     # -- setup --
@@ -206,7 +225,7 @@ def scoreSpixPoolingQuality(vid,spix):
     pooled = rearrange(pooled,'t h w f -> t f h w')
     from st_spix import metrics
     psnr = metrics.compute_psnrs(vid,pooled,div=1.).mean().item()
-    return psnr
+    return psnr,pooled
 
 def scoreExplainedVariance(vid,spix):
     # roughly: var(sp_mean) / var(pix)

@@ -20,6 +20,7 @@ import cache_io
 
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from matplotlib.patches import Rectangle
 
 def viz_psnrs_across_frame_index(results):
 
@@ -32,8 +33,8 @@ def viz_psnrs_across_frame_index(results):
     # -- init plot --
     dpi = 300
     ginfo = {'wspace':0.01, 'hspace':0.1,
-             "top":0.88,"bottom":0.12,"left":.125,"right":0.94}
-    fig,ax = plt.subplots(1,1,figsize=(4,4),gridspec_kw=ginfo,dpi=dpi)
+             "top":0.80,"bottom":0.18,"left":.10,"right":0.98}
+    fig,ax = plt.subplots(1,1,figsize=(5,2.5),gridspec_kw=ginfo,dpi=dpi)
     # fig,ax = plt.subplots(1,1,figsize=(4,4))
 
     # -- sigma --
@@ -65,20 +66,49 @@ def viz_psnrs_across_frame_index(results):
     line_orange = Line2D([0],[0],color='orange', linestyle='-', label=r"$10$")
     line_red = Line2D([0], [0], color='red', linestyle='-', label=r"$20$")
     line_blue = Line2D([0], [0], color='blue', linestyle='-', label=r"$30$")
-    # Add the first legend for line style
+
+
+    # # Add the first legend for line style
+    # legend1 = ax.legend(handles=[line_bist, line_bass],
+    #                     bbox_to_anchor=(0.15, 1.18),  # Shift to the top-right
+    #                     ncol=2,frameon=False,fontsize=12,title_fontsize=12,
+    #                     title="Line Style", loc='upper left',framealpha=0.)
+
+    # # Add the second legend for color
+    # legend2 = ax.legend(handles=[line_orange, line_red, line_blue],
+    #                     bbox_to_anchor=(1.0, 0.8),  # Shift to the top-left
+    #                     ncol=3,frameon=False,fontsize=12,title_fontsize=12,
+    #                     title=r"$\sigma^2$", loc='upper right',framealpha=0.)
+
+    # # Add both legends to the axes
+
+
+    # Legend Elements
     legend1 = ax.legend(handles=[line_bist, line_bass],
-                        bbox_to_anchor=(0.15, 1.18),  # Shift to the top-right
+                        bbox_to_anchor=(-0.1, 1.40),  # Shift to the top-right
                         ncol=2,frameon=False,fontsize=12,title_fontsize=12,
-                        title="Line Style", loc='upper left',framealpha=0.)
-
-    # Add the second legend for color
-    legend2 = ax.legend(handles=[line_orange, line_red, line_blue],
-                        bbox_to_anchor=(1.0, 0.8),  # Shift to the top-left
-                        ncol=3,frameon=False,fontsize=12,title_fontsize=12,
-                        title=r"$\sigma^2$", loc='upper right',framealpha=0.)
-
-    # Add both legends to the axes
+                        title="Method", loc='upper left',framealpha=0.)
     ax.add_artist(legend1)
+
+    # legend_elements = [
+    #     Line2D([0], [0], color='black', linestyle='dashed', label='BIST'),
+    #     Line2D([0], [0], color='black', label='BASS')
+    # ]
+
+    # Add square/block markers for the sigma values
+    legend_elements = [
+        Rectangle((0, 0), 1, 1, color='orange', label='10'),
+        Rectangle((0, 0), 1, 1, color='red', label='20'),
+        Rectangle((0, 0), 1, 1, color='blue', label='30')
+    ]
+
+
+    # ....
+    # line_legend = plt.legend(handles=legend_elements[:2], loc='upper left')
+    # plt.gca().add_artist(line_legend)
+    plt.legend(handles=legend_elements, loc='upper left',
+               bbox_to_anchor=(0.45, 1.38),  # Shift to the top-right
+               title='Noise Intensity', framealpha=0., ncol=3)
 
     # -- save --
     fname = "output/viz_psnrs_across_frame_index.png"
@@ -116,9 +146,12 @@ def main():
         exps += _exps
         uuids += _uuids
 
-        # # -- remove bass_prop --
-        # tr_exp = cache_io.fill_test_shell(tr_fn,te_fn)
+        # -- remove bass_prop --
         # del tr_exp["train_grid"]["mesh0"]["listed8"]["bass_prop"]
+
+        # -- make bass prop false --
+        # tr_exp["train_grid"]["mesh0"]["listed8"]["bass_prop"] = False
+        # tr_exp = cache_io.fill_test_shell(tr_fn,te_fn)
         # _exps = read_test(tr_exp,".cache_io_exps/trte_deno/test",
         #                   reset=refresh,skip_dne=False,keep_dne=is_empty)
         # _exps,_uuids = cache_io.get_uuids(_exps,".cache_io/trte_deno/test",
@@ -146,30 +179,48 @@ def main():
     results = results.fillna(value=-1)
     viz_psnrs_across_frame_index(results)
     # results = results[['bass_prop','sigma','name'] + pnames]
+    # return
 
 
     # -- save! --
-    # rename = {"spix_loss_type":"spix_l","deno_spix_alpha":"spix_a","spix_loss_compat":"spix_c"}
-    # results = results.rename(columns=rename)
-    # print(results[['deno_psnr']])
-    # print(results.columns)
-    # vfields0 = ["asa","br","bp"]
-    # # vfields0 = ["asa","br"]
-    # vfields1 = ["pooled_psnr","pooled_ssim"]
-    # vfields2 = ["deno_psnr","deno_ssim"]
-    # vfields = vfields0 + vfields1 + vfields2
-    # # gfields = ["attn_type"]
-    # # gfields = ["sp_type","spix_l","spix_a","spix_c"]
-    # gfields = ["mname","sigma"]
-    # results0 = results.groupby(gfields, as_index=False).agg(
-    #     {k:['mean'] for k in vfields0})
-    # print(results0)
+    rename = {"spix_loss_type":"spix_l","deno_spix_alpha":"spix_a","spix_loss_compat":"spix_c","use_kernel_reweight":"krw","net_depth":"nd","kernel_size":"ks"}
+    results = results.rename(columns=rename)
+
+
+    psnrs = np.stack(results['deno_psnr'].to_numpy())
+    psnrs = np.where(psnrs >= 0, psnrs, np.nan)
+    psnrs = np.nanmean(psnrs, axis=1)
+    results = results.drop('deno_psnr', axis=1)
+    results['deno_psnr'] = psnrs
+
+    ssims = np.stack(results['deno_ssim'].to_numpy())
+    ssims = np.where(ssims >= 0, ssims, np.nan)
+    ssims = np.nanmean(ssims, axis=1)
+    results = results.drop('deno_ssim', axis=1)
+    results['deno_ssim'] = ssims
+
+    print(results[['deno_psnr','deno_ssim']])
+    print(results.columns)
+    vfields0 = ["asa","br","bp"]
+    # vfields0 = ["asa","br"]
+    vfields1 = ["pooled_psnr","pooled_ssim"]
+    vfields2 = ["deno_psnr","deno_ssim"]
+    vfields = vfields0 + vfields1 + vfields2
+    # gfields = ["attn_type"]
+    # gfields = ["sp_type","spix_l","spix_a","spix_c"]
+    gfields = ["mname","sigma","bass_prop","krw","nd","ks"]
+    results = results[vfields+gfields]
+    # results = results.iloc[:10]
+    print(results)
+    results0 = results.groupby(gfields, as_index=False).agg(
+        {k:['mean'] for k in vfields0})
+    print(results0)
     # results1 = results.groupby(gfields, as_index=False).agg(
     #     {k:['mean','std'] for k in vfields1})
     # print(results1)
-    # results2 = results.groupby(gfields, as_index=False).agg(
-    #     {k:['mean','std'] for k in vfields2})
-    # print(results2)
+    results2 = results.groupby(gfields, as_index=False).agg(
+        {k:['mean','std'] for k in vfields2})
+    print(results2)
 
 
 

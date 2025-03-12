@@ -164,7 +164,7 @@ __host__ void CudaCalcMergeCandidate_orig(const float* img, int* seg, bool* bord
 
     // -- count number of merges --
     cudaMemcpy(&nmerges,nmerges_gpu, sizeof(int), cudaMemcpyDeviceToHost);
-    printf("nmerges: %d\n",nmerges);
+    // printf("nmerges: %d\n",nmerges);
     cudaMemset(nmerges_gpu, 0,sizeof(int));
     cudaMemcpy(&nvalid_cpu, nvalid, sizeof(int), cudaMemcpyDeviceToHost);
     // printf("[merge] nvalid: %d\n",nvalid_cpu);
@@ -391,7 +391,7 @@ __host__ int CudaCalcSplitCandidate_orig(const float* img, int* seg, bool* borde
     // -- nvalid --
     int prev_max_sp = max_nspix;
     cudaMemcpy(&max_nspix, max_sp, sizeof(int), cudaMemcpyDeviceToHost);
-    printf("[split] nsplits: %d\n",max_nspix-prev_max_sp);
+    // printf("[split] nsplits: %d\n",max_nspix-prev_max_sp);
 
     // -- free --
     cudaFree(nvalid);

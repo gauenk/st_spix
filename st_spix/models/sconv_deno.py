@@ -74,7 +74,18 @@ class SpixConvDenoiser(nn.Module):
         else:
             return [ksize,]*(depth+1)
 
-    def forward(self, x, flows, fflow=None, noise_info=None):
+    def get_spix(self, x, flows, fflow=None):
+
+        # -- first features --
+        ftrs = self.conv0(x)
+        if self.use_spixftrs_net: spix_ftrs = self.spixftrs_net(x)
+        else: spix_ftrs = ftrs
+        if self.use_sp_net: spix = self.spix_net.get_spix(spix_ftrs,fflow)
+        else: spix = None
+
+        return ftrs,spix_ftrs,spix
+
+    def forward(self, x, flows, fflow=None, spix=None, noise_info=None):
         """
 
         Forward function.
@@ -85,11 +96,20 @@ class SpixConvDenoiser(nn.Module):
         H,W = x.shape[-2:]
 
         # -- first features --
-        ftrs = self.conv0(x)
-        if self.use_spixftrs_net: spix_ftrs = self.spixftrs_net(x)
-        else: spix_ftrs = ftrs
-        if self.use_sp_net: sims,spix = self.spix_net(spix_ftrs,fflow)[:2]
-        else: sims,spix = None,None
+        # ftrs = self.conv0(x)
+        # if self.use_spixftrs_net: spix_ftrs = self.spixftrs_net(x)
+        # else: spix_ftrs = ftrs
+        # if self.use_sp_net: sims,spix = self.spix_net(spix_ftrs,fflow)[:2]
+        # else: sims,spix = None,None
+
+        # -- first features --
+        if spix is None:
+            ftrs,spix_ftrs,spix = self.get_spix(x, flows, fflow)
+        else:
+            ftrs = self.conv0(x)
+            if self.use_spixftrs_net: spix_ftrs = self.spixftrs_net(x)
+            else: spix_ftrs = ftrs
+        sims = self.spix_net.get_sims(spix_ftrs,spix)#[:2]
 
         # -- depth --
         if self.net_depth >=1 :

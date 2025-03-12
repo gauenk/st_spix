@@ -116,10 +116,14 @@ def run(cfg):
         img,seg = img.to(device)/255.,seg.to(device)
         # print(img.shape,seg.shape)
 
+        # -- ... --
+        # img = img[:4]
+        # seg = seg[:4]
+
         # -- accomodate "small" GPU memory --
         # -- reduce the size of the flow so we can process the 64x64 regions --
-        img = thF.interpolate(img, scale_factor=0.5, mode='bilinear', align_corners=False)
-        seg = thF.interpolate(seg, scale_factor=0.5, mode='bilinear', align_corners=False)
+        # img = thF.interpolate(img, scale_factor=0.5, mode='bilinear', align_corners=False)
+        # seg = thF.interpolate(seg, scale_factor=0.5, mode='bilinear', align_corners=False)
         # print(img.shape,seg.shape)
         # exit()
 
@@ -137,9 +141,20 @@ def run(cfg):
         # -- compute flows --
         flows,fflow = flow_fxn(noisy)
 
+        """
+
+        TODO: we need to estimate spix before forward pass of NN on the full image.
+
+        """
+
+        # -- get superpixels --
+        with th.no_grad():
+            spix = model.get_spix(noisy,flows,fflow)[-1]
+
         # -- compute superpixels --
         with th.no_grad():
-            output = crop_test(model,noisy,flows,fflow,ninfo)
+            output = crop_test(model,noisy,flows,fflow,spix,ninfo)
+            # output =  {"deno":model(noisy,flows,fflow,ninfo,sims),"sims":None}
         # with th.no_grad():
         #     output = model(noisy,flows,fflow,ninfo)['deno']
             # output = []
@@ -234,6 +249,7 @@ def run(cfg):
         for f in ifields: info[f].append(iinfo[f])
         if cfg.num_samples > 0 and ix >= cfg.num_samples:
             break
+        exit()
 
     return info
 
@@ -245,13 +261,41 @@ def expand_ndarrays(size,*ndarrays):
         out.append(ndarray_e)
     return out
 
-def crop_test(model,img,flows,fflow,ninfo,cropsize=64,overlap=0.10):
-    fwd_fxn = lambda a,b,c,d: model(a,b,c,d)['deno']
-    deno = run_grouped_spatial_chunks(fwd_fxn,img,flows,fflow,ninfo,cropsize,overlap)
+def crop_test(model,img,flows,fflow,spix,ninfo,cropsize=64,overlap=0.10):
+    fwd_fxn = lambda a,b,c,d,e: model(a,b,c,d,e)['deno']
+    # deno = run_grouped_spatial_chunks(fwd_fxn,img,flows,fflow,ninfo,cropsize,overlap)
+    # return {"deno":deno,"spix":None}
+
+
+    T = img.shape[0]
+    if T > 30:
+        imgH = img[:T//2]
+        flowsH = flows[:T//2]
+        fflowH = fflow[:T//2]
+        spixH = spix[:T//2]
+        # print(imgH.shape)
+        deno0 = run_grouped_spatial_chunks(fwd_fxn,imgH,flowsH,fflowH,
+                                           spixH,ninfo,cropsize,overlap)
+        # print(deno0.shape)
+
+        imgH = img[T//2:]
+        flowsH = flows[T//2:]
+        fflowH = fflow[T//2:]
+        spixH = spix[T//2:]
+        # print(imgH.shape)
+        deno1 = run_grouped_spatial_chunks(fwd_fxn,imgH,flowsH,fflowH,
+                                           spixH,ninfo,cropsize,overlap)
+        # print(deno1.shape)
+        deno = th.cat([deno0,deno1])
+
+    else:
+        deno = run_grouped_spatial_chunks(fwd_fxn,img,flows,fflow,spix,
+                                          ninfo,cropsize,overlap)
+
     return {"deno":deno,"sims":None}
 
 # -- simpler one --
-def run_grouped_spatial_chunks(fwd_fxn,img,flows,fflow,ninfo,size,overlap):
+def run_grouped_spatial_chunks(fwd_fxn,img,flows,fflow,spix,ninfo,size,overlap):
 
     # -- imports --
     from dev_basics.net_chunks.shared import get_chunks
@@ -276,7 +320,8 @@ def run_grouped_spatial_chunks(fwd_fxn,img,flows,fflow,ninfo,size,overlap):
             img_chunk = img[...,h_chunk:h_chunk+size,w_chunk:w_chunk+size]
             flows_chunk = flows[...,h_chunk:h_chunk+size,w_chunk:w_chunk+size]
             fflow_chunk = fflow[...,h_chunk:h_chunk+size,w_chunk:w_chunk+size]
-            deno_chunk = fwd_fxn(img_chunk,flows_chunk,fflow_chunk,ninfo)
+            spix_chunk =  spix[...,h_chunk:h_chunk+size,w_chunk:w_chunk+size]
+            deno_chunk = fwd_fxn(img_chunk,flows_chunk,fflow_chunk,spix_chunk,ninfo)
 
             # -- fill --
             sizeH,sizeW = deno_chunk.shape[-2:]
